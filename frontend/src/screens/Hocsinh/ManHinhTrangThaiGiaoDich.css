@@ -1,0 +1,129 @@
+:root {
+  --transaction-success-color: #34a853;
+  --transaction-success-hover: #2b8a44;
+  --transaction-text-dark: #202124;
+  --transaction-text-gray: #5f6368;
+  --transaction-bg-light: #f8f9fa;
+  --transaction-bg-white: #ffffff;
+  --transaction-info-bg: #f1f3f4;
+  --transaction-border-radius: 12px;
+  --transaction-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --transaction-transition: all 0.3s ease;
+}
+
+.transaction-success-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  background-color: var(--transaction-bg-light);
+  color: var(--transaction-text-dark);
+}
+
+.transaction-success-card {
+  width: 100%;
+  max-width: 450px;
+  padding: 40px 30px;
+  text-align: center;
+  border-radius: var(--transaction-border-radius);
+  background-color: var(--transaction-bg-white);
+  box-shadow: var(--transaction-shadow);
+  animation: transactionSlideUpFade 0.5s ease forwards;
+}
+
+@keyframes transactionSlideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.transaction-success-icon-wrapper {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+  color: var(--transaction-success-color);
+  background-color: #e6f4ea;
+}
+
+.transaction-success-icon-wrapper svg {
+  width: 40px;
+  height: 40px;
+}
+
+.transaction-success-title {
+  margin-bottom: 10px;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.transaction-success-desc {
+  margin-bottom: 30px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--transaction-text-gray);
+}
+
+.transaction-info-box {
+  margin-bottom: 30px;
+  padding: 20px;
+  border-radius: 8px;
+  background-color: var(--transaction-info-bg);
+}
+
+.transaction-info-row {
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+
+.transaction-info-row:last-child {
+  margin-bottom: 0;
+  padding-top: 12px;
+  border-top: 1px dashed #cccccc;
+}
+
+.transaction-info-label {
+  color: var(--transaction-text-gray);
+}
+
+.transaction-info-value {
+  font-weight: 600;
+  color: var(--transaction-text-dark);
+}
+
+.transaction-info-value.is-amount {
+  font-size: 18px;
+  color: var(--transaction-success-color);
+}
+
+.transaction-btn-primary {
+  width: 100%;
+  padding: 16px;
+  border: 0;
+  border-radius: var(--transaction-border-radius);
+  background-color: var(--transaction-success-color);
+  color: var(--transaction-bg-white);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transaction-transition);
+}
+
+.transaction-btn-primary:hover {
+  background-color: var(--transaction-success-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(52, 168, 83, 0.25);
+}

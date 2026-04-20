@@ -1,0 +1,314 @@
+:root {
+  --if-primary-color: #1a73e8;
+  --if-primary-hover: #1557b0;
+  --if-secondary-color: #34a853;
+  --if-warning-color: #f9ab00;
+  --if-danger-color: #ea4335;
+  --if-bg-color: #f8f9fa;
+  --if-card-bg: #ffffff;
+  --if-text-dark: #202124;
+  --if-text-gray: #5f6368;
+  --if-border-color: #e8eaed;
+  --if-sidebar-bg: #1e1e2d;
+  --if-sidebar-text: #a2a3b7;
+  --if-sidebar-hover: #2b2b40;
+  --if-border-radius: 12px;
+  --if-input-radius: 8px;
+  --if-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  --if-transition: all 0.2s ease;
+}
+
+.instructor-finance-page {
+  background-color: var(--if-bg-color);
+  color: var(--if-text-dark);
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.instructor-finance-sidebar {
+  width: 250px;
+  background-color: var(--if-sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+  height: 100%;
+  position: sticky;
+  top: 0;
+}
+
+.instructor-finance-brand {
+  padding: 24px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.instructor-finance-brand-icon {
+  background: var(--if-primary-color);
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.instructor-finance-nav-menu {
+  list-style: none;
+  padding: 20px 0;
+  flex-grow: 1;
+}
+
+.instructor-finance-nav-link {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  padding: 14px 24px;
+  color: var(--if-sidebar-text);
+  text-decoration: none;
+  font-weight: 500;
+  transition: var(--if-transition);
+  border: 0;
+  border-left: 4px solid transparent;
+  margin-bottom: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.instructor-finance-nav-link:hover {
+  background-color: var(--if-sidebar-hover);
+  color: #fff;
+}
+
+.instructor-finance-nav-link.active {
+  background-color: var(--if-sidebar-hover);
+  color: var(--if-primary-color);
+  border-left-color: var(--if-primary-color);
+}
+
+.instructor-finance-logout-btn {
+  padding: 20px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: #f1416c;
+  font-weight: 500;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--if-transition);
+}
+
+.instructor-finance-logout-btn:hover {
+  background-color: rgba(241, 65, 108, 0.1);
+}
+
+.instructor-finance-main-content {
+  flex: 1;
+  padding: 30px 40px;
+  overflow-y: auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.instructor-finance-page-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--if-text-dark);
+  margin-bottom: 25px;
+}
+
+.instructor-finance-card {
+  background-color: var(--if-card-bg);
+  border-radius: var(--if-border-radius);
+  box-shadow: var(--if-shadow);
+  padding: 25px;
+  margin-bottom: 25px;
+}
+
+.instructor-finance-card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--if-text-dark);
+  margin-bottom: 20px;
+}
+
+.instructor-finance-balance-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
+  border: 1px solid #e1efff;
+}
+
+.instructor-finance-balance-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.instructor-finance-balance-label {
+  font-size: 15px;
+  color: var(--if-text-gray);
+  font-weight: 500;
+}
+
+.instructor-finance-balance-amount {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--if-primary-color);
+  letter-spacing: -0.5px;
+}
+
+.instructor-finance-btn {
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: var(--if-input-radius);
+  cursor: pointer;
+  transition: var(--if-transition);
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.instructor-finance-btn-primary {
+  background-color: var(--if-primary-color);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(26, 115, 232, 0.2);
+}
+
+.instructor-finance-btn-primary:hover {
+  background-color: var(--if-primary-hover);
+  transform: translateY(-2px);
+}
+
+.instructor-finance-table-responsive {
+  overflow-x: auto;
+}
+
+.instructor-finance-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.instructor-finance-data-table th {
+  background-color: #f1f3f4;
+  color: var(--if-text-gray);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 15px 20px;
+  text-transform: uppercase;
+}
+
+.instructor-finance-data-table td {
+  padding: 16px 20px;
+  font-size: 14px;
+  color: var(--if-text-dark);
+  border-bottom: 1px solid var(--if-border-color);
+  vertical-align: middle;
+}
+
+.instructor-finance-data-table tbody tr:hover td {
+  background-color: #fcfcfc;
+}
+
+.instructor-finance-data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.col-money {
+  text-align: right;
+  font-family: 'Inter', monospace;
+}
+
+.col-money.bold {
+  font-weight: 600;
+}
+
+.text-deduct {
+  color: var(--if-danger-color);
+}
+
+.text-net {
+  color: var(--if-secondary-color);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.course-name {
+  font-weight: 500;
+  color: var(--if-text-dark);
+}
+
+.muted-id {
+  color: var(--if-text-gray);
+}
+
+.align-right {
+  text-align: right;
+}
+
+.instructor-finance-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.instructor-finance-badge-success {
+  background-color: #e6f4ea;
+  color: var(--if-secondary-color);
+}
+
+.instructor-finance-badge-pending {
+  background-color: #fef7e0;
+  color: var(--if-warning-color);
+}
+
+.instructor-finance-split-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 25px;
+}
+
+@media (max-width: 900px) {
+  .instructor-finance-sidebar {
+    width: 70px;
+  }
+
+  .instructor-finance-brand span,
+  .instructor-finance-nav-link {
+    font-size: 0;
+  }
+
+  .instructor-finance-nav-link::before {
+    content: '•';
+    font-size: 20px;
+    line-height: 1;
+    color: var(--if-sidebar-text);
+  }
+
+  .instructor-finance-main-content {
+    padding: 20px;
+  }
+
+  .instructor-finance-balance-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20px;
+  }
+}

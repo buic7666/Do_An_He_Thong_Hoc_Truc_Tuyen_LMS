@@ -1,0 +1,316 @@
+:root {
+  --history-primary-color: #1a73e8;
+  --history-primary-hover: #1557b0;
+  --history-secondary-color: #34a853;
+  --history-bg-color: #f8f9fa;
+  --history-card-bg: #ffffff;
+  --history-text-dark: #202124;
+  --history-text-gray: #5f6368;
+  --history-border-color: #dadce0;
+  --history-table-header-bg: #f1f3f4;
+  --history-border-radius: 12px;
+  --history-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  --history-transition: all 0.3s ease;
+}
+
+.history-page {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--history-bg-color);
+  color: var(--history-text-dark);
+}
+
+.history-sidebar {
+  width: 250px;
+  background-color: var(--history-card-bg);
+  border-right: 1px solid var(--history-border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.history-brand {
+  padding: 24px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--history-primary-color);
+  border-bottom: 1px solid var(--history-border-color);
+}
+
+.history-nav-menu {
+  list-style: none;
+  padding: 20px 0;
+  flex-grow: 1;
+}
+
+.history-nav-link {
+  display: flex;
+  align-items: center;
+  padding: 14px 24px;
+  margin-bottom: 5px;
+  color: var(--history-text-gray);
+  border-left: 4px solid transparent;
+  text-decoration: none;
+  font-weight: 500;
+  transition: var(--history-transition);
+}
+
+.history-nav-link:hover {
+  background-color: var(--history-bg-color);
+  color: var(--history-primary-color);
+}
+
+.history-nav-link.is-active {
+  background-color: #f0f7ff;
+  color: var(--history-primary-color);
+  border-left-color: var(--history-primary-color);
+}
+
+.history-logout-btn {
+  padding: 20px 24px;
+  border-top: 1px solid var(--history-border-color);
+  color: #d93025;
+  text-decoration: none;
+  font-weight: 500;
+  display: block;
+  transition: var(--history-transition);
+}
+
+.history-logout-btn:hover {
+  background-color: #fce8e6;
+}
+
+.history-main-content {
+  flex: 1;
+  padding: 30px 40px;
+  overflow-y: auto;
+}
+
+.history-page-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 25px;
+}
+
+.history-tabs-container {
+  min-height: 500px;
+  padding: 30px;
+  border-radius: var(--history-border-radius);
+  background-color: var(--history-card-bg);
+  box-shadow: var(--history-shadow);
+}
+
+.history-tab-labels {
+  display: flex;
+  border-bottom: 2px solid var(--history-border-color);
+  margin-bottom: 25px;
+}
+
+.history-tab-label {
+  position: relative;
+  padding: 12px 24px;
+  background-color: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--history-text-gray);
+  transition: var(--history-transition);
+}
+
+.history-tab-label:hover {
+  color: var(--history-primary-color);
+}
+
+.history-tab-label::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 100%;
+  height: 2px;
+  background-color: transparent;
+  transition: var(--history-transition);
+}
+
+.history-tab-label.is-active {
+  color: var(--history-primary-color);
+}
+
+.history-tab-label.is-active::after {
+  background-color: var(--history-primary-color);
+}
+
+.history-tab-panel {
+  animation: historyFadeIn 0.4s ease;
+}
+
+@keyframes historyFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.history-table-responsive {
+  overflow-x: auto;
+}
+
+.history-transaction-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.history-transaction-table th {
+  padding: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--history-text-dark);
+  background-color: var(--history-table-header-bg);
+}
+
+.history-transaction-table th:first-child {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
+.history-transaction-table th:last-child {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.history-transaction-table td {
+  padding: 16px;
+  font-size: 14px;
+  color: var(--history-text-dark);
+  border-bottom: 1px solid var(--history-border-color);
+  vertical-align: middle;
+}
+
+.history-transaction-table tbody tr:hover {
+  background-color: #fcfcfc;
+}
+
+.history-course-name-cell {
+  color: var(--history-primary-color);
+  font-weight: 500;
+}
+
+.history-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.history-badge.is-success {
+  background-color: #e6f4ea;
+  color: var(--history-secondary-color);
+}
+
+.history-badge.is-pending {
+  background-color: #fef7e0;
+  color: #f9ab00;
+}
+
+.history-cert-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 25px;
+}
+
+.history-cert-card {
+  border: 1px solid var(--history-border-color);
+  border-radius: var(--history-border-radius);
+  padding: 25px 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: var(--history-transition);
+}
+
+.history-cert-card:hover {
+  border-color: var(--history-primary-color);
+  box-shadow: var(--history-shadow);
+  transform: translateY(-3px);
+}
+
+.history-cert-icon {
+  font-size: 48px;
+  color: #fbbc05;
+  margin-bottom: 15px;
+}
+
+.history-cert-title {
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--history-text-dark);
+  margin-bottom: 10px;
+}
+
+.history-cert-date {
+  font-size: 13px;
+  color: var(--history-text-gray);
+  margin-bottom: 20px;
+}
+
+.history-btn-download {
+  margin-top: auto;
+  padding: 10px 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--history-primary-color);
+  border-radius: 8px;
+  color: var(--history-primary-color);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  transition: var(--history-transition);
+}
+
+.history-btn-download:hover {
+  background-color: var(--history-primary-color);
+  color: #ffffff;
+}
+
+@media (max-width: 900px) {
+  .history-sidebar {
+    width: 70px;
+  }
+
+  .history-brand,
+  .history-nav-link span,
+  .history-logout-btn span {
+    display: none;
+  }
+
+  .history-main-content {
+    padding: 20px;
+  }
+
+  .history-tab-labels {
+    flex-direction: column;
+    border-bottom: 0;
+  }
+
+  .history-tab-label {
+    text-align: center;
+    border-bottom: 1px solid var(--history-border-color);
+  }
+
+  .history-tab-label::after {
+    display: none;
+  }
+}

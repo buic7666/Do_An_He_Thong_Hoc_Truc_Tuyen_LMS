@@ -1,0 +1,327 @@
+
+:root {
+  --sc-primary-color: #1a73e8;
+  --sc-primary-hover: #1557b0;
+  --sc-secondary-color: #34a853;
+  --sc-danger-color: #ea4335;
+  --sc-bg-color: #f8f9fa;
+  --sc-card-bg: #ffffff;
+  --sc-text-dark: #202124;
+  --sc-text-gray: #5f6368;
+  --sc-border-color: #e8eaed;
+  --sc-sidebar-bg: #1e1e2d;
+  --sc-sidebar-text: #a2a3b7;
+  --sc-sidebar-hover: #2b2b40;
+  --sc-border-radius: 12px;
+  --sc-input-radius: 8px;
+  --sc-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  --sc-transition: all 0.3s ease;
+}
+
+.system-config-page {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--sc-bg-color);
+  color: var(--sc-text-dark);
+}
+
+.system-config-sidebar {
+  width: 260px;
+  background-color: var(--sc-sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.system-config-brand {
+  padding: 24px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.system-config-brand-icon {
+  background: var(--sc-primary-color);
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.system-config-nav-menu {
+  list-style: none;
+  padding: 20px 0;
+  flex-grow: 1;
+}
+
+.system-config-nav-link {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  padding: 14px 24px;
+  color: var(--sc-sidebar-text);
+  text-decoration: none;
+  font-weight: 500;
+  transition: var(--sc-transition);
+  border: 0;
+  border-left: 4px solid transparent;
+  margin-bottom: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.system-config-nav-link:hover {
+  background-color: var(--sc-sidebar-hover);
+  color: #fff;
+}
+
+.system-config-nav-link.active {
+  background-color: var(--sc-sidebar-hover);
+  color: var(--sc-primary-color);
+  border-left-color: var(--sc-primary-color);
+}
+
+.system-config-logout-btn {
+  padding: 20px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: #f1416c;
+  font-weight: 500;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--sc-transition);
+}
+
+.system-config-logout-btn:hover {
+  background-color: rgba(241, 65, 108, 0.1);
+}
+
+.system-config-main-content {
+  flex: 1;
+  padding: 30px 40px;
+  overflow-y: auto;
+}
+
+.system-config-page-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 25px;
+}
+
+.system-config-settings-card {
+  background-color: var(--sc-card-bg);
+  border-radius: var(--sc-border-radius);
+  box-shadow: var(--sc-shadow);
+  padding: 30px;
+  min-height: 500px;
+}
+
+.system-config-tab-labels {
+  display: flex;
+  border-bottom: 2px solid var(--sc-border-color);
+  margin-bottom: 30px;
+  gap: 10px;
+}
+
+.system-config-tab-label {
+  padding: 12px 25px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sc-text-gray);
+  cursor: pointer;
+  transition: var(--sc-transition);
+  border: 0;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+}
+
+.system-config-tab-label:hover,
+.system-config-tab-label.active {
+  color: var(--sc-primary-color);
+}
+
+.system-config-tab-label.active {
+  border-bottom-color: var(--sc-primary-color);
+}
+
+.system-config-tab-panel {
+  animation: system-config-fade-in 0.3s ease;
+}
+
+.system-config-form-group {
+  margin-bottom: 20px;
+  max-width: 500px;
+}
+
+.system-config-form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sc-text-dark);
+  margin-bottom: 8px;
+}
+
+.system-config-form-control {
+  width: 100%;
+  padding: 12px 15px;
+  border: 1px solid var(--sc-border-color);
+  border-radius: var(--sc-input-radius);
+  outline: none;
+  transition: var(--sc-transition);
+  font-size: 14px;
+}
+
+.system-config-form-control:focus {
+  border-color: var(--sc-primary-color);
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.1);
+}
+
+.system-config-category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.system-config-category-note {
+  color: var(--sc-text-gray);
+  font-size: 14px;
+}
+
+.system-config-category-list {
+  list-style: none;
+}
+
+.system-config-category-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border: 1px solid var(--sc-border-color);
+  border-radius: var(--sc-input-radius);
+  margin-bottom: 10px;
+  transition: var(--sc-transition);
+  gap: 16px;
+}
+
+.system-config-category-item:hover {
+  background-color: #f8faff;
+  border-color: var(--sc-primary-color);
+}
+
+.system-config-category-name {
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.system-config-category-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.system-config-btn {
+  padding: 10px 20px;
+  border-radius: var(--sc-input-radius);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: var(--sc-transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.system-config-btn-primary {
+  background-color: var(--sc-primary-color);
+  color: #fff;
+}
+
+.system-config-btn-primary:hover {
+  background-color: var(--sc-primary-hover);
+}
+
+.system-config-btn-success {
+  background-color: var(--sc-secondary-color);
+  color: #fff;
+}
+
+.system-config-btn-outline {
+  background-color: transparent;
+  border: 1px solid var(--sc-border-color);
+  color: var(--sc-text-gray);
+}
+
+.system-config-btn-outline:hover {
+  border-color: var(--sc-primary-color);
+  color: var(--sc-primary-color);
+}
+
+.system-config-btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.system-config-btn-danger {
+  color: var(--sc-danger-color);
+}
+
+@keyframes system-config-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .system-config-sidebar {
+    width: 70px;
+  }
+
+  .system-config-brand {
+    font-size: 0;
+  }
+
+  .system-config-brand::before {
+    content: 'Admin';
+    font-size: 13px;
+    color: #fff;
+  }
+
+  .system-config-nav-link {
+    justify-content: center;
+    padding: 12px 8px;
+    font-size: 0;
+  }
+
+  .system-config-nav-link::before {
+    content: '•';
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .system-config-main-content {
+    padding: 20px;
+  }
+
+  .system-config-category-header,
+  .system-config-category-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

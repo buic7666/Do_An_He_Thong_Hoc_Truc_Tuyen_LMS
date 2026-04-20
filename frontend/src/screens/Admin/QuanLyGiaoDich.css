@@ -1,0 +1,385 @@
+:root {
+  --at-primary-color: #1a73e8;
+  --at-primary-hover: #1557b0;
+  --at-secondary-color: #34a853;
+  --at-warning-color: #f9ab00;
+  --at-danger-color: #ea4335;
+  --at-bg-color: #f8f9fa;
+  --at-card-bg: #ffffff;
+  --at-text-dark: #202124;
+  --at-text-gray: #5f6368;
+  --at-border-color: #e8eaed;
+  --at-sidebar-bg: #1e1e2d;
+  --at-sidebar-text: #a2a3b7;
+  --at-sidebar-hover: #2b2b40;
+  --at-border-radius: 12px;
+  --at-input-radius: 8px;
+  --at-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  --at-transition: all 0.3s ease;
+}
+
+.admin-transaction-page {
+  background-color: var(--at-bg-color);
+  color: var(--at-text-dark);
+  display: flex;
+  min-height: 100vh;
+}
+
+.admin-transaction-sidebar {
+  width: 260px;
+  background-color: var(--at-sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.admin-transaction-brand {
+  padding: 24px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-transaction-brand-icon {
+  background: var(--at-primary-color);
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.admin-transaction-nav-menu {
+  list-style: none;
+  padding: 20px 0;
+  flex-grow: 1;
+}
+
+.admin-transaction-nav-link {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  padding: 14px 24px;
+  color: var(--at-sidebar-text);
+  text-decoration: none;
+  font-weight: 500;
+  transition: var(--at-transition);
+  border: 0;
+  border-left: 4px solid transparent;
+  margin-bottom: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.admin-transaction-nav-link:hover {
+  background-color: var(--at-sidebar-hover);
+  color: #fff;
+}
+
+.admin-transaction-nav-link.active {
+  background-color: var(--at-sidebar-hover);
+  color: var(--at-primary-color);
+  border-left-color: var(--at-primary-color);
+}
+
+.admin-transaction-logout-btn {
+  padding: 20px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: #f1416c;
+  font-weight: 500;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--at-transition);
+}
+
+.admin-transaction-logout-btn:hover {
+  background-color: rgba(241, 65, 108, 0.1);
+}
+
+.admin-transaction-main-content {
+  flex: 1;
+  padding: 30px 40px;
+  overflow-y: auto;
+}
+
+.admin-transaction-page-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 25px;
+}
+
+.admin-transaction-card {
+  background-color: var(--at-card-bg);
+  border-radius: var(--at-border-radius);
+  box-shadow: var(--at-shadow);
+  padding: 30px;
+  min-height: 600px;
+}
+
+.admin-transaction-tab-labels {
+  display: flex;
+  border-bottom: 2px solid var(--at-border-color);
+  margin-bottom: 30px;
+}
+
+.admin-transaction-tab-label {
+  padding: 12px 30px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--at-text-gray);
+  cursor: pointer;
+  transition: var(--at-transition);
+  position: relative;
+  border: 0;
+  background: transparent;
+}
+
+.admin-transaction-tab-label:hover,
+.admin-transaction-tab-label.active {
+  color: var(--at-primary-color);
+}
+
+.admin-transaction-tab-label::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: transparent;
+  transition: var(--at-transition);
+}
+
+.admin-transaction-tab-label.active::after {
+  background-color: var(--at-primary-color);
+}
+
+.admin-transaction-tab-panel {
+  animation: admin-transaction-fade-in 0.4s ease;
+}
+
+@keyframes admin-transaction-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.admin-transaction-table-container {
+  overflow-x: auto;
+}
+
+.admin-transaction-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.admin-transaction-data-table th {
+  background-color: #f1f3f4;
+  color: var(--at-text-dark);
+  font-weight: 700;
+  padding: 15px 20px;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.admin-transaction-data-table td {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--at-border-color);
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.admin-transaction-data-table tbody tr:hover td {
+  background-color: #fcfcfc;
+}
+
+.admin-transaction-cell-strong {
+  font-weight: 700;
+}
+
+.admin-transaction-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.admin-transaction-badge-success {
+  background-color: #e6f4ea;
+  color: var(--at-secondary-color);
+}
+
+.admin-transaction-badge-pending {
+  background-color: #fef7e0;
+  color: var(--at-warning-color);
+}
+
+.admin-transaction-gateway {
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  border: 1px solid currentColor;
+}
+
+.admin-transaction-gateway-momo {
+  color: #a50064;
+}
+
+.admin-transaction-gateway-vnpay {
+  color: #005baa;
+}
+
+.admin-transaction-payout-note {
+  color: var(--at-text-gray);
+  font-size: 14px;
+  margin-bottom: 25px;
+}
+
+.admin-transaction-payout-item {
+  border: 1px solid var(--at-border-color);
+  border-radius: var(--at-border-radius);
+  padding: 20px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.admin-transaction-payout-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.admin-transaction-payout-info h4 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.admin-transaction-payout-info p {
+  font-size: 13px;
+  color: var(--at-text-gray);
+}
+
+.admin-transaction-submitted-date {
+  margin-top: 5px;
+}
+
+.admin-transaction-payout-amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--at-primary-color);
+}
+
+.admin-transaction-approval-actions {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+}
+
+.admin-transaction-reason-input {
+  flex: 1;
+  padding: 10px 15px;
+  border: 1px solid var(--at-border-color);
+  border-radius: var(--at-input-radius);
+  outline: none;
+  font-size: 13px;
+}
+
+.admin-transaction-reason-input:focus {
+  border-color: var(--at-danger-color);
+}
+
+.admin-transaction-btn {
+  padding: 10px 20px;
+  border-radius: var(--at-input-radius);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 0;
+  transition: var(--at-transition);
+  white-space: nowrap;
+}
+
+.admin-transaction-btn-success {
+  background-color: var(--at-secondary-color);
+  color: #fff;
+}
+
+.admin-transaction-btn-success:hover {
+  background-color: #2b8a44;
+  transform: translateY(-1px);
+}
+
+.admin-transaction-btn-outline-danger {
+  background-color: transparent;
+  border: 1px solid var(--at-danger-color);
+  color: var(--at-danger-color);
+}
+
+.admin-transaction-btn-outline-danger:hover {
+  background-color: var(--at-danger-color);
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .admin-transaction-sidebar {
+    width: 70px;
+  }
+
+  .admin-transaction-brand {
+    font-size: 0;
+  }
+
+  .admin-transaction-brand::before {
+    content: 'ADM';
+    font-size: 12px;
+    color: #fff;
+  }
+
+  .admin-transaction-nav-link {
+    justify-content: center;
+    padding: 12px 8px;
+    font-size: 0;
+  }
+
+  .admin-transaction-nav-link::before {
+    content: '•';
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .admin-transaction-payout-header,
+  .admin-transaction-approval-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 15px;
+  }
+
+  .admin-transaction-main-content {
+    padding: 20px;
+  }
+}
