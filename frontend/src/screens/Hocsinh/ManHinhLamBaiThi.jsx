@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './ManHinhLamBaiThi.css';
 
 const TOTAL_QUESTIONS = 40;
@@ -39,9 +40,11 @@ function formatTime(totalSeconds) {
 }
 
 function ManHinhLamBaiThi() {
+  const navigate = useNavigate();
   const [currentQuestion, setCurrentQuestion] = useState(12);
   const [timeLeft, setTimeLeft] = useState(44 * 60 + 59);
   const [answers, setAnswers] = useState(initialAnswers);
+  const [submitMessage, setSubmitMessage] = useState('');
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -61,6 +64,15 @@ function ManHinhLamBaiThi() {
   };
 
   const currentAnswer = answers[currentQuestion] || '';
+
+  const handleSubmitExam = () => {
+    const answered = Object.keys(answers).length;
+    setSubmitMessage(`Đã nộp bài tạm thời: ${answered}/${TOTAL_QUESTIONS} câu đã trả lời.`);
+
+    window.setTimeout(() => {
+      navigate('/dashboard');
+    }, 1200);
+  };
 
   return (
     <div className='exam-page'>
@@ -154,10 +166,11 @@ function ManHinhLamBaiThi() {
           </button>
         </div>
 
-        <button type='button' className='exam-btn exam-btn-submit'>
+        <button type='button' className='exam-btn exam-btn-submit' onClick={handleSubmitExam}>
           Nộp bài ngay
         </button>
       </footer>
+      {submitMessage ? <div className='exam-submit-message'>{submitMessage}</div> : null}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchCoursesApi } from '../../api/courseApi';
 import { getCourseImageDataUrl } from '../../utils/courseImage';
+import { getCourseDurationLabel } from '../../utils/courseDurationLabel';
 
 const categories = [
   {
@@ -132,6 +133,7 @@ function TrangchuWeb() {
                   className='home-course-thumb'
                 />
                 <div className='home-course-info'>
+                  <span className='home-course-duration'>{getCourseDurationLabel(course)}</span>
                   <h3 className='home-course-title'>{course.title}</h3>
                   <p className='home-course-instructor'>Giảng viên: {course.instructor?.name || 'Đang cập nhật'}</p>
                   <div className='home-course-meta'>

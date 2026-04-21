@@ -1,14 +1,22 @@
 ﻿import './chitietkhoahoc.css';
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { fetchCourseDetailApi } from '../../api/courseApi';
+import { fetchMyEnrollmentsApi } from '../../api/enrollmentApi';
+import { getCurrentUserSafely } from '../../utils/authRedirect';
+import { isAccessTokenValid } from '../../utils/authSession';
 import { getCourseImageDataUrl } from '../../utils/courseImage';
 
 const formatPrice = (price) => `${Number(price || 0).toLocaleString('vi-VN')}đ`;
 
 function ChiTietKhoaHoc() {
+  const navigate = useNavigate();
   const { id } = useParams();
+  const currentUser = getCurrentUserSafely();
+  const token = sessionStorage.getItem('accessToken');
+  const isStudentAuthenticated = currentUser?.role === 'student' && isAccessTokenValid(token);
   const [courseDetail, setCourseDetail] = useState(null);
+  const [isEnrolled, setIsEnrolled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -18,8 +26,16 @@ function ChiTietKhoaHoc() {
       setErrorMessage('');
 
       try {
-        const data = await fetchCourseDetailApi(id);
+        const [data, enrollmentData] = await Promise.all([
+          fetchCourseDetailApi(id),
+          isStudentAuthenticated ? fetchMyEnrollmentsApi().catch(() => []) : Promise.resolve([]),
+        ]);
+
         setCourseDetail(data);
+
+        const enrollments = Array.isArray(enrollmentData) ? enrollmentData : [];
+        const enrolled = enrollments.some((item) => Number(item.courseId) === Number(id));
+        setIsEnrolled(enrolled);
       } catch (error) {
         setErrorMessage(error?.response?.data?.message || 'Không tải được chi tiết khóa học.');
       } finally {
@@ -28,7 +44,7 @@ function ChiTietKhoaHoc() {
     };
 
     loadCourseDetail();
-  }, [id]);
+  }, [id, isStudentAuthenticated]);
 
   const syllabus = useMemo(() => {
     const lessons = Array.isArray(courseDetail?.lessons) ? [...courseDetail.lessons] : [];
@@ -48,6 +64,31 @@ function ChiTietKhoaHoc() {
       },
     ];
   }, [courseDetail]);
+
+  const firstLessonId = useMemo(() => {
+    const lessons = Array.isArray(courseDetail?.lessons) ? [...courseDetail.lessons] : [];
+    lessons.sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0));
+    return lessons.length > 0 ? lessons[0].id : null;
+  }, [courseDetail]);
+
+  const handlePrimaryAction = () => {
+    if (isEnrolled) {
+      if (firstLessonId) {
+        navigate(`/learn?courseId=${id}&lessonId=${firstLessonId}`);
+        return;
+      }
+
+      navigate(`/learn?courseId=${id}`);
+      return;
+    }
+
+    if (isStudentAuthenticated) {
+      navigate(`/enroll/${id}`);
+      return;
+    }
+
+    navigate(`/login?redirect=${encodeURIComponent(`/enroll/${id}`)}`);
+  };
 
   if (isLoading) {
     return <div className='course-detail-page course-detail-message'>Đang tải chi tiết khóa học...</div>;
@@ -121,11 +162,19 @@ function ChiTietKhoaHoc() {
         <aside className='course-detail-sidebar'>
           <p className='course-detail-price'>{formatPrice(courseDetail.price)}</p>
 
-          <button type='button' className='course-detail-btn course-detail-btn-primary'>
-            Đăng ký ngay
+          <button
+            type='button'
+            className='course-detail-btn course-detail-btn-primary'
+            onClick={handlePrimaryAction}
+          >
+            {isEnrolled ? 'Vào học ngay' : 'Đăng ký ngay'}
           </button>
-          <button type='button' className='course-detail-btn course-detail-btn-secondary'>
-            Thêm vào giỏ hàng
+          <button
+            type='button'
+            className='course-detail-btn course-detail-btn-secondary'
+            onClick={() => navigate(`/enroll/${courseDetail.id}`)}
+          >
+            {isEnrolled ? 'Quản lý đăng ký' : 'Xem màn hình đăng ký'}
           </button>
 
           <ul className='course-detail-features'>

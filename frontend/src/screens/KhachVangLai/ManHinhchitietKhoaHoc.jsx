@@ -149,7 +149,7 @@ function ManHinhchitietKhoaHoc() {
                 <span className='guest-original-price'>{originalPrice.toLocaleString('vi-VN')}đ</span>
               </div>
 
-              <Link to='/register' className='guest-btn-register'>
+              <Link to={`/login?redirect=${encodeURIComponent(`/enroll/${id}`)}`} className='guest-btn-register'>
                 Đăng ký ngay
               </Link>
 

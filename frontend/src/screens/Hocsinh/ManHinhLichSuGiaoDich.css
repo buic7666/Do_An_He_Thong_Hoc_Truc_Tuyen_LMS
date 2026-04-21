@@ -91,7 +91,28 @@
 .history-page-title {
   font-size: 24px;
   font-weight: 700;
-  margin-bottom: 25px;
+  margin-bottom: 12px;
+}
+
+.history-btn-buy {
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--history-primary-color);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--history-primary-color);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.history-btn-buy:hover {
+  background-color: var(--history-primary-color);
+  color: #ffffff;
+}
+
+.history-notice {
+  margin-bottom: 14px;
+  color: var(--history-text-gray);
 }
 
 .history-tabs-container {
@@ -273,10 +294,12 @@
   gap: 8px;
   border: 1px solid var(--history-primary-color);
   border-radius: 8px;
+  background: transparent;
   color: var(--history-primary-color);
   text-decoration: none;
   font-size: 14px;
   font-weight: 600;
+  cursor: pointer;
   transition: var(--history-transition);
 }
 

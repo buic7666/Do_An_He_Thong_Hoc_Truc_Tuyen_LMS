@@ -15,6 +15,7 @@ import ManHinhLamBaiThi from './screens/Hocsinh/ManHinhLamBaiThi';
 import ManHinhLichSuGiaoDich from './screens/Hocsinh/ManHinhLichSuGiaoDich';
 import ManHinhThanhToan from './screens/Hocsinh/ManHinhThanhToan';
 import ManHinhTrangThaiGiaoDich from './screens/Hocsinh/ManHinhTrangThaiGiaoDich';
+import ManHinhDangKyKhoaHoc from './screens/Hocsinh/ManHinhDangKyKhoaHoc';
 import ManHinhChinhGiaoVien from './screens/GiangVien/ManHinhChinhGiaoVien';
 import ManHinhQuanLyKhoaHoc from './screens/GiangVien/ManHinhQuanLyKhoaHoc';
 import ManHinhQuanLyNganHangCauhoi from './screens/GiangVien/ManHinhQuanLyNganHangCauhoi';
@@ -144,6 +145,14 @@ function App() {
         element={
           <ProtectedRoute allowedRoles={['student']}>
             <ManHinhThanhToan />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/enroll/:courseId'
+        element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <ManHinhDangKyKhoaHoc />
           </ProtectedRoute>
         }
       />

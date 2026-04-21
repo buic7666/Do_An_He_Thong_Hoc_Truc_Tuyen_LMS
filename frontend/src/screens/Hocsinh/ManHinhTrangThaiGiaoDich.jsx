@@ -1,6 +1,33 @@
 ﻿import './ManHinhTrangThaiGiaoDich.css';
+import { useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 function ManHinhTrangThaiGiaoDich() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const transactionInfo = useMemo(() => {
+    const amount = Number(searchParams.get('amount') || 0);
+    const rawMethod = searchParams.get('method') || 'Thanh toán trực tuyến';
+    const transactionId = searchParams.get('transactionId') || 'TRX-DEMO';
+    const courseId = searchParams.get('courseId') || '1';
+    const paidAt = new Date().toLocaleString('vi-VN');
+
+    return {
+      transactionId,
+      amount,
+      method: rawMethod,
+      courseId,
+      paidAt,
+    };
+  }, [searchParams]);
+
+  const formatCurrency = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
+
+  const handleStartLearning = () => {
+    navigate(`/learn?courseId=${transactionInfo.courseId}`);
+  };
+
   return (
     <div className='transaction-success-page'>
       <div className='transaction-success-card'>
@@ -26,26 +53,26 @@ function ManHinhTrangThaiGiaoDich() {
         <div className='transaction-info-box'>
           <div className='transaction-info-row'>
             <span className='transaction-info-label'>Mã giao dịch:</span>
-            <span className='transaction-info-value'>#TRX-889241A</span>
+            <span className='transaction-info-value'>#{transactionInfo.transactionId}</span>
           </div>
 
           <div className='transaction-info-row'>
             <span className='transaction-info-label'>Ngày thanh toán:</span>
-            <span className='transaction-info-value'>22/03/2026 12:15</span>
+            <span className='transaction-info-value'>{transactionInfo.paidAt}</span>
           </div>
 
           <div className='transaction-info-row'>
             <span className='transaction-info-label'>Phương thức:</span>
-            <span className='transaction-info-value'>Ví MoMo</span>
+            <span className='transaction-info-value'>{transactionInfo.method}</span>
           </div>
 
           <div className='transaction-info-row'>
             <span className='transaction-info-label'>Tổng tiền:</span>
-            <span className='transaction-info-value is-amount'>479.200đ</span>
+            <span className='transaction-info-value is-amount'>{formatCurrency(transactionInfo.amount)}</span>
           </div>
         </div>
 
-        <button type='button' className='transaction-btn-primary'>
+        <button type='button' className='transaction-btn-primary' onClick={handleStartLearning}>
           Bắt đầu học ngay
         </button>
       </div>

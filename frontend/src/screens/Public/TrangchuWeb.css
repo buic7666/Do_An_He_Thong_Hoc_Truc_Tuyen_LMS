@@ -254,6 +254,17 @@
   flex-direction: column;
 }
 
+.home-course-duration {
+  align-self: flex-start;
+  margin-bottom: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(0, 123, 255, 0.1);
+  color: var(--home-primary-color);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .home-course-title {
   margin-bottom: 10px;
   font-size: 18px;

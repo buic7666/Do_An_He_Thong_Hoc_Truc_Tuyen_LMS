@@ -1,4 +1,5 @@
 ﻿import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './ManHinhThanhToan.css';
 
 const paymentOptions = [
@@ -40,9 +41,11 @@ function formatCurrency(value) {
 }
 
 function ManHinhThanhToan() {
+  const navigate = useNavigate();
   const [selectedMethod, setSelectedMethod] = useState('card');
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState(DISCOUNT_CODE);
+  const [notice, setNotice] = useState('');
 
   const discountAmount = useMemo(() => {
     if (appliedCoupon !== DISCOUNT_CODE) {
@@ -60,6 +63,14 @@ function ManHinhThanhToan() {
       return;
     }
     setAppliedCoupon(normalized);
+    setNotice(normalized === DISCOUNT_CODE ? 'Áp dụng mã giảm giá thành công.' : 'Mã đã được cập nhật.');
+  };
+
+  const handleCheckout = () => {
+    const methodLabel = paymentOptions.find((item) => item.id === selectedMethod)?.label || selectedMethod;
+    navigate(
+      `/payment-status?transactionId=TRX-${Date.now()}&amount=${totalPrice}&method=${encodeURIComponent(methodLabel)}&courseId=1`,
+    );
   };
 
   return (
@@ -99,6 +110,7 @@ function ManHinhThanhToan() {
               Áp dụng
             </button>
           </div>
+          {notice ? <p className='checkout-notice'>{notice}</p> : null}
         </section>
 
         <aside className='checkout-right'>
@@ -127,7 +139,7 @@ function ManHinhThanhToan() {
             <span className='checkout-total-price'>{formatCurrency(totalPrice)}</span>
           </div>
 
-          <button type='button' className='checkout-btn-checkout'>
+          <button type='button' className='checkout-btn-checkout' onClick={handleCheckout}>
             🔒 Thanh toán ngay
           </button>
 

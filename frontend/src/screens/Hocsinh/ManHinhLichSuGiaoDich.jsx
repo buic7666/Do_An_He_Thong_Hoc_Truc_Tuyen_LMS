@@ -46,10 +46,32 @@ const certificates = [
 function ManHinhLichSuGiaoDich() {
   const [activeTab, setActiveTab] = useState('history');
   const navigate = useNavigate();
+  const [notice, setNotice] = useState('');
 
   const handleLogout = (event) => {
     event.preventDefault();
     logout({ navigate });
+  };
+
+  const downloadCertificate = (certificate) => {
+    const content = [
+      'LMS Platform - Certificate',
+      `Title: ${certificate.title}`,
+      `Issued Date: ${certificate.issuedDate}`,
+      'Status: Completed',
+    ].join('\n');
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `certificate-${certificate.id}.txt`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(url);
+
+    setNotice('Đã tải chứng chỉ mẫu về máy.');
   };
 
   return (
@@ -61,6 +83,11 @@ function ManHinhLichSuGiaoDich() {
           <li>
             <Link to='/dashboard' className='history-nav-link'>
               <span>📚 Khóa học của tôi</span>
+            </Link>
+          </li>
+          <li>
+            <Link to='/courses' className='history-nav-link'>
+              <span>➕ Đăng ký khóa học</span>
             </Link>
           </li>
           <li>
@@ -82,6 +109,10 @@ function ManHinhLichSuGiaoDich() {
 
       <main className='history-main-content'>
         <h1 className='history-page-title'>Quản lý giao dịch & Chứng chỉ</h1>
+        <button type='button' className='history-btn-buy' onClick={() => navigate('/courses')}>
+          + Mua thêm khóa học
+        </button>
+        {notice ? <p className='history-notice'>{notice}</p> : null}
 
         <div className='history-tabs-container'>
           <div className='history-tab-labels'>
@@ -145,13 +176,13 @@ function ManHinhLichSuGiaoDich() {
                       <div className='history-cert-icon'>🏆</div>
                       <h3 className='history-cert-title'>{certificate.title}</h3>
                       <p className='history-cert-date'>Cấp ngày: {certificate.issuedDate}</p>
-                      <a
-                        href='/transactions'
+                      <button
+                        type='button'
                         className='history-btn-download'
-                        onClick={(event) => event.preventDefault()}
+                        onClick={() => downloadCertificate(certificate)}
                       >
                         📄 Tải xuống PDF
-                      </a>
+                      </button>
                     </article>
                   ))}
                 </div>

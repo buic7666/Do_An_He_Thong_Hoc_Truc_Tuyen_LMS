@@ -7,6 +7,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "seed:teacher-dashboard": "node src/scripts/seedTeacherDashboard.js",
+    "seed:video-course": "node src/scripts/seedMultiVideoCourse.js",
     "test": "jest --runInBand",
     "test:unit": "jest --runInBand tests/unit",
     "test:integration": "jest --runInBand tests/integration",

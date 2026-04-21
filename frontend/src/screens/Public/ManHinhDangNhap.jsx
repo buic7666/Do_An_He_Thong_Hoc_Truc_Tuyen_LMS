@@ -1,11 +1,12 @@
 ﻿import './ManHinhDangNhap.css';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { loginApi } from '../../api/authApi';
 import { getRoleHomePath } from '../../utils/authRedirect';
 
 function ManHinhDangNhap() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -25,7 +26,11 @@ function ManHinhDangNhap() {
       }
 
       sessionStorage.setItem('currentUser', JSON.stringify(user));
-      navigate(getRoleHomePath(user?.role));
+
+      const redirectPath = searchParams.get('redirect');
+      const isSafeRedirect = redirectPath && redirectPath.startsWith('/');
+
+      navigate(isSafeRedirect ? redirectPath : getRoleHomePath(user?.role));
     } catch (error) {
       setErrorMessage(error?.response?.data?.message || 'Đăng nhập thất bại. Vui lòng thử lại.');
     } finally {
