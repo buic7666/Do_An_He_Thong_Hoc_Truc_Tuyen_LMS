@@ -8,6 +8,10 @@ const ContactMessage = require('./contactMessage.model');
 const TeacherProfile = require('./teacherProfile.model');
 const TeacherQuestion = require('./teacherQuestion.model');
 const TeacherInteraction = require('./teacherInteraction.model');
+const Question = require('./question.model');
+const Quiz = require('./quiz.model');
+const QuizQuestion = require('./quizQuestion.model');
+const StudentQuizAttempt = require('./studentQuizAttempt.model');
 
 Course.belongsTo(User, {
   as: 'instructor',
@@ -133,6 +137,81 @@ TeacherInteraction.belongsTo(User, {
   foreignKey: 'teacherId',
 });
 
+// ===== Question & Quiz Relationships =====
+User.hasMany(Question, {
+  as: 'createdQuestions',
+  foreignKey: 'createdBy',
+});
+
+Question.belongsTo(User, {
+  as: 'creator',
+  foreignKey: 'createdBy',
+});
+
+Course.hasMany(Quiz, {
+  as: 'quizzes',
+  foreignKey: 'courseId',
+});
+
+Quiz.belongsTo(Course, {
+  as: 'course',
+  foreignKey: 'courseId',
+});
+
+Lesson.hasMany(Quiz, {
+  as: 'quizzes',
+  foreignKey: 'lessonId',
+});
+
+Quiz.belongsTo(Lesson, {
+  as: 'lesson',
+  foreignKey: 'lessonId',
+});
+
+User.hasMany(Quiz, {
+  as: 'createdQuizzes',
+  foreignKey: 'createdBy',
+});
+
+Quiz.belongsTo(User, {
+  as: 'creator',
+  foreignKey: 'createdBy',
+});
+
+Quiz.belongsToMany(Question, {
+  through: QuizQuestion,
+  as: 'questions',
+  foreignKey: 'quizId',
+  otherKey: 'questionId',
+});
+
+Question.belongsToMany(Quiz, {
+  through: QuizQuestion,
+  as: 'quizzes',
+  foreignKey: 'questionId',
+  otherKey: 'quizId',
+});
+
+User.hasMany(StudentQuizAttempt, {
+  as: 'quizAttempts',
+  foreignKey: 'studentId',
+});
+
+StudentQuizAttempt.belongsTo(User, {
+  as: 'student',
+  foreignKey: 'studentId',
+});
+
+Quiz.hasMany(StudentQuizAttempt, {
+  as: 'studentAttempts',
+  foreignKey: 'quizId',
+});
+
+StudentQuizAttempt.belongsTo(Quiz, {
+  as: 'quiz',
+  foreignKey: 'quizId',
+});
+
 module.exports = {
   User,
   Course,
@@ -144,4 +223,8 @@ module.exports = {
   TeacherProfile,
   TeacherQuestion,
   TeacherInteraction,
+  Question,
+  Quiz,
+  QuizQuestion,
+  StudentQuizAttempt,
 };

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useGoogleLogin } from '@react-oauth/google';
+import httpClient from '../../api/httpClient';
 import { fetchCourseDetailApi, fetchCourseProgressApi } from '../../api/courseApi';
 import { fetchMyEnrollmentsApi } from '../../api/enrollmentApi';
 import {
@@ -7,10 +9,14 @@ import {
   markLessonCompletedApi,
   saveLessonWatchPositionApi,
 } from '../../api/lessonApi';
+import QuizList from '../../components/QuizList';
+import QuizTaker from '../../components/QuizTaker';
 import './ManHinhHocTap.css';
 
 const tabs = [
   { id: 'overview', label: 'Tổng quan bài học' },
+  { id: 'lesson-questions', label: 'Câu hỏi bài học' },
+  { id: 'chapter-quiz', label: 'Bài kiểm tra chương' },
   { id: 'documents', label: 'Tài liệu PDF' },
   { id: 'notes', label: 'Ghi chú cá nhân' },
 ];
@@ -62,6 +68,7 @@ const getYouTubeVideoId = (rawUrl) => {
 };
 
 function ManHinhHocTap() {
+  const GOOGLE_YOUTUBE_TOKEN_KEY = 'googleYoutubeAccessToken';
   const [activeTab, setActiveTab] = useState('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -74,6 +81,15 @@ function ManHinhHocTap() {
   const [iframeResumeNonce, setIframeResumeNonce] = useState(0);
   const [positionSaveMessage, setPositionSaveMessage] = useState('');
   const [courseProgress, setCourseProgress] = useState(null);
+  const [selectedQuizId, setSelectedQuizId] = useState(null);
+  const [selectedQuizScope, setSelectedQuizScope] = useState(null);
+  const [youtubeAccessToken, setYoutubeAccessToken] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return sessionStorage.getItem(GOOGLE_YOUTUBE_TOKEN_KEY) || '';
+  });
+  const [isSubscribingChannel, setIsSubscribingChannel] = useState(false);
+  const [youtubeSubscribeMessage, setYoutubeSubscribeMessage] = useState('');
+  const [isVideoUnlocked, setIsVideoUnlocked] = useState(false);
 
   const initialQueryRef = useRef(null);
   const lessonSessionStartAtRef = useRef(null);
@@ -339,6 +355,10 @@ function ManHinhHocTap() {
 
       const parsedLessonId = Number(lessonId);
       setCurrentLessonId(parsedLessonId);
+      setSelectedQuizId(null);
+      setSelectedQuizScope(null);
+      setIsVideoUnlocked(false);
+      setYoutubeSubscribeMessage('');
       await loadLessonData(parsedLessonId);
       syncUrlParams(selectedCourseId || courseDetail?.id, parsedLessonId);
     } catch (error) {
@@ -381,6 +401,164 @@ function ManHinhHocTap() {
     window.open(`https://www.youtube.com/watch?v=${currentVideoId}`, '_blank', 'noopener,noreferrer');
   };
 
+  const subscribeCurrentVideoChannel = useCallback(
+    async (token) => {
+      if (!currentVideoId) {
+        setYoutubeSubscribeMessage('Không tìm thấy video_id hợp lệ để xác định kênh gốc.');
+        return;
+      }
+
+      setIsSubscribingChannel(true);
+      setYoutubeSubscribeMessage('Đang đăng ký kênh gốc của video...');
+
+      try {
+        const response = await httpClient.post('/youtube/subscribe', {
+          access_token: token,
+          video_id: currentVideoId,
+        });
+
+        const successMessage = response?.data?.message || 'Đăng ký kênh gốc thành công.';
+        setIsVideoUnlocked(true);
+        setYoutubeSubscribeMessage(`✅ ${successMessage}`);
+      } catch (error) {
+        const status = Number(error?.response?.status || 0);
+        const message = error?.response?.data?.message || 'Không thể đăng ký kênh gốc từ video này.';
+
+        if (status === 409) {
+          setIsVideoUnlocked(true);
+          setYoutubeSubscribeMessage('✅ Bạn đã đăng ký kênh gốc của video này từ trước.');
+        } else if (status === 401) {
+          setIsVideoUnlocked(false);
+          setYoutubeSubscribeMessage('⚠️ Token Google hết hạn. Vui lòng đăng nhập lại để đăng ký.');
+          setYoutubeAccessToken('');
+          if (typeof window !== 'undefined') {
+            sessionStorage.removeItem(GOOGLE_YOUTUBE_TOKEN_KEY);
+          }
+        } else {
+          setIsVideoUnlocked(false);
+          setYoutubeSubscribeMessage(`⚠️ ${message}`);
+        }
+      } finally {
+        setIsSubscribingChannel(false);
+      }
+    },
+    [currentVideoId],
+  );
+
+  const verifyCurrentVideoSubscription = useCallback(
+    async (token, { silent = false } = {}) => {
+      if (!token || !currentVideoId) {
+        setIsVideoUnlocked(false);
+        return false;
+      }
+
+      try {
+        const response = await httpClient.post('/youtube/check-subscription', {
+          access_token: token,
+          video_id: currentVideoId,
+        });
+
+        const subscribed = Boolean(response?.data?.isSubscribed);
+        setIsVideoUnlocked(subscribed);
+
+        if (!silent) {
+          setYoutubeSubscribeMessage(
+            subscribed
+              ? '✅ Bạn đã đăng ký kênh gốc của video này, có thể xem luôn.'
+              : '⚠️ Bạn chưa đăng ký kênh gốc của video này.',
+          );
+        }
+
+        return subscribed;
+      } catch (error) {
+        const status = Number(error?.response?.status || 0);
+        setIsVideoUnlocked(false);
+
+        if (status === 401) {
+          setYoutubeAccessToken('');
+          if (typeof window !== 'undefined') {
+            sessionStorage.removeItem(GOOGLE_YOUTUBE_TOKEN_KEY);
+          }
+          if (!silent) {
+            setYoutubeSubscribeMessage('⚠️ Phiên đăng nhập Google đã hết hạn, vui lòng đăng nhập lại.');
+          }
+        } else if (!silent) {
+          setYoutubeSubscribeMessage(
+            error?.response?.data?.message || 'Không kiểm tra được trạng thái đăng ký kênh.',
+          );
+        }
+
+        return false;
+      }
+    },
+    [currentVideoId],
+  );
+
+  const loginAndSubscribe = useGoogleLogin({
+    scope: ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/youtube.force-ssl'].join(' '),
+    prompt: 'consent',
+    onSuccess: async (tokenResponse) => {
+      const token = tokenResponse?.access_token || '';
+      if (!token) {
+        setYoutubeSubscribeMessage('Không lấy được access token Google.');
+        return;
+      }
+
+      setYoutubeAccessToken(token);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(GOOGLE_YOUTUBE_TOKEN_KEY, token);
+      }
+      await subscribeCurrentVideoChannel(token);
+    },
+    onError: () => {
+      setYoutubeSubscribeMessage('Đăng nhập Google thất bại. Vui lòng thử lại.');
+    },
+  });
+
+  const handleAutoSubscribeChannel = async () => {
+    if (youtubeAccessToken) {
+      const isSubscribed = await verifyCurrentVideoSubscription(youtubeAccessToken, { silent: true });
+      if (isSubscribed) {
+        setYoutubeSubscribeMessage('✅ Bạn đã đăng ký trước đó, mở video luôn.');
+        return;
+      }
+
+      await subscribeCurrentVideoChannel(youtubeAccessToken);
+      return;
+    }
+
+    loginAndSubscribe();
+  };
+
+  useEffect(() => {
+    if (!currentVideoId) {
+      setIsVideoUnlocked(false);
+      return;
+    }
+
+    if (!youtubeAccessToken) {
+      setIsVideoUnlocked(false);
+      return;
+    }
+
+    verifyCurrentVideoSubscription(youtubeAccessToken, { silent: true });
+  }, [currentVideoId, youtubeAccessToken, verifyCurrentVideoSubscription]);
+
+  const handleSelectQuiz = (quizId, scopeType) => {
+    setSelectedQuizId(Number(quizId));
+    setSelectedQuizScope(scopeType || null);
+  };
+
+  const handleBackFromQuiz = () => {
+    setSelectedQuizId(null);
+    setSelectedQuizScope(null);
+  };
+
+  const handleQuizSubmitted = () => {
+    setSelectedQuizId(null);
+    setSelectedQuizScope(null);
+  };
+
   if (isLoading) {
     return <div className='study-workspace-page study-loading-state'>Đang tải dữ liệu học tập...</div>;
   }
@@ -411,14 +589,29 @@ function ManHinhHocTap() {
 
           <div className='study-video-wrapper'>
             {currentEmbedUrl ? (
-              <iframe
-                key={`iframe-${currentLessonId}-${iframeStartSeconds}-${iframeResumeNonce}`}
-                className='study-youtube-player'
-                src={currentEmbedUrl}
-                title={currentLesson?.title || 'Lesson video'}
-                allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
-                allowFullScreen
-              />
+              isVideoUnlocked ? (
+                <iframe
+                  key={`iframe-${currentLessonId}-${iframeStartSeconds}-${iframeResumeNonce}`}
+                  className='study-youtube-player'
+                  src={currentEmbedUrl}
+                  title={currentLesson?.title || 'Lesson video'}
+                  allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+                  allowFullScreen
+                />
+              ) : (
+                <div className='study-player-error-overlay'>
+                  <p>Video này yêu cầu đăng ký kênh YouTube gốc trước khi xem.</p>
+                  <button
+                    type='button'
+                    className='study-btn-resume'
+                    onClick={handleAutoSubscribeChannel}
+                    disabled={isSubscribingChannel || !currentVideoId}
+                  >
+                    {isSubscribingChannel ? 'Đang xử lý đăng ký...' : 'Xem video (đăng nhập Google & tự động đăng ký kênh)'}
+                  </button>
+                  {youtubeSubscribeMessage ? <p className='study-position-message'>{youtubeSubscribeMessage}</p> : null}
+                </div>
+              )
             ) : (
               <div className='study-player-error-overlay'>
                 <p>Video hiện tại chưa phải YouTube URL hợp lệ.</p>
@@ -436,7 +629,11 @@ function ManHinhHocTap() {
                   key={tab.id}
                   type='button'
                   className={`study-tab-btn ${activeTab === tab.id ? 'is-active' : ''}`}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setSelectedQuizId(null);
+                    setSelectedQuizScope(null);
+                  }}
                 >
                   {tab.label}
                 </button>
@@ -465,6 +662,41 @@ function ManHinhHocTap() {
                   <h2 className='study-lesson-title'>Tài liệu tham khảo</h2>
                   <p>Demo hiện tập trung vào luồng học video YouTube ổn định trong iframe.</p>
                   <p>Khi bạn có URL PDF thật, có thể hiển thị tại đây theo từng bài học.</p>
+                </div>
+              )}
+
+              {activeTab === 'lesson-questions' && (
+                <div className='study-tab-pane'>
+                  <h2 className='study-lesson-title'>Câu hỏi luyện tập sau bài học</h2>
+
+                  {selectedQuizId && selectedQuizScope === 'lesson' ? (
+                    <QuizTaker quizId={selectedQuizId} onBack={handleBackFromQuiz} onSubmit={handleQuizSubmitted} />
+                  ) : (
+                    <QuizList
+                      courseId={selectedCourseId || courseDetail?.id}
+                      lessonId={currentLessonId}
+                      scope='lesson'
+                      onSelectQuiz={(quizId) => handleSelectQuiz(quizId, 'lesson')}
+                      emptyMessage='Bài học này chưa có câu hỏi luyện tập.'
+                    />
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'chapter-quiz' && (
+                <div className='study-tab-pane'>
+                  <h2 className='study-lesson-title'>Bài kiểm tra tổng hợp chương</h2>
+
+                  {selectedQuizId && selectedQuizScope === 'chapter' ? (
+                    <QuizTaker quizId={selectedQuizId} onBack={handleBackFromQuiz} onSubmit={handleQuizSubmitted} />
+                  ) : (
+                    <QuizList
+                      courseId={selectedCourseId || courseDetail?.id}
+                      scope='chapter'
+                      onSelectQuiz={(quizId) => handleSelectQuiz(quizId, 'chapter')}
+                      emptyMessage='Chương này chưa có bài kiểm tra tổng hợp.'
+                    />
+                  )}
                 </div>
               )}
 

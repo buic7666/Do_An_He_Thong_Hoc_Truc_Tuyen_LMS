@@ -18,6 +18,21 @@
   line-height: 1.6;
 }
 
+.course-list-page.is-student {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.course-list-student-shell {
+  display: flex;
+  height: 100%;
+}
+
+.course-list-student-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
 .course-list-page a {
   text-decoration: none;
   color: inherit;

@@ -1,7 +1,6 @@
 ﻿import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { fetchTeacherProfileApi, updateTeacherProfileApi } from '../../api/teacherApi';
-import { logout } from '../../utils/authSession';
+import TeacherSidebar from '../../components/TeacherSidebar';
 
 import './HoSoGiangVien.css';
 
@@ -17,10 +16,6 @@ const initialForm = {
 };
 
 function HoSoGiangVien() {
-  const navigate = useNavigate();
-  const handleLogout = () => {
-    logout({ navigate });
-  };
   const [form, setForm] = useState(initialForm);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -73,54 +68,7 @@ function HoSoGiangVien() {
 
   return (
     <div className="instructor-profile-page">
-      <aside className="instructor-profile-sidebar">
-        <div className="instructor-profile-brand">
-          <div className="instructor-profile-brand-icon">L</div>
-          <span>LMS Admin</span>
-        </div>
-
-        <ul className="instructor-profile-nav-menu">
-          <li>
-            <button className="instructor-profile-nav-link" onClick={() => navigate('/teacher/dashboard')} type="button">
-              Tổng quan
-            </button>
-          </li>
-          <li>
-            <button className="instructor-profile-nav-link" onClick={() => navigate('/teacher/courses')} type="button">
-              Quản lý khóa học
-            </button>
-          </li>
-          <li>
-            <button className="instructor-profile-nav-link" onClick={() => navigate('/teacher/questions')} type="button">
-              Ngân hàng câu hỏi
-            </button>
-          </li>
-          <li>
-            <button className="instructor-profile-nav-link" onClick={() => navigate('/teacher/students')} type="button">
-              Quản lý học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-profile-nav-link" onClick={() => navigate('/teacher/interaction')} type="button">
-              Tương tác học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-profile-nav-link active" onClick={() => navigate('/teacher/profile')} type="button">
-              Hồ sơ giảng viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-profile-nav-link" onClick={() => navigate('/teacher/revenue')} type="button">
-              Doanh thu
-            </button>
-          </li>
-        </ul>
-
-              <button className="instructor-profile-logout-btn" type="button" onClick={handleLogout}>
-                Đăng xuất
-              </button>
-      </aside>
+      <TeacherSidebar />
 
       <main className="instructor-profile-main-content">
         <header className="instructor-profile-page-header">

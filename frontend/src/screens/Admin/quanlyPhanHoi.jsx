@@ -1,8 +1,7 @@
 ﻿import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import './quanlyPhanHoi.css';
-import { logout } from '../../utils/authSession';
+import AdminSidebar from '../../components/AdminSidebar';
 
 const ticketsSeed = [
   {
@@ -60,15 +59,8 @@ const ticketsSeed = [
 ];
 
 function QuanLyPhanHoi() {
-  const navigate = useNavigate();
   const [selectedTicketId, setSelectedTicketId] = useState(1024);
   const [reply, setReply] = useState('');
-
-  const handleLogout = () => {
-    logout({ navigate });
-  };
-
-  const goTo = (path) => () => navigate(path);
 
   const selectedTicket = useMemo(
     () => ticketsSeed.find((ticket) => ticket.id === selectedTicketId) ?? ticketsSeed[0],
@@ -97,37 +89,7 @@ function QuanLyPhanHoi() {
 
   return (
     <div className="admin-support-page">
-      <aside className="admin-support-sidebar">
-        <div className="admin-support-brand">
-          <div className="admin-support-brand-icon">A</div>
-          <span>Admin Control</span>
-        </div>
-        <ul className="admin-support-nav-menu">
-          <li>
-            <button className="admin-support-nav-link" type="button" onClick={goTo('/admin/dashboard')}>
-              Bảng điều khiển
-            </button>
-          </li>
-          <li>
-            <button className="admin-support-nav-link" type="button" onClick={goTo('/admin/users')}>
-              Quản lý người dùng
-            </button>
-          </li>
-          <li>
-            <button className="admin-support-nav-link" type="button" onClick={goTo('/admin/course-approval')}>
-              Phê duyệt khóa học
-            </button>
-          </li>
-          <li>
-            <button className="admin-support-nav-link" type="button" onClick={goTo('/admin/settings')}>
-              Cấu hình hệ thống
-            </button>
-          </li>
-        </ul>
-        <button className="admin-support-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <AdminSidebar />
 
       <main className="admin-support-main-content">
         <section className="admin-support-ticket-sidebar">

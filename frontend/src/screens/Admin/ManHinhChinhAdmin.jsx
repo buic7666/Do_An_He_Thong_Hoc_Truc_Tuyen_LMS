@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchAdminDashboardApi } from '../../api/adminApi';
-import { logout } from '../../utils/authSession';
+import AdminSidebar from '../../components/AdminSidebar';
 
 const formatCurrency = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
 
@@ -45,10 +45,6 @@ function ManHinhChinhAdmin() {
 
     loadDashboard();
   }, []);
-
-  const handleLogout = () => {
-    logout({ navigate });
-  };
 
   const goTo = (path) => () => navigate(path);
 
@@ -108,39 +104,7 @@ function ManHinhChinhAdmin() {
 
   return (
     <div className="admin-dashboard-page">
-      <aside className="admin-dashboard-sidebar">
-        <div className="admin-dashboard-brand">
-          <div className="admin-dashboard-brand-icon">A</div>
-          <span>Admin Control</span>
-        </div>
-
-        <ul className="admin-dashboard-nav-menu">
-          <li>
-            <button className="admin-dashboard-nav-link active" type="button" onClick={goTo('/admin/dashboard')}>
-              Bảng điều khiển
-            </button>
-          </li>
-          <li>
-            <button className="admin-dashboard-nav-link" type="button" onClick={goTo('/admin/users')}>
-              Quản lý người dùng
-            </button>
-          </li>
-          <li>
-            <button className="admin-dashboard-nav-link" type="button" onClick={goTo('/admin/course-approval')}>
-              Phê duyệt khóa học
-            </button>
-          </li>
-          <li>
-            <button className="admin-dashboard-nav-link" type="button" onClick={goTo('/admin/settings')}>
-              Cấu hình hệ thống
-            </button>
-          </li>
-        </ul>
-
-        <button className="admin-dashboard-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <AdminSidebar />
 
       <main className="admin-dashboard-main-content">
         <header className="admin-dashboard-top-header">

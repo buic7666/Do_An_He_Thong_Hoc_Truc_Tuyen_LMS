@@ -1,7 +1,7 @@
 ﻿import { useState } from 'react';
 import './ManHinhLichSuGiaoDich.css';
-import { Link, useNavigate } from 'react-router-dom';
-import { logout } from '../../utils/authSession';
+import { useNavigate } from 'react-router-dom';
+import StudentSidebar from '../../components/StudentSidebar';
 
 const transactions = [
   {
@@ -48,11 +48,6 @@ function ManHinhLichSuGiaoDich() {
   const navigate = useNavigate();
   const [notice, setNotice] = useState('');
 
-  const handleLogout = (event) => {
-    event.preventDefault();
-    logout({ navigate });
-  };
-
   const downloadCertificate = (certificate) => {
     const content = [
       'LMS Platform - Certificate',
@@ -76,36 +71,7 @@ function ManHinhLichSuGiaoDich() {
 
   return (
     <div className='history-page'>
-      <aside className='history-sidebar'>
-        <div className='history-brand'>LMS Platform</div>
-
-        <ul className='history-nav-menu'>
-          <li>
-            <Link to='/dashboard' className='history-nav-link'>
-              <span>📚 Khóa học của tôi</span>
-            </Link>
-          </li>
-          <li>
-            <Link to='/courses' className='history-nav-link'>
-              <span>➕ Đăng ký khóa học</span>
-            </Link>
-          </li>
-          <li>
-            <Link to='/profile' className='history-nav-link'>
-              <span>👤 Hồ sơ cá nhân</span>
-            </Link>
-          </li>
-          <li>
-            <Link to='/transactions' className='history-nav-link is-active'>
-              <span>💳 Lịch sử giao dịch</span>
-            </Link>
-          </li>
-        </ul>
-
-        <Link to='/login' className='history-logout-btn' onClick={handleLogout}>
-          <span>🚪 Đăng xuất</span>
-        </Link>
-      </aside>
+      <StudentSidebar />
 
       <main className='history-main-content'>
         <h1 className='history-page-title'>Quản lý giao dịch & Chứng chỉ</h1>

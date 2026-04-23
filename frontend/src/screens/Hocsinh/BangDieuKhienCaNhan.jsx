@@ -1,24 +1,19 @@
 ﻿import './BangDieuKhienCaNhan.css';
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { fetchCourseDetailApi, fetchCourseProgressApi } from '../../api/courseApi';
 import { fetchMyEnrollmentsApi } from '../../api/enrollmentApi';
 import { getCurrentUserSafely } from '../../utils/authRedirect';
-import { logout } from '../../utils/authSession';
 import { getCourseImageDataUrl } from '../../utils/courseImage';
 import { getCourseDurationLabel } from '../../utils/courseDurationLabel';
+import StudentSidebar from '../../components/StudentSidebar';
 
 function BangDieuKhienCaNhan() {
   const navigate = useNavigate();
-  const location = useLocation();
   const currentUser = getCurrentUserSafely();
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [courses, setCourses] = useState([]);
-
-  const handleLogout = () => {
-    logout({ navigate });
-  };
 
   useEffect(() => {
     let isCancelled = false;
@@ -115,69 +110,14 @@ function BangDieuKhienCaNhan() {
     navigate(`/learn?courseId=${course.id}&lessonId=${course.firstLessonId}`);
   };
 
-  const goToCourseDetail = (course) => {
-    if (!course?.id) {
-      return;
-    }
-
-    navigate(`/courses/${course.id}`);
-  };
-
   const getAvatarCharacter = () => {
     const name = String(currentUser?.name || currentUser?.fullName || 'H').trim();
     return name.charAt(0).toUpperCase();
   };
 
-  const isCurrentPath = (path) => location.pathname === path;
-
   return (
     <div className='student-dashboard'>
-      <aside className='student-dashboard-sidebar'>
-        <div className='student-dashboard-brand'>LMS Platform</div>
-
-        <ul className='student-dashboard-nav'>
-          <li>
-            <button
-              type='button'
-              className={`student-dashboard-nav-link ${isCurrentPath('/dashboard') ? 'is-active' : ''}`}
-              onClick={() => navigate('/dashboard')}
-            >
-              📚 Khóa học của tôi
-            </button>
-          </li>
-          <li>
-            <button
-              type='button'
-              className={`student-dashboard-nav-link ${isCurrentPath('/profile') ? 'is-active' : ''}`}
-              onClick={() => navigate('/profile')}
-            >
-              👤 Hồ sơ cá nhân
-            </button>
-          </li>
-          <li>
-            <button
-              type='button'
-              className={`student-dashboard-nav-link ${isCurrentPath('/transactions') ? 'is-active' : ''}`}
-              onClick={() => navigate('/transactions')}
-            >
-              💳 Lịch sử giao dịch
-            </button>
-          </li>
-          <li>
-            <button
-              type='button'
-              className={`student-dashboard-nav-link ${isCurrentPath('/courses') ? 'is-active' : ''}`}
-              onClick={() => navigate('/courses')}
-            >
-              ➕ Đăng ký khóa học
-            </button>
-          </li>
-        </ul>
-
-        <button type='button' className='student-dashboard-logout' onClick={handleLogout}>
-          🚪 Đăng xuất
-        </button>
-      </aside>
+      <StudentSidebar />
 
       <main className='student-dashboard-main'>
         <header className='student-dashboard-header'>
@@ -219,11 +159,11 @@ function BangDieuKhienCaNhan() {
                 className='student-dashboard-course-card is-clickable'
                 role='button'
                 tabIndex={0}
-                onClick={() => goToCourseDetail(course)}
+                onClick={() => goToLearn(course)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
-                    goToCourseDetail(course);
+                    goToLearn(course);
                   }
                 }}
               >

@@ -1,11 +1,10 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import './ManHinhQuanLyKhoaHoc.css';
 import { fetchCoursesApi } from '../../api/courseApi';
 import { uploadTeacherFileApi } from '../../api/teacherApi';
+import TeacherSidebar from '../../components/TeacherSidebar';
 import { getCurrentUserSafely } from '../../utils/authRedirect';
-import { logout } from '../../utils/authSession';
 
 const initialSections = [
   {
@@ -40,10 +39,6 @@ const initialSections = [
 ];
 
 function ManHinhQuanLyKhoaHoc() {
-  const navigate = useNavigate();
-  const handleLogout = () => {
-    logout({ navigate });
-  };
   const [courseName, setCourseName] = useState('Xây dựng ứng dụng HousePal với Flutter');
   const [shortDescription, setShortDescription] = useState('Hướng dẫn toàn diện cách phát triển ứng dụng di động quản lý phòng trọ...');
   const [price, setPrice] = useState('599000');
@@ -308,54 +303,7 @@ function ManHinhQuanLyKhoaHoc() {
 
   return (
     <div className="instructor-course-builder-page">
-      <aside className="instructor-course-builder-sidebar">
-        <div className="instructor-course-builder-brand">
-          <div className="instructor-course-builder-brand-icon">L</div>
-          <span>LMS Admin</span>
-        </div>
-
-        <ul className="instructor-course-builder-nav-menu">
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/dashboard')} type="button">
-              Tổng quan
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link active" onClick={() => navigate('/teacher/courses')} type="button">
-              Quản lý khóa học
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/questions')} type="button">
-              Ngân hàng câu hỏi
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/students')} type="button">
-              Quản lý học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/interaction')} type="button">
-              Tương tác học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/profile')} type="button">
-              Hồ sơ giảng viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/revenue')} type="button">
-              Doanh thu
-            </button>
-          </li>
-        </ul>
-
-        <button className="instructor-course-builder-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <TeacherSidebar />
 
       <main className="instructor-course-builder-main-content">
         <section className="instructor-course-builder-card">

@@ -7,6 +7,7 @@ import { getCurrentUserSafely } from '../../utils/authRedirect';
 import { isAccessTokenValid } from '../../utils/authSession';
 import { getCourseImageDataUrl } from '../../utils/courseImage';
 import { getCourseDurationLabel } from '../../utils/courseDurationLabel';
+import StudentSidebar from '../../components/StudentSidebar';
 
 const categoryOptions = ['Công nghệ thông tin', 'Kinh tế & Kinh doanh', 'Ngoại ngữ'];
 const durationOptions = ['Ngắn', 'Trung bình', 'Dài'];
@@ -158,20 +159,16 @@ function TrangDsKhoaHoc() {
     }
   };
 
-  return (
-    <div className='course-list-page'>
-      <header className='course-list-header'>
-        <div className='course-list-logo'>LMS Platform</div>
-        {isStudentAuthenticated ? (
-          <Link to='/dashboard' className='course-list-login-link'>
-            Dashboard của tôi
-          </Link>
-        ) : (
+  const contentBlock = (
+    <>
+      {!isStudentAuthenticated && (
+        <header className='course-list-header'>
+          <div className='course-list-logo'>LMS Platform</div>
           <Link to='/login' className='course-list-login-link'>
             Đăng nhập
           </Link>
-        )}
-      </header>
+        </header>
+      )}
 
       <section className='course-list-search-section'>
         <h1>Khám phá khóa học</h1>
@@ -295,6 +292,19 @@ function TrangDsKhoaHoc() {
           )}
         </main>
       </div>
+    </>
+  );
+
+  return (
+    <div className={`course-list-page ${isStudentAuthenticated ? 'is-student' : ''}`}>
+      {isStudentAuthenticated ? (
+        <div className='course-list-student-shell'>
+          <StudentSidebar />
+          <div className='course-list-student-content'>{contentBlock}</div>
+        </div>
+      ) : (
+        contentBlock
+      )}
     </div>
   );
 }

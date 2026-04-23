@@ -1,8 +1,7 @@
 ﻿import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import './QuanLyGiaoDich.css';
-import { logout } from '../../utils/authSession';
+import AdminSidebar from '../../components/AdminSidebar';
 
 const invoices = [
   {
@@ -59,16 +58,9 @@ const initialPayouts = [
 ];
 
 function QuanLyGiaoDich() {
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('invoices');
   const [payouts] = useState(initialPayouts);
   const [rejectReasons, setRejectReasons] = useState({});
-
-  const handleLogout = () => {
-    logout({ navigate });
-  };
-
-  const goTo = (path) => () => navigate(path);
 
   const pendingCount = useMemo(() => payouts.length, [payouts]);
 
@@ -100,37 +92,7 @@ function QuanLyGiaoDich() {
 
   return (
     <div className="admin-transaction-page">
-      <aside className="admin-transaction-sidebar">
-        <div className="admin-transaction-brand">
-          <div className="admin-transaction-brand-icon">A</div>
-          <span>Admin Control</span>
-        </div>
-        <ul className="admin-transaction-nav-menu">
-          <li>
-            <button className="admin-transaction-nav-link" type="button" onClick={goTo('/admin/dashboard')}>
-              Bảng điều khiển
-            </button>
-          </li>
-          <li>
-            <button className="admin-transaction-nav-link" type="button" onClick={goTo('/admin/users')}>
-              Quản lý người dùng
-            </button>
-          </li>
-          <li>
-            <button className="admin-transaction-nav-link" type="button" onClick={goTo('/admin/course-approval')}>
-              Phê duyệt khóa học
-            </button>
-          </li>
-          <li>
-            <button className="admin-transaction-nav-link" type="button" onClick={goTo('/admin/settings')}>
-              Cấu hình hệ thống
-            </button>
-          </li>
-        </ul>
-        <button className="admin-transaction-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <AdminSidebar />
 
       <main className="admin-transaction-main-content">
         <h1 className="admin-transaction-page-title">Đối soát & Quản lý tài chính</h1>

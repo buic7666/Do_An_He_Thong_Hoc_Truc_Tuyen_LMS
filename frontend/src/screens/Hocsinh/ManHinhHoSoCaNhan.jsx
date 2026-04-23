@@ -1,11 +1,9 @@
 ﻿import './ManHinhHoSoCaNhan.css';
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
 import { getCurrentUserSafely } from '../../utils/authRedirect';
-import { logout } from '../../utils/authSession';
+import StudentSidebar from '../../components/StudentSidebar';
 
 function ManHinhHoSoCaNhan() {
-  const navigate = useNavigate();
   const currentUser = getCurrentUserSafely();
   const [profileForm, setProfileForm] = useState({
     fullName: currentUser?.name || currentUser?.fullName || '',
@@ -74,42 +72,9 @@ function ManHinhHoSoCaNhan() {
     });
   };
 
-  const handleLogout = () => {
-    logout({ navigate });
-  };
-
   return (
     <div className='student-profile-page'>
-      <aside className='student-profile-sidebar'>
-        <div className='student-profile-brand'>LMS Platform</div>
-
-        <ul className='student-profile-nav-menu'>
-          <li>
-            <Link to='/dashboard' className='student-profile-nav-link'>
-              <span>📚 Khóa học của tôi</span>
-            </Link>
-          </li>
-          <li>
-            <Link to='/courses' className='student-profile-nav-link'>
-              <span>➕ Đăng ký khóa học</span>
-            </Link>
-          </li>
-          <li>
-            <Link to='/profile' className='student-profile-nav-link is-active'>
-              <span>👤 Hồ sơ cá nhân</span>
-            </Link>
-          </li>
-          <li>
-            <Link to='/transactions' className='student-profile-nav-link'>
-              <span>💳 Lịch sử giao dịch</span>
-            </Link>
-          </li>
-        </ul>
-
-        <button type='button' className='student-profile-logout-btn' onClick={handleLogout}>
-          <span>🚪 Đăng xuất</span>
-        </button>
-      </aside>
+      <StudentSidebar />
 
       <main className='student-profile-main-content'>
         <h1 className='student-profile-page-title'>Hồ sơ của tôi</h1>

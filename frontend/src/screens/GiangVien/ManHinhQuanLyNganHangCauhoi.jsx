@@ -1,14 +1,13 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   createTeacherQuestionApi,
   deleteTeacherQuestionApi,
   fetchTeacherQuestionsApi,
   updateTeacherQuestionApi,
 } from '../../api/teacherApi';
+import TeacherSidebar from '../../components/TeacherSidebar';
 
 import './ManHinhQuanLyNganHangCauhoi.css';
-import { logout } from '../../utils/authSession';
 
 const createEmptyDraft = () => ({
   content: '',
@@ -17,10 +16,6 @@ const createEmptyDraft = () => ({
 });
 
 function ManHinhQuanLyNganHangCauhoi() {
-  const navigate = useNavigate();
-  const handleLogout = () => {
-    logout({ navigate });
-  };
   const [testName, setTestName] = useState('Kiểm tra Cuối kỳ - Flutter UI & State Management');
   const [duration, setDuration] = useState('45');
   const [passScore, setPassScore] = useState('70');
@@ -152,54 +147,7 @@ function ManHinhQuanLyNganHangCauhoi() {
 
   return (
     <div className="instructor-question-bank-page">
-      <aside className="instructor-question-bank-sidebar">
-        <div className="instructor-question-bank-brand">
-          <div className="instructor-question-bank-brand-icon">L</div>
-          <span>LMS Admin</span>
-        </div>
-
-        <ul className="instructor-question-bank-nav-menu">
-          <li>
-            <button className="instructor-question-bank-nav-link" onClick={() => navigate('/teacher/dashboard')} type="button">
-              Tổng quan
-            </button>
-          </li>
-          <li>
-            <button className="instructor-question-bank-nav-link" onClick={() => navigate('/teacher/courses')} type="button">
-              Quản lý khóa học
-            </button>
-          </li>
-          <li>
-            <button className="instructor-question-bank-nav-link active" onClick={() => navigate('/teacher/questions')} type="button">
-              Ngân hàng câu hỏi
-            </button>
-          </li>
-          <li>
-            <button className="instructor-question-bank-nav-link" onClick={() => navigate('/teacher/students')} type="button">
-              Quản lý học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-question-bank-nav-link" onClick={() => navigate('/teacher/interaction')} type="button">
-              Tương tác học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-question-bank-nav-link" onClick={() => navigate('/teacher/profile')} type="button">
-              Hồ sơ giảng viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-question-bank-nav-link" onClick={() => navigate('/teacher/revenue')} type="button">
-              Doanh thu
-            </button>
-          </li>
-        </ul>
-
-        <button className="instructor-question-bank-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <TeacherSidebar />
 
       <main className="instructor-question-bank-main-content">
         <header className="instructor-question-bank-page-header">

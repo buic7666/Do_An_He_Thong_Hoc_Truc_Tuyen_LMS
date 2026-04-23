@@ -19,6 +19,24 @@ const login = async (req, res, next) => {
   }
 };
 
+const loginWithGoogle = async (req, res, next) => {
+  try {
+    const result = await authService.loginWithGoogle(req.body);
+    return successResponse(res, 'Google login successful', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const loginWithFacebook = async (req, res, next) => {
+  try {
+    const result = await authService.loginWithFacebook(req.body);
+    return successResponse(res, 'Facebook login successful', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const me = async (req, res, next) => {
   try {
     const result = await authService.getCurrentUser(req.user.id);
@@ -31,5 +49,7 @@ const me = async (req, res, next) => {
 module.exports = {
   register,
   login,
+  loginWithGoogle,
+  loginWithFacebook,
   me,
 };

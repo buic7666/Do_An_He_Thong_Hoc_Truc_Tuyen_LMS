@@ -32,6 +32,7 @@ import QuanLyGiaoDich from './screens/Admin/QuanLyGiaoDich';
 import ManHinhchitietKhoaHoc from './screens/KhachVangLai/ManHinhchitietKhoaHoc';
 import ManHinhTinTuc_Sk from './screens/KhachVangLai/ManHinhTinTuc_Sk';
 import ManHinhxemThubaiGiang from './screens/KhachVangLai/ManHinhxemThubaiGiang';
+import FacebookOAuthCallback from './screens/Public/FacebookOAuthCallback';
 import { getAuthenticatedHomePath, getCurrentUserSafely, getRoleHomePath } from './utils/authRedirect';
 import { clearAuthSession, isAccessTokenValid } from './utils/authSession';
 
@@ -272,6 +273,7 @@ function App() {
       <Route path="/guest/news" element={<ManHinhTinTuc_Sk />} />
       <Route path="/guest/preview" element={<ManHinhxemThubaiGiang />} />
       <Route path='/guest/course/:id/preview' element={<ManHinhxemThubaiGiang />} />
+      <Route path='/oauth/facebook/callback' element={<FacebookOAuthCallback />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

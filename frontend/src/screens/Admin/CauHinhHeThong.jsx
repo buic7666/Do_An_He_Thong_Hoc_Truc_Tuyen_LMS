@@ -1,8 +1,7 @@
 ﻿import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import './CauHinhHeThong.css';
-import { logout } from '../../utils/authSession';
+import AdminSidebar from '../../components/AdminSidebar';
 
 const initialGeneralSettings = {
   maxUploadMb: 500,
@@ -17,16 +16,9 @@ const initialCategories = [
 ];
 
 function CauHinhHeThong() {
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('general');
   const [settings, setSettings] = useState(initialGeneralSettings);
   const [categories] = useState(initialCategories);
-
-  const handleLogout = () => {
-    logout({ navigate });
-  };
-
-  const goTo = (path) => () => navigate(path);
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -44,37 +36,7 @@ function CauHinhHeThong() {
 
   return (
     <div className="system-config-page">
-      <aside className="system-config-sidebar">
-        <div className="system-config-brand">
-          <div className="system-config-brand-icon">A</div>
-          <span>Admin Control</span>
-        </div>
-        <ul className="system-config-nav-menu">
-          <li>
-            <button className="system-config-nav-link" type="button" onClick={goTo('/admin/dashboard')}>
-              Bảng điều khiển
-            </button>
-          </li>
-          <li>
-            <button className="system-config-nav-link" type="button" onClick={goTo('/admin/users')}>
-              Quản lý người dùng
-            </button>
-          </li>
-          <li>
-            <button className="system-config-nav-link" type="button" onClick={goTo('/admin/course-approval')}>
-              Phê duyệt khóa học
-            </button>
-          </li>
-          <li>
-            <button className="system-config-nav-link active" type="button">
-              Cấu hình hệ thống
-            </button>
-          </li>
-        </ul>
-        <button className="system-config-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <AdminSidebar />
 
       <main className="system-config-main-content">
         <h1 className="system-config-page-title">Thiết lập hệ thống</h1>

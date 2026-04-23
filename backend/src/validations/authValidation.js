@@ -16,7 +16,21 @@ const loginBodySchema = z
   })
   .strict();
 
+const googleSocialBodySchema = z
+  .object({
+    access_token: z.string().trim().min(10).max(4096),
+  })
+  .strict();
+
+const facebookSocialBodySchema = z
+  .object({
+    access_token: z.string().trim().min(10).max(4096),
+  })
+  .strict();
+
 module.exports = {
   registerBodySchema,
   loginBodySchema,
+  googleSocialBodySchema,
+  facebookSocialBodySchema,
 };

@@ -1,4 +1,4 @@
-﻿import './chitietkhoahoc.css';
+import './chitietkhoahoc.css';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchCourseDetailApi } from '../../api/courseApi';
@@ -6,8 +6,10 @@ import { fetchMyEnrollmentsApi } from '../../api/enrollmentApi';
 import { getCurrentUserSafely } from '../../utils/authRedirect';
 import { isAccessTokenValid } from '../../utils/authSession';
 import { getCourseImageDataUrl } from '../../utils/courseImage';
+import QuizList from '../../components/QuizList';
+import QuizTaker from '../../components/QuizTaker';
 
-const formatPrice = (price) => `${Number(price || 0).toLocaleString('vi-VN')}đ`;
+const formatPrice = (price) => `${Number(price || 0).toLocaleString('vi-VN')}d`;
 
 function ChiTietKhoaHoc() {
   const navigate = useNavigate();
@@ -19,6 +21,8 @@ function ChiTietKhoaHoc() {
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [selectedQuizId, setSelectedQuizId] = useState(null);
+  const [showQuizTaker, setShowQuizTaker] = useState(false);
 
   useEffect(() => {
     const loadCourseDetail = async () => {
@@ -37,7 +41,7 @@ function ChiTietKhoaHoc() {
         const enrolled = enrollments.some((item) => Number(item.courseId) === Number(id));
         setIsEnrolled(enrolled);
       } catch (error) {
-        setErrorMessage(error?.response?.data?.message || 'Không tải được chi tiết khóa học.');
+        setErrorMessage(error?.response?.data?.message || 'Kh�ng t?i du?c chi ti?t kh�a h?c.');
       } finally {
         setIsLoading(false);
       }
@@ -58,8 +62,8 @@ function ChiTietKhoaHoc() {
     return [
       {
         id: 1,
-        chapter: 'Nội dung khóa học',
-        lessonCount: `${lessons.length} Bài học`,
+        chapter: 'N?i dung kh�a h?c',
+        lessonCount: `${lessons.length} B�i h?c`,
         lessons: lessons.map((lesson) => lesson.title),
       },
     ];
@@ -70,6 +74,16 @@ function ChiTietKhoaHoc() {
     lessons.sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0));
     return lessons.length > 0 ? lessons[0].id : null;
   }, [courseDetail]);
+
+  const handleSelectQuiz = (quizId) => {
+    setSelectedQuizId(quizId);
+    setShowQuizTaker(true);
+  };
+
+  const handleBackFromQuiz = () => {
+    setShowQuizTaker(false);
+    setSelectedQuizId(null);
+  };
 
   const handlePrimaryAction = () => {
     if (isEnrolled) {
@@ -91,15 +105,31 @@ function ChiTietKhoaHoc() {
   };
 
   if (isLoading) {
-    return <div className='course-detail-page course-detail-message'>Đang tải chi tiết khóa học...</div>;
+    return <div className='course-detail-page course-detail-message'>�ang t?i chi ti?t kh�a h?c...</div>;
   }
 
   if (errorMessage) {
     return <div className='course-detail-page course-detail-message'>{errorMessage}</div>;
   }
 
+  // Show quiz taker if a quiz is selected
+  if (showQuizTaker && selectedQuizId) {
+    return (
+      <div className='course-detail-page'>
+        <QuizTaker
+          quizId={selectedQuizId}
+          onBack={handleBackFromQuiz}
+          onSubmit={(result) => {
+            console.log('Quiz submitted:', result);
+            // You can add additional logic here, like showing a success message
+          }}
+        />
+      </div>
+    );
+  }
+
   if (!courseDetail) {
-    return <div className='course-detail-page course-detail-message'>Không có dữ liệu khóa học.</div>;
+    return <div className='course-detail-page course-detail-message'>Kh�ng c� d? li?u kh�a h?c.</div>;
   }
 
   return (
@@ -111,13 +141,13 @@ function ChiTietKhoaHoc() {
       <section className='course-detail-hero'>
         <div className='course-detail-hero-content'>
           <div className='course-detail-badges'>
-            <span>Khóa học trực tuyến</span>
-            <span>{courseDetail.stats?.totalStudents || 0} học viên đã đăng ký</span>
+            <span>Kh�a h?c tr?c tuy?n</span>
+            <span>{courseDetail.stats?.totalStudents || 0} h?c vi�n d� dang k�</span>
           </div>
 
           <h1 className='course-detail-title'>{courseDetail.title}</h1>
 
-          <p className='course-detail-short-desc'>{courseDetail.description || 'Mô tả đang cập nhật.'}</p>
+          <p className='course-detail-short-desc'>{courseDetail.description || 'M� t? dang c?p nh?t.'}</p>
         </div>
       </section>
 
@@ -126,20 +156,20 @@ function ChiTietKhoaHoc() {
           <div className='course-detail-video-wrap'>
             <img
               src={getCourseImageDataUrl(courseDetail.title, courseDetail.id)}
-              alt='Video giới thiệu khóa học'
+              alt='Video gi?i thi?u kh�a h?c'
               className='course-detail-video'
             />
           </div>
 
-          <h2 className='course-detail-section-title'>Mô tả khóa học</h2>
+          <h2 className='course-detail-section-title'>M� t? kh�a h?c</h2>
           <p className='course-detail-description'>
-            {courseDetail.description || 'Nội dung chi tiết của khóa học đang được cập nhật.'}
+            {courseDetail.description || 'N?i dung chi ti?t c?a kh�a h?c dang du?c c?p nh?t.'}
           </p>
 
-          <h2 className='course-detail-section-title'>Lộ trình học tập</h2>
+          <h2 className='course-detail-section-title'>L? tr�nh h?c t?p</h2>
 
           <div className='course-detail-syllabus'>
-            {syllabus.length === 0 && <p>Khóa học chưa có bài học nào.</p>}
+            {syllabus.length === 0 && <p>Kh�a h?c chua c� b�i h?c n�o.</p>}
             {syllabus.map((item) => (
               <article key={item.id} className='course-detail-syllabus-item'>
                 <header className='course-detail-syllabus-header'>
@@ -157,42 +187,50 @@ function ChiTietKhoaHoc() {
               </article>
             ))}
           </div>
-        </section>
 
-        <aside className='course-detail-sidebar'>
-          <p className='course-detail-price'>{formatPrice(courseDetail.price)}</p>
+          <h2 className='course-detail-section-title'>Bài kiểm tra</h2>
+          {isEnrolled ? (
+            <div className='course-detail-quiz-section'>
+              <QuizList
+                courseId={id}
+                onSelectQuiz={handleSelectQuiz}
+              />
+            </div>
+          ) : (
+            <p className='course-detail-quiz-message'>Vui lòng đăng ký khóa học để làm bài kiểm tra.</p>
+          )}`r`n        </section>`r`n`r`n        <aside className='course-detail-sidebar'>`r`n          <p className='course-detail-price'>{formatPrice(courseDetail.price)}</p>
 
           <button
             type='button'
             className='course-detail-btn course-detail-btn-primary'
             onClick={handlePrimaryAction}
           >
-            {isEnrolled ? 'Vào học ngay' : 'Đăng ký ngay'}
+            {isEnrolled ? 'V�o h?c ngay' : '�ang k� ngay'}
           </button>
           <button
             type='button'
             className='course-detail-btn course-detail-btn-secondary'
             onClick={() => navigate(`/enroll/${courseDetail.id}`)}
           >
-            {isEnrolled ? 'Quản lý đăng ký' : 'Xem màn hình đăng ký'}
+            {isEnrolled ? 'Qu?n l� dang k�' : 'Xem m�n h�nh dang k�'}
           </button>
 
           <ul className='course-detail-features'>
-            <li>🕒 Số bài học: {courseDetail.stats?.totalLessons || 0}</li>
-            <li>📄 Học viên đang theo học: {courseDetail.stats?.totalStudents || 0}</li>
-            <li>♾️ Quyền truy cập trọn đời</li>
-            <li>🏆 Cấp chứng chỉ sau khi hoàn thành</li>
+            <li>?? S? b�i h?c: {courseDetail.stats?.totalLessons || 0}</li>
+            <li>?? H?c vi�n dang theo h?c: {courseDetail.stats?.totalStudents || 0}</li>
+            <li>?? Quy?n truy c?p tr?n d?i</li>
+            <li>?? C?p ch?ng ch? sau khi ho�n th�nh</li>
           </ul>
 
           <div className='course-detail-instructor'>
             <img
               src='https://via.placeholder.com/50/007bff/fff?text=GV'
-              alt='Giảng viên'
+              alt='Gi?ng vi�n'
               className='course-detail-instructor-avatar'
             />
             <div>
-              <p className='course-detail-instructor-name'>{courseDetail.instructor?.name || 'Đang cập nhật'}</p>
-              <p className='course-detail-instructor-title'>{courseDetail.instructor?.email || 'Giảng viên'}</p>
+              <p className='course-detail-instructor-name'>{courseDetail.instructor?.name || '�ang c?p nh?t'}</p>
+              <p className='course-detail-instructor-title'>{courseDetail.instructor?.email || 'Gi?ng vi�n'}</p>
             </div>
           </div>
         </aside>
@@ -202,3 +240,4 @@ function ChiTietKhoaHoc() {
 }
 
 export default ChiTietKhoaHoc;
+
