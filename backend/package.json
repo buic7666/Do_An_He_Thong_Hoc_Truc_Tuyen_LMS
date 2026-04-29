@@ -6,9 +6,13 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
+    "migrate": "node src/scripts/migrate.js",
+    "seed": "node src/scripts/seedComplete.js",
     "seed:teacher-dashboard": "node src/scripts/seedTeacherDashboard.js",
     "seed:video-course": "node src/scripts/seedMultiVideoCourse.js",
     "seed:quizzes": "node src/scripts/seedQuestionsAndQuizzes.js",
+    "seed:lesson-segments": "node src/scripts/seedLessonSegments.js",
+    "seed:chapters": "node src/scripts/seedChapters.js",
     "test": "jest --runInBand",
     "test:unit": "jest --runInBand tests/unit",
     "test:integration": "jest --runInBand tests/integration",

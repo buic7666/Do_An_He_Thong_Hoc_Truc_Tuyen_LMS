@@ -8,6 +8,8 @@ const {
 	lessonIdParamSchema,
 	courseIdParamSchema,
 	createLessonBodySchema,
+	segmentIdParamSchema,
+	createLessonSegmentBodySchema,
 } = require('../validations/lessonValidation');
 const {
 	lessonIdParamSchema: progressLessonIdParamSchema,
@@ -25,6 +27,21 @@ router.post(
 	lessonController.createLesson,
 );
 router.get('/:id', authenticate, validateRequest({ params: lessonIdParamSchema }), lessonController.getLessonDetail);
+router.get('/:id/segments', authenticate, validateRequest({ params: lessonIdParamSchema }), lessonController.getLessonSegments);
+router.post(
+	'/:id/segments',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: lessonIdParamSchema, body: createLessonSegmentBodySchema }),
+	lessonController.createLessonSegment,
+);
+router.delete(
+	'/segments/:segmentId',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: segmentIdParamSchema }),
+	lessonController.deleteLessonSegment,
+);
 router.post('/:id/progress', authenticate, validateRequest({ params: progressLessonIdParamSchema }), progressController.markLessonCompleted);
 router.get(
 	'/:id/watch-position',

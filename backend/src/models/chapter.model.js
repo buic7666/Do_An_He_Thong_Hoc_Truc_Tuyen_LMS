@@ -1,8 +1,8 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
-const Lesson = sequelize.define(
-  'Lesson',
+const Chapter = sequelize.define(
+  'Chapter',
   {
     id: {
       type: DataTypes.BIGINT.UNSIGNED,
@@ -13,37 +13,31 @@ const Lesson = sequelize.define(
       type: DataTypes.BIGINT.UNSIGNED,
       allowNull: false,
       field: 'course_id',
+      comment: 'Khóa học mà chương này thuộc về',
     },
     title: {
-      type: DataTypes.STRING,
-      allowNull: false,
-    },
-    videoUrl: {
       type: DataTypes.STRING(255),
-      allowNull: true,
-      field: 'video_url',
+      allowNull: false,
+      comment: 'Tiêu đề chương',
     },
-    content: {
+    description: {
       type: DataTypes.TEXT,
       allowNull: true,
+      comment: 'Mô tả chương',
     },
     orderIndex: {
       type: DataTypes.INTEGER.UNSIGNED,
       allowNull: false,
       field: 'order_index',
-    },
-    chapterId: {
-      type: DataTypes.BIGINT.UNSIGNED,
-      allowNull: true,
-      field: 'chapter_id',
-      comment: 'Chương mà bài giảng này thuộc về',
+      defaultValue: 0,
+      comment: 'Vị trí chương trong khóa học',
     },
   },
   {
-    tableName: 'lessons',
+    tableName: 'chapters',
     underscored: true,
     timestamps: true,
   },
 );
 
-module.exports = Lesson;
+module.exports = Chapter;

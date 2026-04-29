@@ -85,7 +85,7 @@ const getQuizzesByCourse = async (courseId, includeQuestions = false) => {
           {
             association: 'questions',
             through: { attributes: ['order', 'points'] },
-            attributes: ['id', 'questionText'],
+              attributes: ['id', 'content', 'metadata'],
           },
         ]
       : [],
@@ -105,7 +105,7 @@ const getQuizDetail = async (quizId) => {
       {
         association: 'questions',
         through: { attributes: ['order', 'points'] },
-        attributes: ['id', 'questionText', 'optionsJson'],
+        attributes: ['id', 'content', 'metadata'],
       },
     ],
   });
@@ -347,8 +347,8 @@ const normalizeQuizWithQuestions = (quiz) => {
   const plain = quiz.toJSON();
   const questions = (plain.questions || []).map((q) => ({
     id: q.id,
-    questionText: q.questionText,
-    options: JSON.parse(q.optionsJson || '[]'),
+    questionText: q.content,
+    options: (q.metadata && q.metadata.options) || [],
     QuizQuestion: {
       order: q.QuizQuestion?.order,
       points: q.QuizQuestion?.points,
@@ -390,7 +390,210 @@ const normalizeQuizAttempt = (attempt) => {
   };
 };
 
+// ===== TEACHER MANAGEMENT FUNCTIONS =====
+
+/**
+ * Create quiz by teacher
+ */
+const createQuizByTeacher = async (payload, user) => {
+  const courseId = payload.courseId;
+  const chapterId = payload.chapterId || null;
+
+  const course = await Course.findOne({ where: { id: courseId } });
+  if (!course) {
+    throw new HttpError(404, 'Course not found', 'COURSE_NOT_FOUND');
+  }
+
+  if (course.instructorId !== user.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const quiz = await Quiz.create({
+    courseId,
+    chapterId,
+    lessonId: payload.lessonId || null,
+    title: payload.title,
+    description: payload.description || null,
+    duration: payload.duration || 45,
+    passScore: payload.passScore || 70,
+    maxAttempts: payload.maxAttempts || 3,
+    isPublished: false,
+    createdBy: user.id,
+  });
+
+  return quiz;
+};
+
+/**
+ * Add question to quiz
+ */
+const addQuestionToQuizByTeacher = async (quizId, questionId, payload, user) => {
+  const quiz = await Quiz.findOne({
+    where: { id: quizId },
+    include: [{ association: 'course' }],
+  });
+
+  if (!quiz) {
+    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
+  }
+
+  if (quiz.course.instructorId !== user.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const question = await Question.findOne({ where: { id: questionId } });
+  if (!question) {
+    throw new HttpError(404, 'Question not found', 'QUESTION_NOT_FOUND');
+  }
+
+  const existing = await QuizQuestion.findOne({
+    where: { quizId, questionId },
+  });
+  if (existing) {
+    throw new HttpError(409, 'Question already in quiz', 'DUPLICATE');
+  }
+
+  const quizQuestion = await QuizQuestion.create({
+    quizId,
+    questionId,
+    order: payload.order || 0,
+    points: payload.points || 1,
+  });
+
+  return quizQuestion;
+};
+
+/**
+ * Remove question from quiz
+ */
+const removeQuestionFromQuizByTeacher = async (quizId, questionId, user) => {
+  const quiz = await Quiz.findOne({
+    where: { id: quizId },
+    include: [{ association: 'course' }],
+  });
+
+  if (!quiz) {
+    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
+  }
+
+  if (quiz.course.instructorId !== user.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  await QuizQuestion.destroy({
+    where: { quizId, questionId },
+  });
+
+  return { quizId, questionId, deleted: true };
+};
+
+/**
+ * Update quiz
+ */
+const updateQuizByTeacher = async (quizId, payload, user) => {
+  const quiz = await Quiz.findOne({
+    where: { id: quizId },
+    include: [{ association: 'course' }],
+  });
+
+  if (!quiz) {
+    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
+  }
+
+  if (quiz.course.instructorId !== user.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  quiz.title = payload.title ?? quiz.title;
+  quiz.description = payload.description ?? quiz.description;
+  quiz.duration = payload.duration ?? quiz.duration;
+  quiz.passScore = payload.passScore ?? quiz.passScore;
+  quiz.maxAttempts = payload.maxAttempts ?? quiz.maxAttempts;
+
+  await quiz.save();
+
+  return quiz;
+};
+
+/**
+ * Publish quiz
+ */
+const publishQuizByTeacher = async (quizId, user) => {
+  const quiz = await Quiz.findOne({
+    where: { id: quizId },
+    include: [{ association: 'course' }],
+  });
+
+  if (!quiz) {
+    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
+  }
+
+  if (quiz.course.instructorId !== user.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const questionCount = await QuizQuestion.count({ where: { quizId } });
+  if (questionCount === 0) {
+    throw new HttpError(400, 'Cannot publish quiz without questions', 'NO_QUESTIONS');
+  }
+
+  quiz.isPublished = true;
+
+  await quiz.save();
+
+  return quiz;
+};
+
+/**
+ * Delete quiz
+ */
+const deleteQuizByTeacher = async (quizId, user) => {
+  const quiz = await Quiz.findOne({
+    where: { id: quizId },
+    include: [{ association: 'course' }],
+  });
+
+  if (!quiz) {
+    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
+  }
+
+  if (quiz.course.instructorId !== user.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  await quiz.destroy();
+
+  return { id: quizId, deleted: true };
+};
+
+/**
+ * Get all quizzes created by teacher
+ */
+const getTeacherQuizzes = async (user) => {
+  const quizzes = await Quiz.findAll({
+    where: { createdBy: user.id },
+    include: [
+      { association: 'course', attributes: ['id', 'title'] },
+      {
+        association: 'questions',
+        attributes: ['id'],
+        through: { attributes: [] },
+      },
+    ],
+    order: [['createdAt', 'DESC']],
+  });
+
+  return quizzes.map((quiz) => {
+    const plain = quiz.toJSON();
+    return {
+      ...plain,
+      questionCount: (plain.questions || []).length,
+    };
+  });
+};
+
 module.exports = {
+  refreshChapterQuizQuestions,
   getQuizzesByCourse,
   getQuizDetail,
   getStudentQuizAttempts,
@@ -399,4 +602,12 @@ module.exports = {
   saveQuizAnswer,
   submitQuiz,
   getQuizScore,
+  // Teacher methods
+  createQuizByTeacher,
+  addQuestionToQuizByTeacher,
+  removeQuestionFromQuizByTeacher,
+  updateQuizByTeacher,
+  publishQuizByTeacher,
+  deleteQuizByTeacher,
+  getTeacherQuizzes,
 };

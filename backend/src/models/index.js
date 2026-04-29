@@ -1,6 +1,8 @@
 const User = require('./user.model');
 const Course = require('./course.model');
+const Chapter = require('./chapter.model');
 const Lesson = require('./lesson.model');
+const LessonSegment = require('./lecture.model');
 const Enrollment = require('./enrollment.model');
 const Progress = require('./progress.model');
 const LessonWatchPosition = require('./lessonWatchPosition.model');
@@ -13,6 +15,7 @@ const Quiz = require('./quiz.model');
 const QuizQuestion = require('./quizQuestion.model');
 const StudentQuizAttempt = require('./studentQuizAttempt.model');
 
+// ===== User & Course Relationships =====
 Course.belongsTo(User, {
   as: 'instructor',
   foreignKey: 'instructorId',
@@ -23,6 +26,29 @@ User.hasMany(Course, {
   foreignKey: 'instructorId',
 });
 
+// ===== Course & Chapter Relationships =====
+Course.hasMany(Chapter, {
+  as: 'chapters',
+  foreignKey: 'courseId',
+});
+
+Chapter.belongsTo(Course, {
+  as: 'course',
+  foreignKey: 'courseId',
+});
+
+// ===== Chapter & Lesson Relationships =====
+Chapter.hasMany(Lesson, {
+  as: 'lessons',
+  foreignKey: 'chapterId',
+});
+
+Lesson.belongsTo(Chapter, {
+  as: 'chapter',
+  foreignKey: 'chapterId',
+});
+
+// ===== Course & Lesson Relationships (legacy, still keep for compatibility) =====
 Course.hasMany(Lesson, {
   as: 'lessons',
   foreignKey: 'courseId',
@@ -107,6 +133,28 @@ LessonWatchPosition.belongsTo(Lesson, {
   foreignKey: 'lessonId',
 });
 
+// Lesson segments (YouTube video slices)
+Lesson.hasMany(LessonSegment, {
+  as: 'segments',
+  foreignKey: 'lessonId',
+});
+
+LessonSegment.belongsTo(Lesson, {
+  as: 'lesson',
+  foreignKey: 'lessonId',
+});
+
+// ===== Lesson & Question Relationships =====
+Lesson.hasMany(Question, {
+  as: 'questions',
+  foreignKey: 'lectureId',
+});
+
+Question.belongsTo(Lesson, {
+  as: 'lecture',
+  foreignKey: 'lectureId',
+});
+
 User.hasOne(TeacherProfile, {
   as: 'teacherProfile',
   foreignKey: 'teacherId',
@@ -148,6 +196,7 @@ Question.belongsTo(User, {
   foreignKey: 'createdBy',
 });
 
+// ===== Course & Quiz Relationships =====
 Course.hasMany(Quiz, {
   as: 'quizzes',
   foreignKey: 'courseId',
@@ -156,6 +205,17 @@ Course.hasMany(Quiz, {
 Quiz.belongsTo(Course, {
   as: 'course',
   foreignKey: 'courseId',
+});
+
+// ===== Chapter & Quiz Relationships =====
+Chapter.hasMany(Quiz, {
+  as: 'quizzes',
+  foreignKey: 'chapterId',
+});
+
+Quiz.belongsTo(Chapter, {
+  as: 'chapter',
+  foreignKey: 'chapterId',
 });
 
 Lesson.hasMany(Quiz, {
@@ -215,7 +275,9 @@ StudentQuizAttempt.belongsTo(Quiz, {
 module.exports = {
   User,
   Course,
+  Chapter,
   Lesson,
+  LessonSegment,
   Enrollment,
   Progress,
   LessonWatchPosition,

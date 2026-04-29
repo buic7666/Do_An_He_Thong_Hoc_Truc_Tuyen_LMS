@@ -14,6 +14,12 @@ const Quiz = sequelize.define(
       allowNull: false,
       field: 'course_id',
     },
+    chapterId: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: true,
+      field: 'chapter_id',
+      comment: 'Chương mà quiz này thuộc về (tuỳ chọn)',
+    },
     lessonId: {
       type: DataTypes.BIGINT.UNSIGNED,
       allowNull: true,

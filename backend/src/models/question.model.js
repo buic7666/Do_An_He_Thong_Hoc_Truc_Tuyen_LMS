@@ -9,31 +9,39 @@ const Question = sequelize.define(
       primaryKey: true,
       autoIncrement: true,
     },
-    questionText: {
+    content: {
       type: DataTypes.TEXT,
       allowNull: false,
-      field: 'question_text',
+      comment: 'Nội dung câu hỏi',
     },
-    optionsJson: {
-      type: DataTypes.TEXT,
-      allowNull: false,
-      field: 'options_json',
-      comment: 'JSON array of options',
-    },
-    correctIndex: {
-      type: DataTypes.INTEGER.UNSIGNED,
-      allowNull: false,
-      defaultValue: 0,
-      field: 'correct_index',
-    },
-    explanation: {
-      type: DataTypes.TEXT,
-      allowNull: true,
-      comment: 'Explanation for correct answer',
+    type: {
+      type: DataTypes.ENUM('MULTIPLE_CHOICE', 'ESSAY', 'SOURCE_CODE'),
+      defaultValue: 'MULTIPLE_CHOICE',
     },
     difficulty: {
-      type: DataTypes.ENUM('easy', 'medium', 'hard'),
-      defaultValue: 'medium',
+      type: DataTypes.ENUM('EASY', 'MEDIUM', 'HARD'),
+      defaultValue: 'MEDIUM',
+    },
+    metadata: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      comment: 'Metadata JSON (options, correctIndex, explanation, etc)',
+    },
+    tags: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      comment: 'Tags for categorizing questions',
+    },
+    courseId: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: true,
+      field: 'course_id',
+    },
+    lectureId: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: true,
+      field: 'lecture_id',
+      comment: 'Bài giảng mà câu hỏi này thuộc về (tuỳ chọn)',
     },
     createdBy: {
       type: DataTypes.BIGINT.UNSIGNED,

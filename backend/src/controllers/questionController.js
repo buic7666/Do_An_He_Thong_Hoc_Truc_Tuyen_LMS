@@ -29,6 +29,20 @@ const getQuestions = async (req, res, next) => {
 };
 
 /**
+ * Get questions by lecture/lesson
+ */
+const getQuestionsByLecture = async (req, res, next) => {
+  try {
+    const { lectureId } = req.params;
+    const questions = await questionService.getQuestionsByLecture(lectureId);
+
+    return successResponse(res, 'Lecture questions retrieved', questions, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
  * Get single question detail
  */
 const getQuestion = async (req, res, next) => {
@@ -98,6 +112,7 @@ const deleteQuestion = async (req, res, next) => {
 
 module.exports = {
   getQuestions,
+  getQuestionsByLecture,
   getQuestion,
   createQuestion,
   updateQuestion,

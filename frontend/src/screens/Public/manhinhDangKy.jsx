@@ -6,6 +6,7 @@ import { facebookSocialLoginApi, googleSocialLoginApi, registerApi } from '../..
 import { startFacebookLogin } from '../../utils/facebookAuth';
 import { getRoleHomePath } from '../../utils/authRedirect';
 
+
 function ManHinhDangKy() {
   const hasGoogleClientId =
     Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID) &&
@@ -19,6 +20,7 @@ function ManHinhDangKy() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('student');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSocialSubmitting, setIsSocialSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -44,7 +46,7 @@ function ManHinhDangKy() {
     setErrorMessage('');
 
     try {
-      const user = await registerApi({ name, email, password, role: 'student' });
+      const user = await registerApi({ name, email, password, role });
       completeAuth(user);
     } catch (error) {
       setErrorMessage(error?.response?.data?.message || 'Đăng ký thất bại. Vui lòng thử lại.');
@@ -103,6 +105,21 @@ function ManHinhDangKy() {
           <p className='register-form-subtitle'>Bắt đầu hành trình chinh phục tri thức ngay hôm nay.</p>
 
           <form onSubmit={handleSubmit}>
+                        <div className='register-input-group'>
+                          <label htmlFor='register-role' className='register-input-label'>
+                            Vai trò
+                          </label>
+                          <select
+                            id='register-role'
+                            className='register-input-field'
+                            value={role}
+                            onChange={(event) => setRole(event.target.value)}
+                            required
+                          >
+                            <option value='student'>Học viên</option>
+                            <option value='teacher'>Giáo viên</option>
+                          </select>
+                        </div>
             <div className='register-input-group'>
               <label htmlFor='register-fullname' className='register-input-label'>
                 Họ và tên
