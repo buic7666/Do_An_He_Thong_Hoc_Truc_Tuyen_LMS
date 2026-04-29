@@ -47,10 +47,20 @@ const createCourse = async (req, res, next) => {
   }
 };
 
+const deleteCourse = async (req, res, next) => {
+  try {
+    const result = await courseService.deleteCourse(req.params.id, req.user);
+    return successResponse(res, 'Course deleted successfully', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getAllCourses,
   getCourseDetail,
   getLessonsByCourse,
   getCourseProgress,
   createCourse,
+  deleteCourse,
 };

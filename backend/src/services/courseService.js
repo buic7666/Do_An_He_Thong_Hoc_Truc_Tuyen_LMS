@@ -149,9 +149,54 @@ const createCourse = async (payload, currentUser) => {
   };
 };
 
+const deleteCourse = async (courseId, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedCourseId = parseId(courseId, 'courseId');
+  const course = await courseRepository.findById(parsedCourseId);
+
+  if (!course) {
+    throw new HttpError(404, 'Course not found', 'COURSE_NOT_FOUND');
+  }
+
+  // Only teacher/instructor or admin can delete course
+  if (currentUser.role !== 'admin' && course.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You can only delete your own courses', 'FORBIDDEN');
+  }
+
+  // Delete related data: chapters, lessons, enrollments, progress
+  const { Chapter, Lesson, Enrollment, Progress } = require('../models');
+
+  // Delete all lessons and their segments
+  const lessons = await Lesson.findAll({ where: { courseId: parsedCourseId } });
+  for (const lesson of lessons) {
+    await lesson.destroy();
+  }
+
+  // Delete all chapters
+  await Chapter.destroy({ where: { courseId: parsedCourseId } });
+
+  // Delete all enrollments
+  await Enrollment.destroy({ where: { courseId: parsedCourseId } });
+
+  // Delete all progress records for this course's lessons
+  const progressIds = lessons.map((l) => l.id);
+  if (progressIds.length > 0) {
+    await Progress.destroy({ where: { lessonId: { [require('sequelize').Op.in]: progressIds } } });
+  }
+
+  // Delete course
+  await course.destroy();
+
+  return { id: parsedCourseId, message: 'Course deleted successfully' };
+};
+
 module.exports = {
   getAllCourses,
   getCourseDetail,
   getLessonsByCourse,
   createCourse,
+  deleteCourse,
 };

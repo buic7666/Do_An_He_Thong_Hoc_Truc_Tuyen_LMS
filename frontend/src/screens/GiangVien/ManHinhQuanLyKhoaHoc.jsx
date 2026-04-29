@@ -15,6 +15,8 @@ import {
   updateCourseChapterApi,
   updateLessonApi,
   updateLessonSegmentApi,
+  deleteChapterApi,
+  deleteCourseApi,
 } from '../../api/teacherManagementApi';
 
 import './ManHinhQuanLyKhoaHoc.css';
@@ -169,6 +171,25 @@ function ManHinhQuanLyKhoaHoc() {
   const [previewNonce, setPreviewNonce] = useState(0);
   const [editingChapter, setEditingChapter] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // Get current user from sessionStorage
+  useEffect(() => {
+    try {
+      const userJson = sessionStorage.getItem('currentUser');
+      if (userJson) {
+        const user = JSON.parse(userJson);
+        setCurrentUser(user);
+      }
+    } catch (_error) {
+      // Ignore
+    }
+  }, []);
+
+  const isCurrentUserOwner = (course) => {
+    if (!currentUser || !course) return false;
+    return Number(course.instructor?.id) === Number(currentUser.id);
+  };
 
   const loadCourses = async () => {
     setIsLoadingCourses(true);
@@ -266,7 +287,12 @@ function ManHinhQuanLyKhoaHoc() {
     loadCourses();
   }, []);
 
-  const totalCourses = useMemo(() => courses.length, [courses]);
+  const myCoursesOnly = useMemo(() => {
+    if (!currentUser) return courses; // Fallback to all courses while loading
+    return courses.filter((course) => Number(course.instructor?.id) === Number(currentUser.id));
+  }, [courses, currentUser]);
+
+  const totalCourses = useMemo(() => myCoursesOnly.length, [myCoursesOnly]);
   const totalChapters = useMemo(() => chapters.length, [chapters]);
   
   const filteredLessons = useMemo(() => {
@@ -480,6 +506,50 @@ function ManHinhQuanLyKhoaHoc() {
     } catch (error) {
       // eslint-disable-next-line no-alert
       alert(error?.response?.data?.message || 'Không thể xóa bài học.');
+    }
+  };
+
+  const handleDeleteChapter = async (chapterId) => {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm('Bạn có chắc chắn muốn xóa chương này? Các bài học trong chương sẽ không bị xóa nhưng sẽ mất liên kết.')) {
+      return;
+    }
+
+    try {
+      await deleteChapterApi(chapterId);
+      if (Number(selectedChapterId) === Number(chapterId)) {
+        setSelectedChapterId(null);
+      }
+      await loadChapters(selectedCourseId);
+      // eslint-disable-next-line no-alert
+      alert('Đã xóa chương.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể xóa chương.');
+    }
+  };
+
+  const handleDeleteCourse = async (courseId) => {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm('Bạn có chắc chắn muốn xóa khóa học này? Hành động này không thể hoàn tác.')) {
+      return;
+    }
+
+    try {
+      await deleteCourseApi(courseId);
+      if (Number(selectedCourseId) === Number(courseId)) {
+        setSelectedCourseId(null);
+        setChapters([]);
+        setLessons([]);
+        setSelectedLessonId(null);
+        setSegments([]);
+      }
+      await loadCourses();
+      // eslint-disable-next-line no-alert
+      alert('Đã xóa khóa học.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể xóa khóa học.');
     }
   };
 
@@ -724,6 +794,38 @@ function ManHinhQuanLyKhoaHoc() {
             <button className="instructor-course-builder-btn instructor-course-builder-btn-primary full" onClick={handleCreateCourse} type="button">
               Tạo khóa học
             </button>
+
+            {myCoursesOnly.length > 0 && (
+              <div style={{ marginTop: '16px', display: 'grid', gap: '12px' }}>
+                <h3 style={{ marginBottom: '8px' }}>Danh sách khóa học ({myCoursesOnly.length})</h3>
+                {myCoursesOnly.map((course) => (
+                  <article key={course.id} className="instructor-course-builder-section-block" style={{ padding: '14px 16px' }}>
+                    <div style={{ fontWeight: 700 }}>{course.title}</div>
+                    <div style={{ marginTop: '4px', color: '#666', fontSize: '13px' }}>
+                      {course.description || 'Không có mô tả'}
+                    </div>
+                    <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                      <button
+                        className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
+                        onClick={() => handleSelectCourse(course.id)}
+                        type="button"
+                        style={{ backgroundColor: selectedCourseId === course.id ? '#3b82f6' : undefined, color: selectedCourseId === course.id ? 'white' : undefined }}
+                      >
+                        Chọn
+                      </button>
+                      <button
+                        className="instructor-course-builder-btn instructor-course-builder-btn-danger tiny"
+                        onClick={() => handleDeleteCourse(course.id)}
+                        type="button"
+                        style={{ backgroundColor: '#ef4444' }}
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
 
           <section className="instructor-course-builder-card">
@@ -738,7 +840,7 @@ function ManHinhQuanLyKhoaHoc() {
                 onChange={(event) => handleSelectCourse(Number(event.target.value))}
               >
                 <option value="">-- Chọn khóa học --</option>
-                {courses.map((course) => (
+                {myCoursesOnly.map((course) => (
                   <option key={course.id} value={course.id}>
                     {course.title}
                   </option>
@@ -814,6 +916,9 @@ function ManHinhQuanLyKhoaHoc() {
                         </button>
                         <button className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny" onClick={() => handleStartEditChapter(chapter)} type="button">
                           Sửa
+                        </button>
+                        <button className="instructor-course-builder-btn instructor-course-builder-btn-danger tiny" onClick={() => handleDeleteChapter(chapter.id)} type="button" style={{ backgroundColor: '#ef4444' }}>
+                          Xóa
                         </button>
                       </div>
                     </div>

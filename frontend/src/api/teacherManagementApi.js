@@ -65,6 +65,16 @@ export const updateCourseChapterApi = async (chapterId, payload) => {
   return response?.data?.data || response?.data;
 };
 
+export const deleteChapterApi = async (chapterId) => {
+  const response = await httpClient.delete(`/chapters/${chapterId}`);
+  return response?.data?.data || response?.data;
+};
+
+export const deleteCourseApi = async (courseId) => {
+  const response = await httpClient.delete(`/courses/${courseId}`);
+  return response?.data?.data || response?.data;
+};
+
 export const fetchQuestionsApi = async () => {
   const response = await httpClient.get('/questions');
   return response?.data?.data || response?.data || [];

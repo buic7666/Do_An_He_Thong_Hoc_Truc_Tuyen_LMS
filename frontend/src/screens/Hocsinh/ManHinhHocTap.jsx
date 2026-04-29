@@ -92,6 +92,7 @@ function ManHinhHocTap() {
   const [isSubscribingChannel, setIsSubscribingChannel] = useState(false);
   const [youtubeSubscribeMessage, setYoutubeSubscribeMessage] = useState('');
   const [isVideoUnlocked, setIsVideoUnlocked] = useState(false);
+  const [lessonSegments, setLessonSegments] = useState([]);
 
   const initialQueryRef = useRef(null);
   const lessonSessionStartAtRef = useRef(null);
@@ -267,6 +268,7 @@ function ManHinhHocTap() {
       setCurrentLessonDetail(null);
       setResumeSeconds(0);
       setIframeStartSeconds(0);
+      setLessonSegments([]);
       return;
     }
 
@@ -276,6 +278,7 @@ function ManHinhHocTap() {
     ]);
 
     setCurrentLessonDetail(lessonDetail);
+    setLessonSegments(Array.isArray(lessonDetail?.segments) ? lessonDetail.segments : []);
     const seconds = Number(watchPosition?.positionSeconds || 0);
     setResumeSeconds(seconds);
     setIframeStartSeconds(0);
@@ -716,6 +719,7 @@ function ManHinhHocTap() {
             )}
           </div>
 
+
           <div className='study-tabs-container'>
             <div className='study-tabs-header'>
               {tabs.map((tab) => (
@@ -860,20 +864,55 @@ function ManHinhHocTap() {
                             const isCompleted = completedLessonIdSet.has(Number(lesson.id));
 
                             return (
-                              <button
-                                key={lesson.id}
-                                type='button'
-                                className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
-                                onClick={() => handleSelectLesson(lesson.id)}
-                              >
-                                <span
-                                  className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}
+                              <div key={lesson.id}>
+                                <button
+                                  type='button'
+                                  className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
+                                  onClick={() => handleSelectLesson(lesson.id)}
                                 >
-                                  {isActive ? '▶' : isCompleted ? '✔' : '○'}
-                                </span>
-                                <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
-                                <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
-                              </button>
+                                  <span className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}>
+                                    {isActive ? '▶' : isCompleted ? '✔' : '○'}
+                                  </span>
+                                  <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
+                                  <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
+                                </button>
+
+                                {isActive && lessonSegments.length > 0 && (
+                                  <div style={{ paddingLeft: '20px', display: 'grid', gap: '4px', marginTop: '4px', marginBottom: '8px' }}>
+                                    {lessonSegments.map((segment) => (
+                                      <button
+                                        key={segment.id}
+                                        type='button'
+                                        style={{
+                                          background: 'none',
+                                          border: 'none',
+                                          color: '#888',
+                                          fontSize: '12px',
+                                          textAlign: 'left',
+                                          cursor: 'pointer',
+                                          padding: '4px 8px',
+                                          borderRadius: '4px',
+                                          transition: 'background 0.2s',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.target.style.background = '#e8e8e8';
+                                          e.target.style.color = '#333';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.target.style.background = 'none';
+                                          e.target.style.color = '#888';
+                                        }}
+                                        onClick={() => {
+                                          setIframeStartSeconds(segment.startTime);
+                                          setIframeResumeNonce((prev) => prev + 1);
+                                        }}
+                                      >
+                                        • {segment.title || `Phần ${segment.id}`} ({formatDuration(segment.startTime)} - {formatDuration(segment.endTime)})
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             );
                           })}
                         </div>
@@ -882,7 +921,7 @@ function ManHinhHocTap() {
                   );
                 }
 
-                // Render ungrouped lessons with a compact header 'Chưa phân chương'
+                // ungrouped
                 return (
                   <article key={chapterGroup.id} className='study-chapter study-ungrouped-lessons'>
                     <header className='study-ungrouped-header'>
@@ -896,20 +935,55 @@ function ManHinhHocTap() {
                         const isCompleted = completedLessonIdSet.has(Number(lesson.id));
 
                         return (
-                          <button
-                            key={lesson.id}
-                            type='button'
-                            className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
-                            onClick={() => handleSelectLesson(lesson.id)}
-                          >
-                            <span
-                              className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}
+                          <div key={lesson.id}>
+                            <button
+                              type='button'
+                              className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
+                              onClick={() => handleSelectLesson(lesson.id)}
                             >
-                              {isActive ? '▶' : isCompleted ? '✔' : '○'}
-                            </span>
-                            <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
-                            <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
-                          </button>
+                              <span className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}>
+                                {isActive ? '▶' : isCompleted ? '✔' : '○'}
+                              </span>
+                              <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
+                              <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
+                            </button>
+
+                            {isActive && lessonSegments.length > 0 && (
+                              <div style={{ paddingLeft: '20px', display: 'grid', gap: '4px', marginTop: '4px', marginBottom: '8px' }}>
+                                {lessonSegments.map((segment) => (
+                                  <button
+                                    key={segment.id}
+                                    type='button'
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#888',
+                                      fontSize: '12px',
+                                      textAlign: 'left',
+                                      cursor: 'pointer',
+                                      padding: '4px 8px',
+                                      borderRadius: '4px',
+                                      transition: 'background 0.2s',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.target.style.background = '#e8e8e8';
+                                      e.target.style.color = '#333';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.target.style.background = 'none';
+                                      e.target.style.color = '#888';
+                                    }}
+                                    onClick={() => {
+                                      setIframeStartSeconds(segment.startTime);
+                                      setIframeResumeNonce((prev) => prev + 1);
+                                    }}
+                                  >
+                                    • {segment.title || `Phần ${segment.id}`} ({formatDuration(segment.startTime)} - {formatDuration(segment.endTime)})
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -929,20 +1003,55 @@ function ManHinhHocTap() {
                     const isCompleted = completedLessonIdSet.has(Number(lesson.id));
 
                     return (
-                      <button
-                        key={lesson.id}
-                        type='button'
-                        className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
-                        onClick={() => handleSelectLesson(lesson.id)}
-                      >
-                        <span
-                          className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}
+                      <div key={lesson.id}>
+                        <button
+                          type='button'
+                          className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
+                          onClick={() => handleSelectLesson(lesson.id)}
                         >
-                          {isActive ? '▶' : isCompleted ? '✔' : '○'}
-                        </span>
-                        <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
-                        <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
-                      </button>
+                          <span className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}>
+                            {isActive ? '▶' : isCompleted ? '✔' : '○'}
+                          </span>
+                          <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
+                          <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
+                        </button>
+
+                        {isActive && lessonSegments.length > 0 && (
+                          <div style={{ paddingLeft: '20px', display: 'grid', gap: '4px', marginTop: '4px', marginBottom: '8px' }}>
+                            {lessonSegments.map((segment) => (
+                              <button
+                                key={segment.id}
+                                type='button'
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#888',
+                                  fontSize: '12px',
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  padding: '4px 8px',
+                                  borderRadius: '4px',
+                                  transition: 'background 0.2s',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.target.style.background = '#e8e8e8';
+                                  e.target.style.color = '#333';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.target.style.background = 'none';
+                                  e.target.style.color = '#888';
+                                }}
+                                onClick={() => {
+                                  setIframeStartSeconds(segment.startTime);
+                                  setIframeResumeNonce((prev) => prev + 1);
+                                }}
+                              >
+                                • {segment.title || `Phần ${segment.id}`} ({formatDuration(segment.startTime)} - {formatDuration(segment.endTime)})
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
