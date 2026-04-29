@@ -28,6 +28,24 @@ const createLesson = async (req, res, next) => {
   }
 };
 
+const updateLesson = async (req, res, next) => {
+  try {
+    const result = await lessonService.updateLesson(req.params.id, req.body, req.user);
+    return successResponse(res, 'Lesson updated successfully', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const deleteLesson = async (req, res, next) => {
+  try {
+    const result = await lessonService.deleteLesson(req.params.id, req.user);
+    return successResponse(res, 'Lesson deleted successfully', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const getLessonSegments = async (req, res, next) => {
   try {
     const result = await lessonService.getLessonSegments(req.params.id);
@@ -46,6 +64,24 @@ const createLessonSegment = async (req, res, next) => {
   }
 };
 
+const updateLessonSegment = async (req, res, next) => {
+  try {
+    const result = await lessonService.updateLessonSegment(req.params.segmentId, req.body, req.user);
+    return successResponse(res, 'Segment updated', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const createLessonSegmentsBulk = async (req, res, next) => {
+  try {
+    const result = await lessonService.createLessonSegmentsBulk(req.params.id, req.body, req.user);
+    return successResponse(res, 'Segments created', result, 201);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const deleteLessonSegment = async (req, res, next) => {
   try {
     const result = await lessonService.deleteLessonSegment(req.params.segmentId, req.user);
@@ -59,7 +95,11 @@ module.exports = {
   getLessonsByCourse,
   getLessonDetail,
   createLesson,
+  updateLesson,
+  deleteLesson,
   getLessonSegments,
   createLessonSegment,
+  updateLessonSegment,
+  createLessonSegmentsBulk,
   deleteLessonSegment,
 };

@@ -25,6 +25,16 @@ export const createLessonApi = async (courseId, payload) => {
   return response?.data?.data || response?.data;
 };
 
+export const updateLessonApi = async (lessonId, payload) => {
+  const response = await httpClient.put(`/lessons/${lessonId}`, payload);
+  return response?.data?.data || response?.data;
+};
+
+export const deleteLessonApi = async (lessonId) => {
+  const response = await httpClient.delete(`/lessons/${lessonId}`);
+  return response?.data?.data || response?.data;
+};
+
 export const fetchLessonSegmentsApi = async (lessonId) => {
   const response = await httpClient.get(`/lessons/${lessonId}/segments`);
   return response?.data?.data || response?.data || [];
@@ -32,6 +42,16 @@ export const fetchLessonSegmentsApi = async (lessonId) => {
 
 export const createLessonSegmentApi = async (lessonId, payload) => {
   const response = await httpClient.post(`/lessons/${lessonId}/segments`, payload);
+  return response?.data?.data || response?.data;
+};
+
+export const bulkCreateLessonSegmentsApi = async (lessonId, payload) => {
+  const response = await httpClient.post(`/lessons/${lessonId}/segments/bulk`, payload);
+  return response?.data?.data || response?.data;
+};
+
+export const updateLessonSegmentApi = async (segmentId, payload) => {
+  const response = await httpClient.put(`/lessons/segments/${segmentId}`, payload);
   return response?.data?.data || response?.data;
 };
 

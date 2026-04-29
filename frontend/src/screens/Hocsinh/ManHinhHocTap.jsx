@@ -71,9 +71,11 @@ function ManHinhHocTap() {
   const GOOGLE_YOUTUBE_TOKEN_KEY = 'googleYoutubeAccessToken';
   const [activeTab, setActiveTab] = useState('overview');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshingLessons, setIsRefreshingLessons] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [courseDetail, setCourseDetail] = useState(null);
   const [lessons, setLessons] = useState([]);
+  const [expandedChapters, setExpandedChapters] = useState({});
   const [currentLessonId, setCurrentLessonId] = useState(null);
   const [currentLessonDetail, setCurrentLessonDetail] = useState(null);
   const [resumeSeconds, setResumeSeconds] = useState(0);
@@ -199,6 +201,52 @@ function ManHinhHocTap() {
     return new Set(ids.map((id) => Number(id)).filter(Boolean));
   }, [courseProgress?.completedLessonIds]);
 
+  const lessonsByChapter = useMemo(() => {
+    const chapters = Array.isArray(courseDetail?.chapters) ? [...courseDetail.chapters] : [];
+    // Sort chapters by orderIndex when available
+    chapters.sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0));
+    const lessonMap = new Map();
+
+    // Group lessons by chapter
+    lessons.forEach((lesson) => {
+      const chapterId = lesson.chapterId || 'no-chapter';
+      if (!lessonMap.has(chapterId)) {
+        lessonMap.set(chapterId, []);
+      }
+      lessonMap.get(chapterId).push(lesson);
+    });
+
+    // Sort lessons within each chapter by orderIndex
+    lessonMap.forEach((lessonArray) => {
+      lessonArray.sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0));
+    });
+
+    // Build result with chapter groups first (even if a chapter has no lessons)
+    const result = [];
+
+    chapters.forEach((chapter) => {
+      result.push({
+        id: chapter.id,
+        title: chapter.title,
+        description: chapter.description,
+        lessons: lessonMap.get(chapter.id) || [],
+        isChapter: true,
+      });
+    });
+
+    // Append lessons without chapters at the end, but do not use the "Bài học khác" label — render them as ungrouped list
+    if (lessonMap.has('no-chapter')) {
+      result.push({
+        id: 'no-chapter',
+        title: 'Chưa phân chương',
+        lessons: lessonMap.get('no-chapter'),
+        isChapter: false,
+      });
+    }
+
+    return result;
+  }, [courseDetail?.chapters, lessons]);
+
   const completedLessons = Number(courseProgress?.completedLessons || 0);
   const totalLessons = Number(courseProgress?.totalLessons || lessons.length || 0);
   const completionPercent = Number(courseProgress?.completionPercent || 0);
@@ -322,6 +370,15 @@ function ManHinhHocTap() {
           setCourseDetail(course);
           setLessons(sortedLessons);
           setCurrentLessonId(Number(resolvedLessonId));
+          
+          // Expand all chapters by default
+          const chapters = Array.isArray(course.chapters) ? course.chapters : [];
+          const allExpanded = {};
+          chapters.forEach((chapter) => {
+            allExpanded[chapter.id] = true;
+          });
+          setExpandedChapters(allExpanded);
+          
           await loadLessonData(Number(resolvedLessonId));
           await refreshCourseProgress(resolvedCourseId);
           syncUrlParams(resolvedCourseId, resolvedLessonId);
@@ -365,6 +422,43 @@ function ManHinhHocTap() {
       const message = error?.response?.data?.message || error?.message || 'Không thể chuyển sang bài học này.';
       setErrorMessage(message);
     }
+  };
+
+  const handleRefreshLessons = async () => {
+    if (!courseDetail?.id) return;
+
+    setIsRefreshingLessons(true);
+    try {
+      const updatedCourse = await fetchCourseDetailApi(courseDetail.id);
+      const sortedLessons = [...(Array.isArray(updatedCourse.lessons) ? updatedCourse.lessons : [])].sort(
+        (left, right) => Number(left.orderIndex || 0) - Number(right.orderIndex || 0),
+      );
+      
+      setCourseDetail(updatedCourse);
+      setLessons(sortedLessons);
+      
+      // Expand all chapters by default
+      const chapters = Array.isArray(updatedCourse.chapters) ? updatedCourse.chapters : [];
+      const allExpanded = {};
+      chapters.forEach((chapter) => {
+        allExpanded[chapter.id] = true;
+      });
+      setExpandedChapters(allExpanded);
+      
+      setPositionSaveMessage('✅ Đã tải lại danh sách bài học.');
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage('Không thể tải lại danh sách bài học.');
+    } finally {
+      setIsRefreshingLessons(false);
+    }
+  };
+
+  const toggleChapter = (chapterId) => {
+    setExpandedChapters((prev) => ({
+      ...prev,
+      [chapterId]: !prev[chapterId],
+    }));
   };
 
   const handleResume = () => {
@@ -716,42 +810,144 @@ function ManHinhHocTap() {
         <aside className='study-sidebar'>
           <div className='study-sidebar-header'>
             <h3 className='study-sidebar-title'>Nội dung khóa học</h3>
+            <button
+              type='button'
+              onClick={handleRefreshLessons}
+              disabled={isRefreshingLessons}
+              title='Tải lại danh sách bài học mới'
+              style={{
+                marginLeft: 'auto',
+                padding: '6px 12px',
+                fontSize: '12px',
+                backgroundColor: isRefreshingLessons ? '#d1d5db' : '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: isRefreshingLessons ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {isRefreshingLessons ? '⏳ Đang tải...' : '🔄 Làm mới'}
+            </button>
             <p className='study-progress-text'>
               Đã hoàn thành {completedLessons}/{totalLessons} bài học ({completionPercent}%)
             </p>
           </div>
 
           <div className='study-course-content'>
-            <article className='study-chapter'>
-              <header className='study-chapter-title'>
-                <span>Nội dung khóa học</span>
-                <span>{lessons.length} bài</span>
-              </header>
-
-              <div>
-                {lessons.map((lesson) => {
-                  const isActive = Number(lesson.id) === Number(currentLessonId);
-                  const isCompleted = completedLessonIdSet.has(Number(lesson.id));
-
+            {Array.isArray(courseDetail?.chapters) && courseDetail.chapters.length > 0 ? (
+              lessonsByChapter.map((chapterGroup) => {
+                if (chapterGroup.isChapter) {
                   return (
-                    <button
-                      key={lesson.id}
-                      type='button'
-                      className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
-                      onClick={() => handleSelectLesson(lesson.id)}
-                    >
-                      <span
-                        className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}
+                    <article key={chapterGroup.id} className='study-chapter'>
+                      <header
+                        className='study-chapter-title'
+                        onClick={() => toggleChapter(chapterGroup.id)}
+                        style={{ cursor: 'pointer', userSelect: 'none' }}
                       >
-                        {isActive ? '▶' : isCompleted ? '✔' : '○'}
-                      </span>
-                      <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
-                      <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
-                    </button>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                          <span style={{ fontSize: '14px', transform: expandedChapters[chapterGroup.id] ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+                            ▶
+                          </span>
+                          {chapterGroup.title}
+                        </span>
+                        <span>{chapterGroup.lessons.length} bài</span>
+                      </header>
+
+                      {expandedChapters[chapterGroup.id] && (
+                        <div>
+                          {chapterGroup.lessons.map((lesson) => {
+                            const isActive = Number(lesson.id) === Number(currentLessonId);
+                            const isCompleted = completedLessonIdSet.has(Number(lesson.id));
+
+                            return (
+                              <button
+                                key={lesson.id}
+                                type='button'
+                                className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
+                                onClick={() => handleSelectLesson(lesson.id)}
+                              >
+                                <span
+                                  className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}
+                                >
+                                  {isActive ? '▶' : isCompleted ? '✔' : '○'}
+                                </span>
+                                <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
+                                <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </article>
                   );
-                })}
-              </div>
-            </article>
+                }
+
+                // Render ungrouped lessons with a compact header 'Chưa phân chương'
+                return (
+                  <article key={chapterGroup.id} className='study-chapter study-ungrouped-lessons'>
+                    <header className='study-ungrouped-header'>
+                      <span style={{ fontSize: '13px', color: 'var(--study-text-secondary)', fontWeight: 600 }}>{chapterGroup.title}</span>
+                      <span style={{ fontSize: '12px', color: '#6b7280' }}>{chapterGroup.lessons.length} bài</span>
+                    </header>
+
+                    <div>
+                      {chapterGroup.lessons.map((lesson) => {
+                        const isActive = Number(lesson.id) === Number(currentLessonId);
+                        const isCompleted = completedLessonIdSet.has(Number(lesson.id));
+
+                        return (
+                          <button
+                            key={lesson.id}
+                            type='button'
+                            className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
+                            onClick={() => handleSelectLesson(lesson.id)}
+                          >
+                            <span
+                              className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}
+                            >
+                              {isActive ? '▶' : isCompleted ? '✔' : '○'}
+                            </span>
+                            <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
+                            <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <article className='study-chapter'>
+                <header className='study-chapter-title'>
+                  <span>Nội dung khóa học</span>
+                  <span>{lessons.length} bài</span>
+                </header>
+
+                <div>
+                  {lessons.map((lesson) => {
+                    const isActive = Number(lesson.id) === Number(currentLessonId);
+                    const isCompleted = completedLessonIdSet.has(Number(lesson.id));
+
+                    return (
+                      <button
+                        key={lesson.id}
+                        type='button'
+                        className={`study-lesson-item ${isActive ? 'is-active' : ''}`}
+                        onClick={() => handleSelectLesson(lesson.id)}
+                      >
+                        <span
+                          className={`study-lesson-icon ${isActive ? 'study-icon-playing' : isCompleted ? 'study-icon-done' : 'study-icon-lock'}`}
+                        >
+                          {isActive ? '▶' : isCompleted ? '✔' : '○'}
+                        </span>
+                        <span className={`study-lesson-name ${isCompleted ? 'is-done' : ''}`}>{lesson.title}</span>
+                        <span className='study-lesson-duration'>#{lesson.orderIndex}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </article>
+            )}
           </div>
         </aside>
       </div>

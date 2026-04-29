@@ -38,11 +38,19 @@ const segmentIdParamSchema = z
   })
   .strict();
 
-const createLessonSegmentBodySchema = z
+const segmentBodySchema = z
   .object({
     startTime: z.coerce.number().int().min(0),
     endTime: z.coerce.number().int().min(1),
     title: z.string().trim().max(255).optional(),
+  })
+  .strict();
+
+const createLessonSegmentBodySchema = segmentBodySchema;
+const updateLessonSegmentBodySchema = segmentBodySchema;
+const bulkCreateLessonSegmentsBodySchema = z
+  .object({
+    segments: z.array(segmentBodySchema).min(1),
   })
   .strict();
 
@@ -53,4 +61,6 @@ module.exports = {
   updateLessonBodySchema,
   segmentIdParamSchema,
   createLessonSegmentBodySchema,
+  updateLessonSegmentBodySchema,
+  bulkCreateLessonSegmentsBodySchema,
 };

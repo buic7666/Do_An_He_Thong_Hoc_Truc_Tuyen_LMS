@@ -393,6 +393,26 @@
   color: #6b7280;
 }
 
+/* Ungrouped lessons compact header and spacing */
+.study-ungrouped-lessons .study-ungrouped-header {
+  padding: 8px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: transparent;
+  border-top: 1px solid var(--study-border-color);
+}
+
+/* Make ungrouped lesson items slightly more compact */
+.study-ungrouped-lessons .study-lesson-item {
+  padding: 10px 18px 10px 36px;
+}
+
+/* Slight visual separation for ungrouped block */
+.study-ungrouped-lessons {
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
+}
+
 @media (max-width: 1024px) {
   .study-workspace-page {
     height: auto;

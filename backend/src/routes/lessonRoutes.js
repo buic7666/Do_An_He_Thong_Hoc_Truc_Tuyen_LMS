@@ -8,8 +8,11 @@ const {
 	lessonIdParamSchema,
 	courseIdParamSchema,
 	createLessonBodySchema,
+	updateLessonBodySchema,
 	segmentIdParamSchema,
 	createLessonSegmentBodySchema,
+	updateLessonSegmentBodySchema,
+	bulkCreateLessonSegmentsBodySchema,
 } = require('../validations/lessonValidation');
 const {
 	lessonIdParamSchema: progressLessonIdParamSchema,
@@ -18,6 +21,7 @@ const {
 
 const router = express.Router();
 
+// Specific routes first, then generic routes
 router.get('/course/:courseId', authenticate, validateRequest({ params: courseIdParamSchema }), lessonController.getLessonsByCourse);
 router.post(
 	'/course/:courseId',
@@ -26,7 +30,8 @@ router.post(
 	validateRequest({ params: courseIdParamSchema, body: createLessonBodySchema }),
 	lessonController.createLesson,
 );
-router.get('/:id', authenticate, validateRequest({ params: lessonIdParamSchema }), lessonController.getLessonDetail);
+
+// Segment-specific routes (must come before /:id routes)
 router.get('/:id/segments', authenticate, validateRequest({ params: lessonIdParamSchema }), lessonController.getLessonSegments);
 router.post(
 	'/:id/segments',
@@ -35,6 +40,20 @@ router.post(
 	validateRequest({ params: lessonIdParamSchema, body: createLessonSegmentBodySchema }),
 	lessonController.createLessonSegment,
 );
+router.post(
+	'/:id/segments/bulk',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: lessonIdParamSchema, body: bulkCreateLessonSegmentsBodySchema }),
+	lessonController.createLessonSegmentsBulk,
+);
+router.put(
+	'/segments/:segmentId',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: segmentIdParamSchema, body: updateLessonSegmentBodySchema }),
+	lessonController.updateLessonSegment,
+);
 router.delete(
 	'/segments/:segmentId',
 	authenticate,
@@ -42,6 +61,25 @@ router.delete(
 	validateRequest({ params: segmentIdParamSchema }),
 	lessonController.deleteLessonSegment,
 );
+
+// Generic /:id routes (must come last)
+router.get('/:id', authenticate, validateRequest({ params: lessonIdParamSchema }), lessonController.getLessonDetail);
+router.put(
+	'/:id',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: lessonIdParamSchema, body: updateLessonBodySchema }),
+	lessonController.updateLesson,
+);
+router.delete(
+	'/:id',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: lessonIdParamSchema }),
+	lessonController.deleteLesson,
+);
+
+// Progress and watch position routes
 router.post('/:id/progress', authenticate, validateRequest({ params: progressLessonIdParamSchema }), progressController.markLessonCompleted);
 router.get(
 	'/:id/watch-position',

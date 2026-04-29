@@ -93,7 +93,7 @@ const VideoGuard = ({ youtubeUrl, channelId = 'UCxxxxxxxxxxxxxxxxxx', title = 'V
       });
 
       const payload = response?.data?.data || response?.data;
-      const success = Boolean(payload?.success ?? payload?.isSubscribed ?? true);
+      const success = Boolean(payload?.success ?? payload?.isSubscribed ?? false);
 
       if (success) {
         setIsVideoUnlocked(true);
@@ -135,8 +135,30 @@ const VideoGuard = ({ youtubeUrl, channelId = 'UCxxxxxxxxxxxxxxxxxx', title = 'V
     // onSuccess: Callback khi đăng nhập thành công
     onSuccess: async (codeResponse) => {
       // codeResponse.access_token = token để gọi YouTube API
-      setAccessToken(codeResponse.access_token || '');
-      showMessage('success', 'Đăng nhập Google thành công. Bấm "Xem video" để hệ thống đăng ký kênh.');
+      const token = codeResponse.access_token || '';
+      setAccessToken(token);
+      showMessage('success', 'Đăng nhập Google thành công. Kiểm tra trạng thái đăng ký kênh...');
+
+      // After login, check whether the user already subscribed and unlock immediately
+      try {
+        if (!token) return;
+        const resolvedVideoId = getVideoId(youtubeUrl);
+        const checkResp = await httpClient.post('/youtube/check-subscription', {
+          access_token: token,
+          ...(resolvedVideoId ? { video_id: resolvedVideoId } : {}),
+          ...(channelId ? { channel_id: channelId } : {}),
+        });
+
+        const checkPayload = checkResp?.data?.data || checkResp?.data || {};
+        if (checkPayload?.isSubscribed) {
+          setIsVideoUnlocked(true);
+          showMessage('success', 'Bạn đã subscribe kênh. Mở video...');
+        } else {
+          showMessage('info', 'Bạn chưa subscribe. Bấm "Xem video" để hệ thống đăng ký kênh.');
+        }
+      } catch (err) {
+        // ignore — user can still press Xem video to trigger subscribe flow
+      }
     },
     
     // onError: Callback khi đăng nhập thất bại

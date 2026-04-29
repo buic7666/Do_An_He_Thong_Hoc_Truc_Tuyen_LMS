@@ -20,6 +20,7 @@ function ChiTietKhoaHoc() {
   const [courseDetail, setCourseDetail] = useState(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedQuizId, setSelectedQuizId] = useState(null);
   const [showQuizTaker, setShowQuizTaker] = useState(false);
@@ -51,19 +52,33 @@ function ChiTietKhoaHoc() {
   }, [id, isStudentAuthenticated]);
 
   const syllabus = useMemo(() => {
+    const chapters = Array.isArray(courseDetail?.chapters) ? [...courseDetail.chapters] : [];
     const lessons = Array.isArray(courseDetail?.lessons) ? [...courseDetail.lessons] : [];
-
-    lessons.sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0));
 
     if (lessons.length === 0) {
       return [];
     }
 
+    // If chapters exist, group lessons by chapter
+    if (chapters.length > 0) {
+      return chapters.map((chapter) => {
+        const chapterLessons = lessons.filter((lesson) => Number(lesson.chapterId) === Number(chapter.id));
+        return {
+          id: chapter.id,
+          chapter: chapter.title,
+          lessonCount: `${chapterLessons.length} Bài học`,
+          lessons: chapterLessons.map((lesson) => lesson.title),
+        };
+      });
+    }
+
+    // If no chapters, show all lessons in one section
+    lessons.sort((a, b) => Number(a.orderIndex || 0) - Number(b.orderIndex || 0));
     return [
       {
         id: 1,
-        chapter: 'N?i dung kh�a h?c',
-        lessonCount: `${lessons.length} B�i h?c`,
+        chapter: 'Nội dung khóa học',
+        lessonCount: `${lessons.length} Bài học`,
         lessons: lessons.map((lesson) => lesson.title),
       },
     ];
@@ -83,6 +98,21 @@ function ChiTietKhoaHoc() {
   const handleBackFromQuiz = () => {
     setShowQuizTaker(false);
     setSelectedQuizId(null);
+  };
+
+  const handleRefreshCourse = async () => {
+    if (!id) return;
+
+    setIsRefreshing(true);
+    try {
+      const data = await fetchCourseDetailApi(id);
+      setCourseDetail(data);
+      setErrorMessage('');
+    } catch (error) {
+      setErrorMessage('Không thể tải lại chi tiết khóa học.');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const handlePrimaryAction = () => {
@@ -205,14 +235,23 @@ function ChiTietKhoaHoc() {
             className='course-detail-btn course-detail-btn-primary'
             onClick={handlePrimaryAction}
           >
-            {isEnrolled ? 'V�o h?c ngay' : '�ang k� ngay'}
+            {isEnrolled ? 'Vào học ngay' : 'Đăng ký ngay'}
           </button>
           <button
             type='button'
             className='course-detail-btn course-detail-btn-secondary'
             onClick={() => navigate(`/enroll/${courseDetail.id}`)}
           >
-            {isEnrolled ? 'Qu?n l� dang k�' : 'Xem m�n h�nh dang k�'}
+            {isEnrolled ? 'Quản lý đăng ký' : 'Xem màn hình đăng ký'}
+          </button>
+          <button
+            type='button'
+            className='course-detail-btn course-detail-btn-secondary'
+            onClick={handleRefreshCourse}
+            disabled={isRefreshing}
+            title='Tải lại danh sách bài học mới từ giáo viên'
+          >
+            {isRefreshing ? '⏳ Đang tải...' : '🔄 Làm mới'}
           </button>
 
           <ul className='course-detail-features'>

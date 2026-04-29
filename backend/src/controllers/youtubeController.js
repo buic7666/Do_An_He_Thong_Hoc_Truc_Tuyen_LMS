@@ -121,6 +121,9 @@ exports.checkSubscription = async (req, res) => {
  * - channel_id (optional): channel cần subscribe, mặc định dùng YOUTUBE_CHANNEL_ID
  */
 exports.subscribeChannel = async (req, res) => {
+  // Declare targetChannelId in function scope so catch block can reference it
+  let targetChannelId = null;
+
   try {
     const { access_token, channel_id, video_id } = req.body;
 
@@ -132,7 +135,7 @@ exports.subscribeChannel = async (req, res) => {
     }
 
     const youtube = buildYoutubeClient(access_token);
-    let targetChannelId = channel_id || null;
+    targetChannelId = channel_id || null;
 
     if (!targetChannelId && video_id) {
       targetChannelId = await resolveChannelIdFromVideo(youtube, video_id);

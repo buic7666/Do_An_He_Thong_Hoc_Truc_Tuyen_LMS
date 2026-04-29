@@ -1,5 +1,6 @@
 const lessonRepository = require('../repositories/lessonRepository');
 const enrollmentRepository = require('../repositories/enrollmentRepository');
+const { sequelize } = require('../config/database');
 const { Lesson, LessonSegment } = require('../models');
 const { HttpError } = require('../utils/httpError');
 
@@ -11,6 +12,31 @@ const parseId = (value, fieldName) => {
   }
 
   return id;
+};
+
+const mapLessonSegment = (segment) => {
+  const plain = segment.toJSON ? segment.toJSON() : segment;
+
+  return {
+    id: plain.id,
+    lessonId: plain.lessonId,
+    startTime: plain.startTime,
+    endTime: plain.endTime,
+    duration: plain.duration,
+    title: plain.title,
+    createdAt: plain.createdAt,
+    updatedAt: plain.updatedAt,
+  };
+};
+
+const assertSegmentRange = (startTime, endTime) => {
+  if (!Number.isInteger(startTime) || !Number.isInteger(endTime)) {
+    throw new HttpError(400, 'Segment times must be integers', 'INVALID_SEGMENT_RANGE');
+  }
+
+  if (startTime < 0 || endTime <= startTime) {
+    throw new HttpError(400, 'endTime must be greater than startTime', 'INVALID_SEGMENT_RANGE');
+  }
 };
 
 const getLessonsByCourse = async (courseId) => {
@@ -214,29 +240,114 @@ const createLessonSegment = async (lessonId, payload, currentUser) => {
     throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
   }
 
-  if (payload.endTime <= payload.startTime) {
-    throw new HttpError(400, 'endTime must be greater than startTime', 'INVALID_SEGMENT_RANGE');
-  }
+  const startTime = Number(payload.startTime);
+  const endTime = Number(payload.endTime);
+  assertSegmentRange(startTime, endTime);
 
   const created = await LessonSegment.create({
     lessonId: parsedLessonId,
-    startTime: payload.startTime,
-    endTime: payload.endTime,
-    duration: payload.endTime - payload.startTime,
-    title: payload.title || null,
+    startTime,
+    endTime,
+    duration: endTime - startTime,
+    title: payload.title?.trim() || null,
   });
 
-  const plain = created.toJSON();
-  return {
-    id: plain.id,
-    lessonId: plain.lessonId,
-    startTime: plain.startTime,
-    endTime: plain.endTime,
-    duration: plain.duration,
-    title: plain.title,
-    createdAt: plain.createdAt,
-    updatedAt: plain.updatedAt,
-  };
+  return mapLessonSegment(created);
+};
+
+const updateLessonSegment = async (segmentId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedSegmentId = parseId(segmentId, 'segmentId');
+  const segment = await LessonSegment.findByPk(parsedSegmentId, {
+    include: [
+      {
+        association: 'lesson',
+        include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+      },
+    ],
+  });
+
+  if (!segment) {
+    throw new HttpError(404, 'Segment not found', 'SEGMENT_NOT_FOUND');
+  }
+
+  if (segment.lesson?.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const nextStartTime = Object.prototype.hasOwnProperty.call(payload, 'startTime')
+    ? Number(payload.startTime)
+    : segment.startTime;
+  const nextEndTime = Object.prototype.hasOwnProperty.call(payload, 'endTime')
+    ? Number(payload.endTime)
+    : segment.endTime;
+
+  assertSegmentRange(nextStartTime, nextEndTime);
+
+  segment.startTime = nextStartTime;
+  segment.endTime = nextEndTime;
+  segment.duration = nextEndTime - nextStartTime;
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'title')) {
+    segment.title = payload.title?.trim() || null;
+  }
+
+  await segment.save();
+  return mapLessonSegment(segment);
+};
+
+const createLessonSegmentsBulk = async (lessonId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  if (!Array.isArray(payload.segments) || payload.segments.length === 0) {
+    throw new HttpError(400, 'segments must be a non-empty array', 'INVALID_SEGMENT_RANGE');
+  }
+
+  const normalizedSegments = payload.segments
+    .map((segment, index) => {
+      const startTime = Number(segment.startTime);
+      const endTime = Number(segment.endTime);
+      assertSegmentRange(startTime, endTime);
+
+      return {
+        lessonId: parsedLessonId,
+        startTime,
+        endTime,
+        duration: endTime - startTime,
+        title: segment.title?.trim() || `Segment ${index + 1}`,
+      };
+    })
+    .sort((left, right) => left.startTime - right.startTime || left.endTime - right.endTime);
+
+  for (let index = 1; index < normalizedSegments.length; index += 1) {
+    if (normalizedSegments[index].startTime < normalizedSegments[index - 1].endTime) {
+      throw new HttpError(400, 'Segments must not overlap', 'INVALID_SEGMENT_RANGE');
+    }
+  }
+
+  const createdSegments = await sequelize.transaction(async (transaction) => {
+    return LessonSegment.bulkCreate(normalizedSegments, { transaction });
+  });
+
+  return createdSegments.map((segment) => mapLessonSegment(segment));
 };
 
 const getLessonSegments = async (lessonId) => {
@@ -247,19 +358,7 @@ const getLessonSegments = async (lessonId) => {
     order: [['startTime', 'ASC']],
   });
 
-  return segments.map((segment) => {
-    const plain = segment.toJSON();
-    return {
-      id: plain.id,
-      lessonId: plain.lessonId,
-      startTime: plain.startTime,
-      endTime: plain.endTime,
-      duration: plain.duration,
-      title: plain.title,
-      createdAt: plain.createdAt,
-      updatedAt: plain.updatedAt,
-    };
-  });
+  return segments.map((segment) => mapLessonSegment(segment));
 };
 
 const deleteLessonSegment = async (segmentId, currentUser) => {
@@ -296,6 +395,8 @@ module.exports = {
   updateLesson,
   deleteLesson,
   createLessonSegment,
+  updateLessonSegment,
+  createLessonSegmentsBulk,
   getLessonSegments,
   deleteLessonSegment,
 };

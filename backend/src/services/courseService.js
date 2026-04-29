@@ -48,6 +48,14 @@ const getCourseDetail = async (courseId) => {
 
   const plain = course.toJSON();
 
+  // Fetch chapters for this course
+  const Chapter = require('../models/chapter.model');
+  const chapters = await Chapter.findAll({
+    where: { courseId: parsedCourseId },
+    raw: true,
+    order: [['orderIndex', 'ASC']],
+  });
+
   return {
     id: plain.id,
     title: plain.title,
@@ -60,10 +68,20 @@ const getCourseDetail = async (courseId) => {
           email: plain.instructor.email,
         }
       : null,
+    chapters: Array.isArray(chapters)
+      ? chapters.map((chapter) => ({
+          id: chapter.id,
+          courseId: chapter.courseId,
+          title: chapter.title,
+          description: chapter.description,
+          orderIndex: chapter.orderIndex,
+        }))
+      : [],
     lessons: Array.isArray(plain.lessons)
       ? plain.lessons.map((lesson) => ({
           id: lesson.id,
           courseId: lesson.courseId,
+          chapterId: lesson.chapterId,
           title: lesson.title,
           videoUrl: lesson.videoUrl,
           content: lesson.content,
