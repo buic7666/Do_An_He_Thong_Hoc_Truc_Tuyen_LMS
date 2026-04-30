@@ -15,8 +15,6 @@ import './ManHinhHocTap.css';
 
 const tabs = [
   { id: 'overview', label: 'Tổng quan bài học' },
-  { id: 'lesson-questions', label: 'Câu hỏi bài học' },
-  { id: 'chapter-quiz', label: 'Bài kiểm tra chương' },
   { id: 'documents', label: 'Tài liệu PDF' },
   { id: 'notes', label: 'Ghi chú cá nhân' },
 ];
@@ -85,6 +83,7 @@ function ManHinhHocTap() {
   const [courseProgress, setCourseProgress] = useState(null);
   const [selectedQuizId, setSelectedQuizId] = useState(null);
   const [selectedQuizScope, setSelectedQuizScope] = useState(null);
+  const [showQuizForChapterId, setShowQuizForChapterId] = useState(null);
   const [youtubeAccessToken, setYoutubeAccessToken] = useState(() => {
     if (typeof window === 'undefined') return '';
     return sessionStorage.getItem(GOOGLE_YOUTUBE_TOKEN_KEY) || '';
@@ -417,6 +416,7 @@ function ManHinhHocTap() {
       setCurrentLessonId(parsedLessonId);
       setSelectedQuizId(null);
       setSelectedQuizScope(null);
+      setShowQuizForChapterId(null);
       setIsVideoUnlocked(false);
       setYoutubeSubscribeMessage('');
       await loadLessonData(parsedLessonId);
@@ -439,6 +439,7 @@ function ManHinhHocTap() {
       
       setCourseDetail(updatedCourse);
       setLessons(sortedLessons);
+      setShowQuizForChapterId(null);
       
       // Expand all chapters by default
       const chapters = Array.isArray(updatedCourse.chapters) ? updatedCourse.chapters : [];
@@ -685,7 +686,38 @@ function ManHinhHocTap() {
           </div>
 
           <div className='study-video-wrapper'>
-            {currentEmbedUrl ? (
+            {showQuizForChapterId ? (
+              <div className='study-quiz-section'>
+                {selectedQuizId && selectedQuizScope === 'chapter' ? (
+                  <QuizTaker 
+                    quizId={selectedQuizId} 
+                    onBack={() => {
+                      setShowQuizForChapterId(null);
+                      setSelectedQuizId(null);
+                      setSelectedQuizScope(null);
+                    }} 
+                    onSubmit={() => {
+                      setShowQuizForChapterId(null);
+                      setSelectedQuizId(null);
+                      setSelectedQuizScope(null);
+                    }}
+                  />
+                ) : (
+                  <div style={{ padding: '20px' }}>
+                    <h3 style={{ marginBottom: '16px' }}>🎓 Bài kiểm tra chương</h3>
+                    <QuizList
+                      courseId={selectedCourseId || courseDetail?.id}
+                      scope='chapter'
+                      onSelectQuiz={(quizId) => {
+                        setSelectedQuizId(Number(quizId));
+                        setSelectedQuizScope('chapter');
+                      }}
+                      emptyMessage='Chương này chưa có bài kiểm tra tổng hợp.'
+                    />
+                  </div>
+                )}
+              </div>
+            ) : currentEmbedUrl ? (
               isVideoUnlocked ? (
                 <iframe
                   key={`iframe-${currentLessonId}-${iframeStartSeconds}-${iframeResumeNonce}`}
@@ -731,6 +763,7 @@ function ManHinhHocTap() {
                     setActiveTab(tab.id);
                     setSelectedQuizId(null);
                     setSelectedQuizScope(null);
+                    setShowQuizForChapterId(null);
                   }}
                 >
                   {tab.label}
@@ -763,40 +796,14 @@ function ManHinhHocTap() {
                 </div>
               )}
 
-              {activeTab === 'lesson-questions' && (
+              {activeTab === 'documents' && (
                 <div className='study-tab-pane'>
-                  <h2 className='study-lesson-title'>Câu hỏi luyện tập sau bài học</h2>
-
-                  {selectedQuizId && selectedQuizScope === 'lesson' ? (
-                    <QuizTaker quizId={selectedQuizId} onBack={handleBackFromQuiz} onSubmit={handleQuizSubmitted} />
-                  ) : (
-                    <QuizList
-                      courseId={selectedCourseId || courseDetail?.id}
-                      lessonId={currentLessonId}
-                      scope='lesson'
-                      onSelectQuiz={(quizId) => handleSelectQuiz(quizId, 'lesson')}
-                      emptyMessage='Bài học này chưa có câu hỏi luyện tập.'
-                    />
-                  )}
+                  <h2 className='study-lesson-title'>Tài liệu tham khảo</h2>
+                  <p>Demo hiện tập trung vào luồng học video YouTube ổn định trong iframe.</p>
                 </div>
               )}
 
-              {activeTab === 'chapter-quiz' && (
-                <div className='study-tab-pane'>
-                  <h2 className='study-lesson-title'>Bài kiểm tra tổng hợp chương</h2>
 
-                  {selectedQuizId && selectedQuizScope === 'chapter' ? (
-                    <QuizTaker quizId={selectedQuizId} onBack={handleBackFromQuiz} onSubmit={handleQuizSubmitted} />
-                  ) : (
-                    <QuizList
-                      courseId={selectedCourseId || courseDetail?.id}
-                      scope='chapter'
-                      onSelectQuiz={(quizId) => handleSelectQuiz(quizId, 'chapter')}
-                      emptyMessage='Chương này chưa có bài kiểm tra tổng hợp.'
-                    />
-                  )}
-                </div>
-              )}
 
               {activeTab === 'notes' && (
                 <div className='study-tab-pane'>
@@ -915,6 +922,21 @@ function ManHinhHocTap() {
                               </div>
                             );
                           })}
+                          
+                          {/* Chapter Quiz Button */}
+                          <button
+                            type='button'
+                            className={`study-lesson-item study-chapter-quiz-item ${Number(showQuizForChapterId) === Number(chapterGroup.id) ? 'is-active' : ''}`}
+                            onClick={() => {
+                              setCurrentLessonId(null);
+                              setShowQuizForChapterId(Number(chapterGroup.id));
+                              setSelectedQuizId(null);
+                              setSelectedQuizScope(null);
+                            }}
+                          >
+                            <span className='study-lesson-icon'>🎓</span>
+                            <span className='study-lesson-name'>Bài kiểm tra chương</span>
+                          </button>
                         </div>
                       )}
                     </article>

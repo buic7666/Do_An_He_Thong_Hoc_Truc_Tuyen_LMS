@@ -413,6 +413,66 @@
   background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
 }
 
+/* Chapter Quiz Item in Sidebar */
+.study-chapter-quiz-item {
+  margin-top: 8px;
+  padding-top: 8px !important;
+  border-top: 1px solid var(--study-border-color) !important;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.05), transparent);
+}
+
+.study-chapter-quiz-item:hover {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.15), transparent);
+}
+
+.study-chapter-quiz-item.is-active {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.1));
+  border-left-color: var(--study-success) !important;
+}
+
+/* Quiz Section in Main Content */
+.study-quiz-section {
+  width: 100%;
+  height: 100%;
+  background-color: var(--study-bg-surface);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Chapter Quiz at End Section */
+.study-chapter-quiz-section {
+  padding: 24px 20px;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.05), rgba(16, 185, 129, 0.02));
+  border-top: 2px solid var(--study-success);
+  border-radius: var(--study-radius);
+  margin: 20px;
+  margin-top: auto;
+}
+
+.study-chapter-quiz-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.study-chapter-quiz-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--study-success);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.study-chapter-quiz-desc {
+  font-size: 14px;
+  color: var(--study-text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
 @media (max-width: 1024px) {
   .study-workspace-page {
     height: auto;
