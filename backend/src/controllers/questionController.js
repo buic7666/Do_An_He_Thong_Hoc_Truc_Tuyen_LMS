@@ -2,6 +2,31 @@ const questionService = require('../services/questionService');
 const { successResponse } = require('../utils/response');
 
 /**
+ * Get questions by course with filters
+ * Hỗ trợ filter: type, difficulty, isPublished
+ */
+const getQuestionsByCourse = async (req, res, next) => {
+  try {
+    const { courseId } = req.params;
+    const { type, difficulty, isPublished, chapterId } = req.query;
+
+    const questions = await questionService.getQuestionsByCourse(
+      courseId,
+      {
+        type,
+        difficulty,
+        chapterId,
+        isPublished: isPublished === 'true' ? true : isPublished === 'false' ? false : undefined,
+      },
+    );
+
+    return successResponse(res, 'Course questions retrieved', questions, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
  * Get all questions (question bank) created by user
  */
 const getQuestions = async (req, res, next) => {
@@ -112,6 +137,7 @@ const deleteQuestion = async (req, res, next) => {
 
 module.exports = {
   getQuestions,
+  getQuestionsByCourse,
   getQuestionsByLecture,
   getQuestion,
   createQuestion,

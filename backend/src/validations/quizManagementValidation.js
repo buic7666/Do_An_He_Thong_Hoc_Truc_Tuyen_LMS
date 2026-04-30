@@ -15,13 +15,21 @@ const questionIdParamSchema = z
 const createQuizBodySchema = z
   .object({
     courseId: z.coerce.number().int().positive(),
-    chapterId: z.coerce.number().int().positive().optional(),
+    chapterId: z.coerce.number().int().positive(),
     lessonId: z.coerce.number().int().positive().optional(),
     title: z.string().trim().min(3).max(255),
     description: z.string().trim().max(2000).optional(),
     duration: z.coerce.number().int().min(1).optional(),
     passScore: z.coerce.number().int().min(0).max(100).optional(),
-    maxAttempts: z.coerce.number().int().min(1).optional(),
+    maxAttempts: z.coerce.number().int().min(0).optional(),
+    questionQuotas: z
+      .object({
+        multipleChoice: z.coerce.number().int().min(0).optional(),
+        trueFalse: z.coerce.number().int().min(0).optional(),
+        shortAnswer: z.coerce.number().int().min(0).optional(),
+        essay: z.coerce.number().int().min(0).optional(),
+      })
+      .optional(),
   })
   .strict();
 
@@ -31,7 +39,7 @@ const updateQuizBodySchema = z
     description: z.string().trim().max(2000).optional(),
     duration: z.coerce.number().int().min(1).optional(),
     passScore: z.coerce.number().int().min(0).max(100).optional(),
-    maxAttempts: z.coerce.number().int().min(1).optional(),
+    maxAttempts: z.coerce.number().int().min(0).optional(),
   })
   .strict();
 

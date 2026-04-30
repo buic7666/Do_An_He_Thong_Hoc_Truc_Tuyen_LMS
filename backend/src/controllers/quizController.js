@@ -94,14 +94,14 @@ const startQuizAttempt = async (req, res, next) => {
 const saveQuizAnswer = async (req, res, next) => {
   try {
     const { quizId } = req.params;
-    const { questionId, selectedIndex } = req.body;
+    const { questionId, answer } = req.body;
     const { id: studentId } = req.user;
 
     const result = await quizService.saveQuizAnswer(
       quizId,
       studentId,
       questionId,
-      selectedIndex,
+      answer,
     );
 
     return successResponse(res, 'Answer saved', result, 200);
@@ -122,6 +122,25 @@ const submitQuiz = async (req, res, next) => {
     const attempt = await quizService.submitQuiz(quizId, studentId, answers || {});
 
     return successResponse(res, 'Quiz submitted', attempt, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * Get quiz attempt details (with answers and AI feedback)
+ * Hỗ trợ xem chi tiết ESSAY + AI feedback
+ *
+ * GET /quizzes/:quizId/attempts/:attemptId
+ */
+const getQuizAttemptDetails = async (req, res, next) => {
+  try {
+    const { attemptId } = req.params;
+    const { id: studentId } = req.user;
+
+    const attemptDetails = await quizService.getQuizAttemptDetails(attemptId, studentId);
+
+    return successResponse(res, 'Attempt details retrieved', attemptDetails, 200);
   } catch (error) {
     return next(error);
   }
@@ -153,6 +172,7 @@ module.exports = {
   getQuizDetail,
   getStudentQuizAttempts,
   getLatestQuizAttempt,
+  getQuizAttemptDetails,
   startQuizAttempt,
   saveQuizAnswer,
   submitQuiz,

@@ -47,7 +47,7 @@ const Quiz = sequelize.define(
     },
     maxAttempts: {
       type: DataTypes.INTEGER.UNSIGNED,
-      defaultValue: 3,
+      defaultValue: 0,
       field: 'max_attempts',
     },
     isPublished: {

@@ -14,6 +14,7 @@ const Question = require('./question.model');
 const Quiz = require('./quiz.model');
 const QuizQuestion = require('./quizQuestion.model');
 const StudentQuizAttempt = require('./studentQuizAttempt.model');
+const StudentAnswer = require('./studentAnswer.model');
 
 // ===== User & Course Relationships =====
 Course.belongsTo(User, {
@@ -252,6 +253,26 @@ Question.belongsToMany(Quiz, {
   otherKey: 'quizId',
 });
 
+Quiz.hasMany(QuizQuestion, {
+  as: 'quizQuestions',
+  foreignKey: 'quizId',
+});
+
+Question.hasMany(QuizQuestion, {
+  as: 'quizQuestions',
+  foreignKey: 'questionId',
+});
+
+QuizQuestion.belongsTo(Quiz, {
+  as: 'quiz',
+  foreignKey: 'quizId',
+});
+
+QuizQuestion.belongsTo(Question, {
+  as: 'question',
+  foreignKey: 'questionId',
+});
+
 User.hasMany(StudentQuizAttempt, {
   as: 'quizAttempts',
   foreignKey: 'studentId',
@@ -272,6 +293,27 @@ StudentQuizAttempt.belongsTo(Quiz, {
   foreignKey: 'quizId',
 });
 
+// ===== StudentAnswer Relationships (MỚI - hỗ trợ 4 loại câu hỏi) =====
+StudentQuizAttempt.hasMany(StudentAnswer, {
+  as: 'answers',
+  foreignKey: 'attemptId',
+});
+
+StudentAnswer.belongsTo(StudentQuizAttempt, {
+  as: 'attempt',
+  foreignKey: 'attemptId',
+});
+
+Question.hasMany(StudentAnswer, {
+  as: 'studentAnswers',
+  foreignKey: 'questionId',
+});
+
+StudentAnswer.belongsTo(Question, {
+  as: 'question',
+  foreignKey: 'questionId',
+});
+
 module.exports = {
   User,
   Course,
@@ -289,4 +331,5 @@ module.exports = {
   Quiz,
   QuizQuestion,
   StudentQuizAttempt,
+  StudentAnswer,
 };

@@ -388,6 +388,103 @@
   font-weight: 600;
 }
 
+.result-breakdown {
+  margin: 30px 0;
+  text-align: left;
+}
+
+.result-breakdown__header {
+  margin-bottom: 16px;
+}
+
+.result-breakdown__header h3 {
+  margin: 0 0 6px 0;
+  color: #2d3748;
+  font-size: 22px;
+}
+
+.result-breakdown__header p {
+  margin: 0;
+  color: #718096;
+  font-size: 14px;
+}
+
+.result-question-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.result-question-card__top {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.result-question-card__label {
+  color: #718096;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.result-question-card h4 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.result-question-card__score {
+  flex-shrink: 0;
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.result-question-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  color: #475569;
+  font-size: 14px;
+}
+
+.result-question-card__meta span {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 6px 10px;
+}
+
+.result-question-card__details,
+.result-question-card__feedback {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.result-question-card__details p,
+.result-question-card__feedback p {
+  margin: 0 0 8px 0;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.result-question-card__feedback strong {
+  color: #1f2937;
+}
+
 /* Spinner */
 .spinner {
   width: 50px;
@@ -438,6 +535,14 @@
 
   .result-details {
     grid-template-columns: 1fr;
+  }
+
+  .result-question-card__top {
+    flex-direction: column;
+  }
+
+  .result-question-card__score {
+    align-self: flex-start;
   }
 
   .question-text {

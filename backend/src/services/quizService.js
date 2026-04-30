@@ -3,10 +3,29 @@ const {
   QuizQuestion,
   Question,
   StudentQuizAttempt,
+  StudentAnswer,
   Course,
 } = require('../models');
 const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const { HttpError } = require('../utils/httpError');
+const { gradeAnswer } = require('./gradingService');
+
+const parseJsonField = (value, fallback = null) => {
+  if (value == null) {
+    return fallback;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch (_error) {
+      return fallback;
+    }
+  }
+
+  return value;
+};
 
 const shuffleArray = (items) => {
   const copied = [...items];
@@ -19,59 +38,99 @@ const shuffleArray = (items) => {
   return copied;
 };
 
-const refreshChapterQuizQuestions = async (quiz) => {
-  if (quiz.lessonId) {
-    return;
+const DEFAULT_QUIZ_QUESTION_QUOTAS = {
+  multipleChoice: 3,
+  trueFalse: 3,
+  shortAnswer: 3,
+  essay: 1,
+};
+
+const resolveQuizQuestionQuotas = (payload = {}) => {
+  const provided = payload.questionQuotas || {};
+
+  return [
+    {
+      type: 'MULTIPLE_CHOICE',
+      count: Number(provided.multipleChoice ?? DEFAULT_QUIZ_QUESTION_QUOTAS.multipleChoice),
+    },
+    {
+      type: 'TRUE_FALSE',
+      count: Number(provided.trueFalse ?? DEFAULT_QUIZ_QUESTION_QUOTAS.trueFalse),
+    },
+    {
+      type: 'SHORT_ANSWER',
+      count: Number(provided.shortAnswer ?? DEFAULT_QUIZ_QUESTION_QUOTAS.shortAnswer),
+    },
+    {
+      type: 'ESSAY',
+      count: Number(provided.essay ?? DEFAULT_QUIZ_QUESTION_QUOTAS.essay),
+    },
+  ];
+};
+
+const getQuestionChapterId = (question) => {
+  const metadata = parseJsonField(question.metadata, {});
+  return metadata.chapterId != null ? Number(metadata.chapterId) : null;
+};
+
+const autoPopulateQuizQuestions = async (quiz, transaction, questionQuotas = null) => {
+  if (!quiz.chapterId) {
+    throw new HttpError(400, 'Quiz phải thuộc một chương cụ thể', 'CHAPTER_REQUIRED');
   }
 
-  const lessonQuizzes = await Quiz.findAll({
+  const quotas = questionQuotas || resolveQuizQuestionQuotas();
+  const totalRequestedQuestions = quotas.reduce((sum, quota) => sum + Number(quota.count || 0), 0);
+
+  if (totalRequestedQuestions <= 0) {
+    throw new HttpError(400, 'Cần cấu hình ít nhất 1 câu hỏi để tạo quiz', 'QUIZ_QUOTA_REQUIRED');
+  }
+
+  const chapterQuestions = await Question.findAll({
     where: {
       courseId: quiz.courseId,
       isPublished: true,
-      lessonId: { [Op.ne]: null },
     },
-    include: [
-      {
-        association: 'questions',
-        through: { attributes: ['points'] },
-        attributes: ['id'],
-      },
-    ],
+    transaction,
   });
 
-  const poolMap = new Map();
-  for (const lessonQuiz of lessonQuizzes) {
-    const plain = lessonQuiz.toJSON();
-    const linkedQuestions = Array.isArray(plain.questions) ? plain.questions : [];
+  const normalizedQuestions = chapterQuestions
+    .map((item) => item.toJSON())
+    .map((item) => ({
+      id: item.id,
+      type: item.type,
+      chapterId: getQuestionChapterId(item),
+    }))
+    .filter((item) => Number(item.chapterId) === Number(quiz.chapterId));
 
-    for (const item of linkedQuestions) {
-      if (!poolMap.has(item.id)) {
-        poolMap.set(item.id, {
-          questionId: item.id,
-          points: Number(item?.QuizQuestion?.points || 1),
-        });
-      }
+  const selectedQuestions = [];
+
+  for (const quota of quotas) {
+    const pool = normalizedQuestions.filter((question) => question.type === quota.type);
+
+    if (pool.length < quota.count) {
+      throw new HttpError(
+        400,
+        `Chưa đủ câu hỏi ${quota.type} trong chương này để tạo quiz. Cần ${quota.count}, hiện có ${pool.length}.`,
+        'NOT_ENOUGH_QUESTIONS',
+      );
     }
+
+    selectedQuestions.push(...shuffleArray(pool).slice(0, quota.count));
   }
 
-  const questionPool = Array.from(poolMap.values());
-  if (questionPool.length === 0) {
-    return;
-  }
+  const randomizedQuestions = shuffleArray(selectedQuestions);
 
-  const existingCount = await QuizQuestion.count({ where: { quizId: quiz.id } });
-  const desiredCount = existingCount > 0 ? Math.min(existingCount, questionPool.length) : Math.min(10, questionPool.length);
-  const selected = shuffleArray(questionPool).slice(0, desiredCount);
-
-  await QuizQuestion.destroy({ where: { quizId: quiz.id } });
   await QuizQuestion.bulkCreate(
-    selected.map((item, index) => ({
+    randomizedQuestions.map((item, index) => ({
       quizId: quiz.id,
-      questionId: item.questionId,
+      questionId: item.id,
       order: index + 1,
-      points: item.points,
+      points: 1,
     })),
+    { transaction },
   );
+
+  return randomizedQuestions.length;
 };
 
 /**
@@ -85,7 +144,7 @@ const getQuizzesByCourse = async (courseId, includeQuestions = false) => {
           {
             association: 'questions',
             through: { attributes: ['order', 'points'] },
-              attributes: ['id', 'content', 'metadata'],
+            attributes: ['id', 'content', 'type', 'metadata'],
           },
         ]
       : [],
@@ -105,7 +164,7 @@ const getQuizDetail = async (quizId) => {
       {
         association: 'questions',
         through: { attributes: ['order', 'points'] },
-        attributes: ['id', 'content', 'metadata'],
+        attributes: ['id', 'content', 'type', 'metadata'],
       },
     ],
   });
@@ -165,14 +224,12 @@ const startQuizAttempt = async (quizId, studentId) => {
     throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
   }
 
-  await refreshChapterQuizQuestions(quiz);
-
   // Check max attempts
   const attemptCount = await StudentQuizAttempt.count({
     where: { quizId, studentId },
   });
 
-  if (attemptCount >= quiz.maxAttempts) {
+  if (Number(quiz.maxAttempts) > 0 && attemptCount >= quiz.maxAttempts) {
     throw new HttpError(
       400,
       `Bạn đã hết lần làm bài. Số lần tối đa: ${quiz.maxAttempts}`,
@@ -211,7 +268,7 @@ const startQuizAttempt = async (quizId, studentId) => {
 /**
  * Save quiz answer (auto-save)
  */
-const saveQuizAnswer = async (quizId, studentId, questionId, selectedIndex) => {
+const saveQuizAnswer = async (quizId, studentId, questionId, answer) => {
   const attempt = await StudentQuizAttempt.findOne({
     where: {
       quizId,
@@ -229,7 +286,7 @@ const saveQuizAnswer = async (quizId, studentId, questionId, selectedIndex) => {
   }
 
   const answers = attempt.answersJson ? JSON.parse(attempt.answersJson) : {};
-  answers[questionId] = selectedIndex;
+  answers[questionId] = answer;
 
   attempt.answersJson = JSON.stringify(answers);
   await attempt.save();
@@ -244,6 +301,20 @@ const saveQuizAnswer = async (quizId, studentId, questionId, selectedIndex) => {
 /**
  * Submit quiz and calculate score
  */
+/**
+ * Submit Quiz - Hỗ trợ 4 loại câu hỏi
+ *
+ * @param {number} quizId
+ * @param {number} studentId
+ * @param {object} answers - Các câu trả lời
+ *   {
+ *     questionId: {
+ *       type: 'MULTIPLE_CHOICE|TRUE_FALSE|SHORT_ANSWER|ESSAY',
+ *       value: ... (tuỳ theo type)
+ *     }
+ *   }
+ * @returns {Promise<object>} attempt với chi tiết
+ */
 const submitQuiz = async (quizId, studentId, answers = {}) => {
   const attempt = await StudentQuizAttempt.findOne({
     where: {
@@ -254,7 +325,7 @@ const submitQuiz = async (quizId, studentId, answers = {}) => {
     include: [
       {
         association: 'quiz',
-        attributes: ['passScore', 'id'],
+        attributes: ['passScore', 'id', 'title'],
       },
     ],
   });
@@ -267,40 +338,99 @@ const submitQuiz = async (quizId, studentId, answers = {}) => {
     );
   }
 
-  // Calculate score
+  // Lấy tất cả questions của quiz
   const quizQuestions = await QuizQuestion.findAll({
     where: { quizId },
     include: [
       {
         association: 'question',
-        attributes: ['id', 'correctIndex'],
+        attributes: ['id', 'content', 'type', 'metadata'],
       },
     ],
   });
 
-  let correctCount = 0;
-  let totalPoints = 0;
+  if (quizQuestions.length === 0) {
+    throw new HttpError(400, 'No questions found for this quiz');
+  }
+
+  // Chấm từng câu và lưu StudentAnswer
+  const studentAnswers = [];
+  const scores = [];
+  let totalScore = 0;
 
   for (const qq of quizQuestions) {
-    const studentAnswer = answers[qq.questionId] ?? JSON.parse(attempt.answersJson || '{}')[qq.questionId];
-    totalPoints += qq.points;
+    const question = qq.question;
+    const studentAnswer = answers[question.id];
+    const questionMetadata = parseJsonField(question.metadata, {});
 
-    if (studentAnswer != null && Number(studentAnswer) === qq.question.correctIndex) {
-      correctCount += qq.points;
+    if (!studentAnswer) {
+      console.warn(`No answer provided for question ${question.id}`);
+      continue;
+    }
+
+    try {
+      // Gọi GradingService để chấm
+      const gradingResult = await gradeAnswer(
+        studentAnswer.value,
+        questionMetadata,
+        question.type,
+        question.content
+      );
+
+      scores.push(gradingResult.score);
+
+      // Tạo StudentAnswer record
+      const sa = await StudentAnswer.create({
+        attemptId: attempt.id,
+        questionId: question.id,
+        answerType: question.type,
+        answerValue: studentAnswer.value,
+        score: gradingResult.score,
+        gradingDetails: gradingResult.details || null,
+        aiFeedback: gradingResult.aiFeedback?.overallFeedback || null,
+      });
+
+      studentAnswers.push(sa);
+    } catch (error) {
+      console.error(`Error grading question ${question.id}:`, error);
+      // Nếu lỗi, lưu điểm 0
+      const sa = await StudentAnswer.create({
+        attemptId: attempt.id,
+        questionId: question.id,
+        answerType: question.type,
+        answerValue: studentAnswer.value,
+        score: 0,
+        gradingDetails: { error: error.message },
+        aiFeedback: null,
+      });
+
+      studentAnswers.push(sa);
+      scores.push(0);
     }
   }
 
-  const percentage = totalPoints > 0 ? Math.round((correctCount / totalPoints) * 100) : 0;
-  const isPassed = percentage >= attempt.quiz.passScore;
+  // Tính totalScore = trung bình tất cả scores
+  totalScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b) / scores.length) : 0;
+  const isPassed = totalScore >= attempt.quiz.passScore;
 
-  attempt.answersJson = JSON.stringify(answers);
+  // Update attempt
   attempt.submittedAt = new Date();
-  attempt.totalScore = percentage;
+  attempt.totalScore = totalScore;
   attempt.isPassed = isPassed;
 
   await attempt.save();
 
-  return normalizeQuizAttempt(attempt);
+  // Return attempt với chi tiết
+  return {
+    ...normalizeQuizAttempt(attempt),
+    answers: studentAnswers.map((sa) => ({
+      questionId: sa.questionId,
+      answerType: sa.answerType,
+      score: sa.score,
+      gradingDetails: sa.gradingDetails,
+      aiFeedback: sa.aiFeedback,
+    })),
+  };
 };
 
 /**
@@ -346,9 +476,12 @@ const normalizeQuiz = (quiz, includeQuestions = false) => {
 const normalizeQuizWithQuestions = (quiz) => {
   const plain = quiz.toJSON();
   const questions = (plain.questions || []).map((q) => ({
+    metadata: parseJsonField(q.metadata, {}),
     id: q.id,
+    content: q.content,
+    type: q.type || 'MULTIPLE_CHOICE',
     questionText: q.content,
-    options: (q.metadata && q.metadata.options) || [],
+    options: (parseJsonField(q.metadata, {})?.options) || [],
     QuizQuestion: {
       order: q.QuizQuestion?.order,
       points: q.QuizQuestion?.points,
@@ -373,6 +506,69 @@ const normalizeQuizWithQuestions = (quiz) => {
 /**
  * Normalize quiz attempt
  */
+/**
+ * Get quiz attempt with detailed answers (for viewing results)
+ * Hỗ trợ 4 loại câu hỏi + AI feedback cho ESSAY
+ *
+ * @param {number} attemptId
+ * @param {number} studentId
+ * @returns {Promise<object>}
+ */
+const getQuizAttemptDetails = async (attemptId, studentId) => {
+  const attempt = await StudentQuizAttempt.findOne({
+    where: { id: attemptId, studentId },
+    include: [
+      {
+        association: 'quiz',
+        attributes: ['title', 'passScore', 'id'],
+      },
+      {
+        association: 'answers',
+        include: [
+          {
+            association: 'question',
+            attributes: ['id', 'content', 'type', 'metadata'],
+          },
+        ],
+      },
+    ],
+  });
+
+  if (!attempt) {
+    throw new HttpError(404, 'Attempt not found', 'ATTEMPT_NOT_FOUND');
+  }
+
+  const plain = attempt.toJSON();
+
+  return {
+    id: plain.id,
+    quizId: plain.quizId,
+    studentId: plain.studentId,
+    attemptNumber: plain.attemptNumber,
+    startedAt: plain.startedAt,
+    submittedAt: plain.submittedAt,
+    totalScore: plain.totalScore,
+    isPassed: plain.isPassed,
+    quiz: plain.quiz,
+    answers: plain.answers
+      .map((sa) => ({
+        questionId: sa.questionId,
+        question: {
+          id: sa.question.id,
+          content: sa.question.content,
+          type: sa.question.type,
+          metadata: parseJsonField(sa.question.metadata, {}),
+        },
+        answerType: sa.answerType,
+        answerValue: parseJsonField(sa.answerValue, sa.answerValue),
+        score: sa.score,
+        gradingDetails: parseJsonField(sa.gradingDetails, sa.gradingDetails),
+        aiFeedback: sa.aiFeedback, // Chi tiết AI feedback cho ESSAY
+      }))
+      .sort((a, b) => a.questionId - b.questionId),
+  };
+};
+
 const normalizeQuizAttempt = (attempt) => {
   const plain = attempt.toJSON();
 
@@ -398,6 +594,7 @@ const normalizeQuizAttempt = (attempt) => {
 const createQuizByTeacher = async (payload, user) => {
   const courseId = payload.courseId;
   const chapterId = payload.chapterId || null;
+  const questionQuotas = resolveQuizQuestionQuotas(payload);
 
   const course = await Course.findOne({ where: { id: courseId } });
   if (!course) {
@@ -408,20 +605,24 @@ const createQuizByTeacher = async (payload, user) => {
     throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
   }
 
-  const quiz = await Quiz.create({
-    courseId,
-    chapterId,
-    lessonId: payload.lessonId || null,
-    title: payload.title,
-    description: payload.description || null,
-    duration: payload.duration || 45,
-    passScore: payload.passScore || 70,
-    maxAttempts: payload.maxAttempts || 3,
-    isPublished: false,
-    createdBy: user.id,
-  });
+  return sequelize.transaction(async (transaction) => {
+    const quiz = await Quiz.create({
+      courseId,
+      chapterId,
+      lessonId: payload.lessonId || null,
+      title: payload.title,
+      description: payload.description || null,
+      duration: payload.duration || 45,
+      passScore: payload.passScore || 70,
+      maxAttempts: payload.maxAttempts ?? 0,
+      isPublished: false,
+      createdBy: user.id,
+    }, { transaction });
 
-  return quiz;
+    await autoPopulateQuizQuestions(quiz, transaction, questionQuotas);
+
+    return quiz;
+  });
 };
 
 /**
@@ -593,11 +794,11 @@ const getTeacherQuizzes = async (user) => {
 };
 
 module.exports = {
-  refreshChapterQuizQuestions,
   getQuizzesByCourse,
   getQuizDetail,
   getStudentQuizAttempts,
   getLatestQuizAttempt,
+  getQuizAttemptDetails,
   startQuizAttempt,
   saveQuizAnswer,
   submitQuiz,

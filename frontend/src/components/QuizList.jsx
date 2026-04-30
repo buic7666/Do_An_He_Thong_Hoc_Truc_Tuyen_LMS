@@ -17,6 +17,12 @@ const QuizList = ({
 }) => {
   const [quizzes, setQuizzes] = useState([]);
   const [scores, setScores] = useState({});
+  const [attemptsByQuiz, setAttemptsByQuiz] = useState({});
+  const [attemptDetailsByKey, setAttemptDetailsByKey] = useState({});
+  const [expandedHistoryQuizId, setExpandedHistoryQuizId] = useState(null);
+  const [selectedAttemptByQuiz, setSelectedAttemptByQuiz] = useState({});
+  const [loadingAttemptsByQuiz, setLoadingAttemptsByQuiz] = useState({});
+  const [loadingAttemptDetailsByKey, setLoadingAttemptDetailsByKey] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -42,6 +48,12 @@ const QuizList = ({
       }
 
       setQuizzes(filteredQuizzes);
+      setAttemptsByQuiz({});
+      setAttemptDetailsByKey({});
+      setExpandedHistoryQuizId(null);
+      setSelectedAttemptByQuiz({});
+      setLoadingAttemptsByQuiz({});
+      setLoadingAttemptDetailsByKey({});
 
       // Load scores for each quiz
       for (const quiz of filteredQuizzes) {
@@ -62,6 +74,66 @@ const QuizList = ({
     }
   };
 
+
+  const getAttemptDetailKey = (quizId, attemptId) => `${quizId}-${attemptId}`;
+
+  const handleToggleAttemptHistory = async (quizId) => {
+    if (expandedHistoryQuizId === quizId) {
+      setExpandedHistoryQuizId(null);
+      return;
+    }
+
+    setExpandedHistoryQuizId(quizId);
+
+    if (Array.isArray(attemptsByQuiz[quizId])) {
+      return;
+    }
+
+    setLoadingAttemptsByQuiz((prev) => ({ ...prev, [quizId]: true }));
+    try {
+      const response = await httpClient.get(`/quizzes/${quizId}/attempts`);
+      const attempts = Array.isArray(response?.data?.data) ? response.data.data : [];
+      const sortedAttempts = [...attempts].sort((a, b) => Number(b.attemptNumber || 0) - Number(a.attemptNumber || 0));
+
+      setAttemptsByQuiz((prev) => ({
+        ...prev,
+        [quizId]: sortedAttempts,
+      }));
+
+      if (sortedAttempts.length > 0) {
+        setSelectedAttemptByQuiz((prev) => ({ ...prev, [quizId]: sortedAttempts[0].id }));
+      }
+    } catch (_error) {
+      setAttemptsByQuiz((prev) => ({ ...prev, [quizId]: [] }));
+    } finally {
+      setLoadingAttemptsByQuiz((prev) => ({ ...prev, [quizId]: false }));
+    }
+  };
+
+  const handleSelectAttempt = async (quizId, attemptId) => {
+    setSelectedAttemptByQuiz((prev) => ({ ...prev, [quizId]: attemptId }));
+    const detailKey = getAttemptDetailKey(quizId, attemptId);
+
+    if (attemptDetailsByKey[detailKey]) {
+      return;
+    }
+
+    setLoadingAttemptDetailsByKey((prev) => ({ ...prev, [detailKey]: true }));
+    try {
+      const response = await httpClient.get(`/quizzes/${quizId}/attempts/${attemptId}`);
+      setAttemptDetailsByKey((prev) => ({
+        ...prev,
+        [detailKey]: response?.data?.data || null,
+      }));
+    } catch (_error) {
+      setAttemptDetailsByKey((prev) => ({
+        ...prev,
+        [detailKey]: { answers: [] },
+      }));
+    } finally {
+      setLoadingAttemptDetailsByKey((prev) => ({ ...prev, [detailKey]: false }));
+    }
+  };
   if (loading) {
     return (
       <div className="quiz-list quiz-list--loading">
@@ -108,6 +180,14 @@ const QuizList = ({
             quiz={quiz}
             score={scores[quiz.id]}
             onSelect={() => onSelectQuiz(quiz.id)}
+            isHistoryOpen={expandedHistoryQuizId === quiz.id}
+            attempts={attemptsByQuiz[quiz.id] || []}
+            selectedAttemptId={selectedAttemptByQuiz[quiz.id] || null}
+            attemptDetails={attemptDetailsByKey[getAttemptDetailKey(quiz.id, selectedAttemptByQuiz[quiz.id])] || null}
+            loadingAttempts={Boolean(loadingAttemptsByQuiz[quiz.id])}
+            loadingAttemptDetails={Boolean(loadingAttemptDetailsByKey[getAttemptDetailKey(quiz.id, selectedAttemptByQuiz[quiz.id])])}
+            onToggleHistory={() => handleToggleAttemptHistory(quiz.id)}
+            onSelectAttempt={(attemptId) => handleSelectAttempt(quiz.id, attemptId)}
           />
         ))}
       </div>
@@ -119,9 +199,74 @@ const QuizList = ({
  * QuizCard Component
  * Individual quiz card showing quiz info and score
  */
-const QuizCard = ({ quiz, score, onSelect }) => {
+const formatAnswerValue = (answerValue, questionType) => {
+  if (answerValue == null) {
+    return 'Chưa trả lời';
+  }
+
+  if (questionType === 'MULTIPLE_CHOICE') {
+    const indices = Array.isArray(answerValue?.indices) ? answerValue.indices : [];
+    return indices.length > 0 ? `Đã chọn đáp án ${indices.map((index) => index + 1).join(', ')}` : 'Chưa trả lời';
+  }
+
+  if (questionType === 'TRUE_FALSE') {
+    if (typeof answerValue?.value === 'boolean') {
+      return answerValue.value ? 'Đúng' : 'Sai';
+    }
+    return 'Chưa trả lời';
+  }
+
+  if (typeof answerValue?.text === 'string') {
+    return answerValue.text.trim() || 'Chưa trả lời';
+  }
+
+  if (typeof answerValue === 'string') {
+    return answerValue.trim() || 'Chưa trả lời';
+  }
+
+  return JSON.stringify(answerValue);
+};
+
+const getGradingSummary = (gradingDetails, questionType) => {
+  const details = gradingDetails || {};
+  if (questionType === 'MULTIPLE_CHOICE') {
+    const correctIndices = Array.isArray(details.correctIndices) ? details.correctIndices : [];
+    return correctIndices.length ? `Đáp án đúng: ${correctIndices.map((index) => index + 1).join(', ')}` : 'Không có đáp án mẫu';
+  }
+  if (questionType === 'TRUE_FALSE') {
+    return typeof details.correctAnswer === 'boolean'
+      ? `Đáp án đúng: ${details.correctAnswer ? 'Đúng' : 'Sai'}`
+      : 'Không có đáp án mẫu';
+  }
+  if (questionType === 'SHORT_ANSWER') {
+    return details.matchedAnswer
+      ? `Khớp với đáp án: ${details.matchedAnswer}`
+      : 'Không khớp đáp án ngắn';
+  }
+  if (questionType === 'ESSAY') {
+    return details.totalScore != null
+      ? `Điểm AI tự luận: ${Number(details.totalScore).toFixed(1)}`
+      : 'Đã chấm tự luận';
+  }
+  return 'Đã chấm';
+};
+
+const QuizCard = ({
+  quiz,
+  score,
+  onSelect,
+  isHistoryOpen,
+  attempts,
+  selectedAttemptId,
+  attemptDetails,
+  loadingAttempts,
+  loadingAttemptDetails,
+  onToggleHistory,
+  onSelectAttempt,
+}) => {
   const passScore = quiz.passScore || 70;
-  const maxAttempts = quiz.maxAttempts || 3;
+  const maxAttempts = Number(quiz.maxAttempts || 0);
+  const maxAttemptsLabel = maxAttempts > 0 ? maxAttempts : 'Vô hạn';
   const studentScore = score?.totalScore;
   const hasAttemptScore = Number.isFinite(Number(studentScore));
   const displayScore = hasAttemptScore ? Number(studentScore) : null;
@@ -169,7 +314,7 @@ const QuizCard = ({ quiz, score, onSelect }) => {
         <div className="info-item">
           <span className="info-label">🔄 Lần làm:</span>
           <span className="info-value">
-            {score?.attemptNumber || 0}/{maxAttempts}
+            {score?.attemptNumber || 0}/{maxAttemptsLabel}
           </span>
         </div>
       </div>
@@ -184,6 +329,71 @@ const QuizCard = ({ quiz, score, onSelect }) => {
           </div>
         </div>
       )}
+
+      {hasAttemptScore ? (
+        <button onClick={onToggleHistory} className="btn btn--secondary btn--block" type="button">
+          {isHistoryOpen ? 'Ẩn lần làm trước' : 'Xem lần làm trước'}
+        </button>
+      ) : null}
+
+      {isHistoryOpen ? (
+        <div className="quiz-attempt-history">
+          <h4 className="quiz-attempt-history__title">Lịch sử lần làm</h4>
+
+          {loadingAttempts ? <p className="quiz-attempt-history__loading">Đang tải danh sách lần làm...</p> : null}
+
+          {!loadingAttempts && attempts.length === 0 ? (
+            <p className="quiz-attempt-history__loading">Chưa có lần làm nào để xem lại.</p>
+          ) : null}
+
+          {!loadingAttempts && attempts.length > 0 ? (
+            <div className="quiz-attempt-history__attempts">
+              {attempts.map((attempt) => {
+                const isActive = Number(selectedAttemptId) === Number(attempt.id);
+                return (
+                  <button
+                    key={attempt.id}
+                    type="button"
+                    className={`attempt-chip ${isActive ? 'is-active' : ''}`}
+                    onClick={() => onSelectAttempt(attempt.id)}
+                  >
+                    Lần {attempt.attemptNumber} - {Number(attempt.totalScore || 0).toFixed(1)}%
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {selectedAttemptId && loadingAttemptDetails ? (
+            <p className="quiz-attempt-history__loading">Đang tải chi tiết chấm điểm...</p>
+          ) : null}
+
+          {selectedAttemptId && !loadingAttemptDetails && Array.isArray(attemptDetails?.answers) ? (
+            <div className="quiz-attempt-history__details">
+              {attemptDetails.answers.map((answerItem, index) => {
+                const questionType = answerItem?.question?.type || answerItem?.answerType || 'UNKNOWN';
+                const answerScore = Number(answerItem?.score || 0);
+                const hasPoint = answerScore > 0;
+                return (
+                  <article className="attempt-question" key={`${answerItem.questionId}-${index + 1}`}>
+                    <div className="attempt-question__head">
+                      <strong>Câu {index + 1}</strong>
+                      <span className={`attempt-question__score ${hasPoint ? 'has-point' : 'no-point'}`}>
+                        {answerScore.toFixed(1)} điểm
+                      </span>
+                    </div>
+                    <p className="attempt-question__text">{answerItem?.question?.content || `Question ${answerItem.questionId}`}</p>
+                    <p className="attempt-question__meta">Loại câu: {questionType}</p>
+                    <p className="attempt-question__meta">Bài làm của bạn: {formatAnswerValue(answerItem.answerValue, questionType)}</p>
+                    <p className="attempt-question__meta">Cách chấm: {getGradingSummary(answerItem.gradingDetails, questionType)}</p>
+                    {answerItem.aiFeedback ? <p className="attempt-question__feedback">Phản hồi AI: {answerItem.aiFeedback}</p> : null}
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <button onClick={onSelect} className="btn btn--primary btn--block">
         {!hasAttemptScore ? 'Bắt đầu làm' : 'Làm lại'}

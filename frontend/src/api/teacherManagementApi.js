@@ -75,7 +75,21 @@ export const deleteCourseApi = async (courseId) => {
   return response?.data?.data || response?.data;
 };
 
-export const fetchQuestionsApi = async () => {
+export const fetchQuestionsApi = async (filters = {}) => {
+  const { courseId, chapterId, type, difficulty, isPublished } = filters;
+
+  if (courseId) {
+    const response = await httpClient.get(`/questions/course/${courseId}`, {
+      params: {
+        chapterId: chapterId || undefined,
+        type: type || undefined,
+        difficulty: difficulty || undefined,
+        isPublished: isPublished == null ? undefined : String(Boolean(isPublished)),
+      },
+    });
+    return response?.data?.data || response?.data || [];
+  }
+
   const response = await httpClient.get('/questions');
   return response?.data?.data || response?.data || [];
 };

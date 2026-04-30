@@ -9,6 +9,7 @@ const {
   questionIdParamSchema,
   courseIdParamSchema,
   quizIdParamSchema,
+  quizAttemptParamSchema,
   saveQuizAnswerBodySchema,
   submitQuizBodySchema,
 } = require('../validations/quizValidation');
@@ -93,6 +94,14 @@ router.get(
   authenticate,
   validateRequest({ params: quizIdParamSchema }),
   quizController.getStudentQuizAttempts,
+);
+
+// GET /api/quizzes/:quizId/attempts/:attemptId - Get attempt details (with AI feedback)
+router.get(
+  '/quizzes/:quizId/attempts/:attemptId',
+  authenticate,
+  validateRequest({ params: quizAttemptParamSchema }),
+  quizController.getQuizAttemptDetails,
 );
 
 // POST /api/quizzes/:quizId/save-answer - Auto-save answer

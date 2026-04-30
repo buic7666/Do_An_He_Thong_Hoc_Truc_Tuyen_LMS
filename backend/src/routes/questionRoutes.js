@@ -5,6 +5,7 @@ const { validateRequest } = require('../middlewares/validationMiddleware');
 const {
   questionIdParamSchema,
   lectureIdParamSchema,
+  courseIdParamSchema,
   createQuestionBodySchema,
   updateQuestionBodySchema,
 } = require('../validations/questionValidation');
@@ -16,6 +17,14 @@ router.get(
   '/',
   authenticate,
   questionController.getQuestions,
+);
+
+// GET questions by course: GET /questions/course/:courseId
+router.get(
+  '/course/:courseId',
+  authenticate,
+  validateRequest({ params: courseIdParamSchema }),
+  questionController.getQuestionsByCourse,
 );
 
 // GET questions by lecture: GET /questions/lecture/:lectureId

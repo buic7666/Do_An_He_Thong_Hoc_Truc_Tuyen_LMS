@@ -15,8 +15,9 @@ const Question = sequelize.define(
       comment: 'Nội dung câu hỏi',
     },
     type: {
-      type: DataTypes.ENUM('MULTIPLE_CHOICE', 'ESSAY', 'SOURCE_CODE'),
+      type: DataTypes.ENUM('MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY'),
       defaultValue: 'MULTIPLE_CHOICE',
+      comment: 'Loại câu hỏi: MULTIPLE_CHOICE (trắc nghiệm), TRUE_FALSE (đúng/sai), SHORT_ANSWER (trả lời ngắn), ESSAY (tự luận)',
     },
     difficulty: {
       type: DataTypes.ENUM('EASY', 'MEDIUM', 'HARD'),
@@ -25,7 +26,13 @@ const Question = sequelize.define(
     metadata: {
       type: DataTypes.JSON,
       allowNull: true,
-      comment: 'Metadata JSON (options, correctIndex, explanation, etc)',
+      comment: 'Metadata JSON tuỳ theo type: MULTIPLE_CHOICE={options[], correctIndices[], explanation}, TRUE_FALSE={correctAnswer, explanation}, SHORT_ANSWER={acceptedAnswers[], caseSensitive, fuzzyMatch, explanation}, ESSAY={instructions, rubric[], wordLimit, aiModel}',
+    },
+    isPublished: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      field: 'is_published',
+      comment: 'Câu hỏi đã được công khai cho học viên chưa?',
     },
     tags: {
       type: DataTypes.JSON,
