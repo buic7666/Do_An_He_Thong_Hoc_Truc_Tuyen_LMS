@@ -122,6 +122,8 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
 
   const autoSaveIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
+  const autoAdvanceTimeoutRef = useRef(null);
+  const previousAnswerRef = useRef({});
 
   const loadQuiz = useCallback(async () => {
     try {
@@ -271,6 +273,45 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
       },
     }));
   };
+
+  // Auto-advance to next question after answering
+  useEffect(() => {
+    if (isSubmitted || !quiz?.questions?.length) {
+      return;
+    }
+
+    const currentQuestion = quiz.questions[currentQuestionIndex];
+    if (!currentQuestion) {
+      return;
+    }
+
+    const currentAnswer = answers[currentQuestion.id];
+    const previousAnswer = previousAnswerRef.current[currentQuestion.id];
+
+    // Check if a new answer was just provided
+    if (currentAnswer && !previousAnswer && isAnswered({ type: currentAnswer.type, value: currentAnswer.value })) {
+      previousAnswerRef.current[currentQuestion.id] = currentAnswer;
+
+      // Clear any existing timeout
+      if (autoAdvanceTimeoutRef.current) {
+        clearTimeout(autoAdvanceTimeoutRef.current);
+      }
+
+      // Auto-advance to next question after 1 second
+      autoAdvanceTimeoutRef.current = setTimeout(() => {
+        const nextIndex = Math.min(currentQuestionIndex + 1, quiz.questions.length - 1);
+        if (nextIndex > currentQuestionIndex) {
+          setCurrentQuestionIndex(nextIndex);
+        }
+      }, 1000);
+    }
+
+    return () => {
+      if (autoAdvanceTimeoutRef.current) {
+        clearTimeout(autoAdvanceTimeoutRef.current);
+      }
+    };
+  }, [answers, currentQuestionIndex, isSubmitted, quiz?.questions]);
 
   const toggleMultipleChoiceOption = (questionId, optionIndex) => {
     const current = answers[questionId]?.value?.indices || [];
@@ -580,12 +621,39 @@ const QuizResult = ({ quiz, result, onBack }) => {
           <span className="detail-label">Thời gian làm:</span>
           <span className="detail-value">{quiz.duration} phút</span>
         </div>
+        {attemptAnswers.length > 0 && (
+          <>
+            <div className="detail-item">
+              <span className="detail-label">✅ Câu trả lời đúng:</span>
+              <span className="detail-value">{attemptAnswers.filter(a => Number(a.score || 0) >= Number(a.maxScore || 1) * 0.5).length}/{questionCount}</span>
+            </div>
+            <div className="detail-item">
+              <span className="detail-label">❌ Câu trả lời sai:</span>
+              <span className="detail-value">{attemptAnswers.filter(a => Number(a.score || 0) < Number(a.maxScore || 1) * 0.5).length}/{questionCount}</span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="result-breakdown">
         <div className="result-breakdown__header">
-          <h3>Chi tiết chấm điểm từng câu</h3>
+          <h3>📋 Chi tiết chấm điểm từng câu</h3>
           <p>Mỗi câu hiển thị điểm, câu trả lời của bạn và tiêu chí chấm tương ứng.</p>
+          
+          {attemptAnswers.length > 0 && (
+            <div style={{
+              marginTop: '12px',
+              display: 'flex',
+              gap: '12px',
+              padding: '12px',
+              backgroundColor: '#f3f4f6',
+              borderRadius: '6px',
+              fontSize: '14px'
+            }}>
+              <span>✅ Đúng: <strong>{attemptAnswers.filter(a => Number(a.score || 0) >= Number(a.maxScore || 1) * 0.5).length}</strong></span>
+              <span>❌ Sai: <strong>{attemptAnswers.filter(a => Number(a.score || 0) < Number(a.maxScore || 1) * 0.5).length}</strong></span>
+            </div>
+          )}
         </div>
 
         {loadingDetails ? <p>Đang tải chi tiết chấm điểm...</p> : null}
@@ -606,12 +674,15 @@ const QuizResult = ({ quiz, result, onBack }) => {
                       <div className="result-question-card__label">Câu {index + 1}</div>
                       <h4>{item.question?.content || `Câu hỏi ${item.questionId}`}</h4>
                     </div>
-                    <div className="result-question-card__score">{Number(item.score || 0).toFixed(1)} điểm</div>
+                    <div className="result-question-card__score" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {Number(item.score || 0) >= Number(item.maxScore || 1) * 0.5 ? '✅' : '❌'}
+                      <span>{Number(item.score || 0).toFixed(1)}/{Number(item.maxScore || 10).toFixed(1)} điểm</span>
+                    </div>
                   </div>
 
                   <div className="result-question-card__meta">
                     <span>{questionType}</span>
-                    <span>Đáp án của bạn: {formatAnswerValue(item.answerValue, questionType)}</span>
+                    <span>Câu trả lời của bạn: {formatAnswerValue(item.answerValue, questionType)}</span>
                   </div>
 
                   {detailLines.length ? (
@@ -624,7 +695,7 @@ const QuizResult = ({ quiz, result, onBack }) => {
 
                   {item.aiFeedback ? (
                     <div className="result-question-card__feedback">
-                      <strong>Phản hồi AI:</strong>
+                      <strong>💡 Phản hồi AI:</strong>
                       <p>{typeof item.aiFeedback === 'string' ? item.aiFeedback : JSON.stringify(item.aiFeedback)}</p>
                     </div>
                   ) : null}

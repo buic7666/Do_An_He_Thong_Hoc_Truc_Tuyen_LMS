@@ -707,6 +707,7 @@ function ManHinhHocTap() {
                     <h3 style={{ marginBottom: '16px' }}>🎓 Bài kiểm tra chương</h3>
                     <QuizList
                       courseId={selectedCourseId || courseDetail?.id}
+                      chapterId={showQuizForChapterId}
                       scope='chapter'
                       onSelectQuiz={(quizId) => {
                         setSelectedQuizId(Number(quizId));

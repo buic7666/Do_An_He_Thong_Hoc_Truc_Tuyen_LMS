@@ -10,6 +10,7 @@ import './QuizList.css';
 
 const QuizList = ({
   courseId,
+  chapterId = null,
   lessonId = null,
   scope = 'all',
   onSelectQuiz,
@@ -28,7 +29,7 @@ const QuizList = ({
 
   useEffect(() => {
     loadQuizzes();
-  }, [courseId, lessonId, scope]);
+  }, [courseId, chapterId, lessonId, scope]);
 
   const loadQuizzes = async () => {
     try {
@@ -42,7 +43,9 @@ const QuizList = ({
           ? allQuizzes.filter((quiz) => Number(quiz.lessonId) === Number(lessonId))
           : [];
       } else if (scope === 'chapter') {
-        filteredQuizzes = allQuizzes.filter((quiz) => !quiz.lessonId);
+        filteredQuizzes = chapterId
+          ? allQuizzes.filter((quiz) => Number(quiz.chapterId) === Number(chapterId))
+          : allQuizzes.filter((quiz) => !quiz.lessonId);
       } else if (lessonId) {
         filteredQuizzes = allQuizzes.filter((quiz) => Number(quiz.lessonId) === Number(lessonId) || !quiz.lessonId);
       }

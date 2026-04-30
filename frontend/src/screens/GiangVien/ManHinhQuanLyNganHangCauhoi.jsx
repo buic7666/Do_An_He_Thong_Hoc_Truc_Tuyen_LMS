@@ -105,6 +105,7 @@ const createEmptyQuizDraft = () => ({
 });
 
 function ManHinhQuanLyNganHangCauhoi() {
+  const [activeTab, setActiveTab] = useState('questions'); // 'questions' or 'quizzes'
   const [draft, setDraft] = useState(createEmptyDraft());
   const [quizDraft, setQuizDraft] = useState(createEmptyQuizDraft());
   const [questions, setQuestions] = useState([]);
@@ -733,32 +734,72 @@ function ManHinhQuanLyNganHangCauhoi() {
 
       <main className="instructor-question-bank-main-content">
         <header className="instructor-question-bank-page-header">
-          <h1 className="instructor-question-bank-page-title">Quản lý Ngân hàng câu hỏi</h1>
+          <h1 className="instructor-question-bank-page-title">Quản lý Bài Học</h1>
+          
+          {/* Tab Navigation */}
+          <div style={{ display: 'flex', gap: 12, marginTop: 20, borderBottom: '2px solid #e5e7eb' }}>
+            <button
+              onClick={() => setActiveTab('questions')}
+              style={{
+                padding: '12px 20px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'questions' ? '3px solid #3b82f6' : '3px solid transparent',
+                color: activeTab === 'questions' ? '#3b82f6' : '#6b7280',
+                fontWeight: activeTab === 'questions' ? '600' : '500',
+                cursor: 'pointer',
+                fontSize: '16px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              📚 Ngân hàng Câu hỏi
+            </button>
+            <button
+              onClick={() => setActiveTab('quizzes')}
+              style={{
+                padding: '12px 20px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'quizzes' ? '3px solid #3b82f6' : '3px solid transparent',
+                color: activeTab === 'quizzes' ? '#3b82f6' : '#6b7280',
+                fontWeight: activeTab === 'quizzes' ? '600' : '500',
+                cursor: 'pointer',
+                fontSize: '16px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              🎓 Quản lý Bài Kiểm Tra
+            </button>
+          </div>
         </header>
 
-        <section className="instructor-question-bank-card" style={{ marginBottom: 16 }}>
-          <p style={{ margin: 0 }}>
-            Đang xem ngân hàng câu hỏi của khóa học{' '}
-            <strong>{courses.find((course) => String(course.id) === String(selectedCourseId))?.title || 'chưa chọn'}</strong>
-            {' '}và chương{' '}
-            <strong>{chapters.find((chapter) => String(chapter.id) === String(selectedChapterId))?.title || 'chưa chọn'}</strong>.
-          </p>
-        </section>
-
-        {error ? (
+        {/* Common error display */}
+        {error && activeTab === 'questions' ? (
           <section className="instructor-question-bank-card" style={{ color: 'red' }}>
             <p>Lỗi: {error}</p>
           </section>
         ) : null}
 
-        {quizError ? (
+        {quizError && activeTab === 'quizzes' ? (
           <section className="instructor-question-bank-card" style={{ color: 'red' }}>
             <p>Lỗi quiz: {quizError}</p>
           </section>
         ) : null}
 
-        <section className="instructor-question-bank-card highlighted">
-          <h2 className="instructor-question-bank-card-title">{editingId ? 'Cập nhật câu hỏi' : 'Thêm câu hỏi'}</h2>
+        {/* Questions Tab */}
+        {activeTab === 'questions' && (
+          <>
+            <section className="instructor-question-bank-card" style={{ marginBottom: 16, marginTop: 16 }}>
+              <p style={{ margin: 0 }}>
+                Đang xem ngân hàng câu hỏi của khóa học{' '}
+                <strong>{courses.find((course) => String(course.id) === String(selectedCourseId))?.title || 'chưa chọn'}</strong>
+                {' '}và chương{' '}
+                <strong>{chapters.find((chapter) => String(chapter.id) === String(selectedChapterId))?.title || 'chưa chọn'}</strong>.
+              </p>
+            </section>
+
+            <section className="instructor-question-bank-card highlighted">
+              <h2 className="instructor-question-bank-card-title">{editingId ? 'Cập nhật câu hỏi' : 'Thêm câu hỏi'}</h2>
 
           <div className="instructor-question-bank-form-group">
             <label className="instructor-question-bank-form-label" htmlFor="quiz-course">Khóa học</label>
@@ -866,7 +907,58 @@ function ManHinhQuanLyNganHangCauhoi() {
         </section>
 
         <section className="instructor-question-bank-card">
-          <h2 className="instructor-question-bank-card-title">Tạo quiz</h2>
+          <h2 className="instructor-question-bank-card-title">Danh sách câu hỏi đã thêm ({questionCount})</h2>
+
+          {isLoading ? <p>Đang tải dữ liệu từ CSDL...</p> : null}
+
+          <div className="instructor-question-bank-question-list">
+            {questions.map((question, index) => {
+              const metadata = parseJson(question.metadata, {});
+              const type = question.type || 'MULTIPLE_CHOICE';
+              let answerPreview = 'Chưa thiết lập';
+
+              if (type === 'MULTIPLE_CHOICE') {
+                answerPreview = `Chỉ số đúng: ${(metadata.correctIndices || []).join(', ')}`;
+              } else if (type === 'TRUE_FALSE') {
+                answerPreview = `Đáp án đúng: ${metadata.correctAnswer ? 'Đúng' : 'Sai'}`;
+              } else if (type === 'SHORT_ANSWER') {
+                answerPreview = `Chấp nhận: ${(metadata.acceptedAnswers || []).join(' | ')}`;
+              } else if (type === 'ESSAY') {
+                answerPreview = `Mục đánh giá: ${(metadata.rubric || []).length}`;
+              }
+
+              return (
+                <article className="instructor-question-bank-q-item" key={question.id}>
+                  <div className="instructor-question-bank-q-content">
+                    <h4>{index + 1}. {question.content || question.questionText || 'Không có nội dung'}</h4>
+                    <span className="instructor-question-bank-q-correct">{QUESTION_TYPE_LABELS[type]} · {answerPreview}</span>
+                  </div>
+
+                  <div className="instructor-question-bank-q-actions">
+                    <button className="instructor-question-bank-btn-icon edit" onClick={() => startEditQuestion(question.id)} title="Sửa" type="button">E</button>
+                    <button className="instructor-question-bank-btn-icon delete" onClick={() => deleteQuestion(question.id)} title="Xóa" type="button">D</button>
+                  </div>
+                </article>
+              );
+            })}
+            {!questions.length && !isLoading ? <p>Chưa có câu hỏi nào.</p> : null}
+          </div>
+        </section>
+          </>
+        )}
+
+        {/* Quizzes Tab */}
+        {activeTab === 'quizzes' && (
+          <>
+            <section className="instructor-question-bank-card" style={{ marginBottom: 16, marginTop: 16 }}>
+              <p style={{ margin: 0 }}>
+                Quản lý các bài kiểm tra của khóa học{' '}
+                <strong>{courses.find((course) => String(course.id) === String(selectedCourseId))?.title || 'chưa chọn'}</strong>.
+              </p>
+            </section>
+
+            <section className="instructor-question-bank-card highlighted">
+              <h2 className="instructor-question-bank-card-title">Tạo bài kiểm tra mới</h2>
           <p style={{ marginTop: -4, marginBottom: 16, color: '#6b7280' }}>
             Quiz sẽ tự động lấy 10 câu hỏi ngẫu nhiên từ ngân hàng của chương đã chọn theo tỷ lệ 3 trắc nghiệm, 3 đúng/sai, 3 trả lời ngắn và 1 tự luận.
           </p>
@@ -1038,11 +1130,8 @@ function ManHinhQuanLyNganHangCauhoi() {
           </div>
         </section>
 
-        <section className="instructor-question-bank-card">
-          <h2 className="instructor-question-bank-card-title">Danh sách quiz của tôi</h2>
-
-          {isLoadingQuizzes ? <p>Đang tải danh sách quiz...</p> : null}
-
+            <section className="instructor-question-bank-card">
+          <h2 className="instructor-question-bank-card-title">Danh sách bài kiểm tra của tôi</h2>
           <div className="instructor-question-bank-question-list">
             {quizzes.map((quiz) => (
               <article className="instructor-question-bank-q-item" key={quiz.id}>
@@ -1065,44 +1154,8 @@ function ManHinhQuanLyNganHangCauhoi() {
             {!quizzes.length && !isLoadingQuizzes ? <p>Chưa có quiz nào.</p> : null}
           </div>
         </section>
-
-        <section className="instructor-question-bank-card">
-          <h2 className="instructor-question-bank-card-title">Danh sách câu hỏi đã thêm ({questionCount})</h2>
-
-          {isLoading ? <p>Đang tải dữ liệu từ CSDL...</p> : null}
-
-          <div className="instructor-question-bank-question-list">
-            {questions.map((question, index) => {
-              const metadata = parseJson(question.metadata, {});
-              const type = question.type || 'MULTIPLE_CHOICE';
-              let answerPreview = 'Chưa thiết lập';
-
-              if (type === 'MULTIPLE_CHOICE') {
-                answerPreview = `Chỉ số đúng: ${(metadata.correctIndices || []).join(', ')}`;
-              } else if (type === 'TRUE_FALSE') {
-                answerPreview = `Đáp án đúng: ${metadata.correctAnswer ? 'Đúng' : 'Sai'}`;
-              } else if (type === 'SHORT_ANSWER') {
-                answerPreview = `Chấp nhận: ${(metadata.acceptedAnswers || []).join(' | ')}`;
-              } else if (type === 'ESSAY') {
-                answerPreview = `Mục đánh giá: ${(metadata.rubric || []).length}`;
-              }
-
-              return (
-                <article className="instructor-question-bank-q-item" key={question.id}>
-                  <div className="instructor-question-bank-q-content">
-                    <h4>{index + 1}. {question.content || question.questionText || 'Không có nội dung'}</h4>
-                    <span className="instructor-question-bank-q-correct">{QUESTION_TYPE_LABELS[type]} · {answerPreview}</span>
-                  </div>
-
-                  <div className="instructor-question-bank-q-actions">
-                    <button className="instructor-question-bank-btn-icon edit" onClick={() => startEditQuestion(question.id)} title="Sửa" type="button">E</button>
-                    <button className="instructor-question-bank-btn-icon delete" onClick={() => deleteQuestion(question.id)} title="Xóa" type="button">D</button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
+          </>
+        )}
       </main>
     </div>
   );

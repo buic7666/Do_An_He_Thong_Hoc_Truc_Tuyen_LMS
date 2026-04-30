@@ -458,6 +458,7 @@ const normalizeQuiz = (quiz, includeQuestions = false) => {
   return {
     id: plain.id,
     courseId: plain.courseId,
+    chapterId: plain.chapterId,
     lessonId: plain.lessonId,
     title: plain.title,
     description: plain.description,
@@ -491,6 +492,7 @@ const normalizeQuizWithQuestions = (quiz) => {
   return {
     id: plain.id,
     courseId: plain.courseId,
+    chapterId: plain.chapterId,
     lessonId: plain.lessonId,
     title: plain.title,
     description: plain.description,
