@@ -15,9 +15,9 @@ const courseIdParamSchema = z
 const createLessonBodySchema = z
   .object({
     title: z.string().trim().min(3).max(255),
-    videoUrl: z.string().trim().url().max(255).optional(),
-    content: z.string().trim().max(10000).optional(),
-    orderIndex: z.coerce.number().int().positive(),
+    videoUrl: z.string().trim().url().max(255).optional().or(z.literal('')),
+    content: z.string().trim().max(10000).optional().or(z.literal('')),
+    orderIndex: z.coerce.number().int().min(0).optional(),
     chapterId: z.coerce.number().int().positive().optional(),
   })
   .strict();
@@ -25,9 +25,9 @@ const createLessonBodySchema = z
 const updateLessonBodySchema = z
   .object({
     title: z.string().trim().min(3).max(255).optional(),
-    videoUrl: z.string().trim().url().max(255).optional(),
-    content: z.string().trim().max(10000).optional(),
-    orderIndex: z.coerce.number().int().positive().optional(),
+    videoUrl: z.string().trim().url().max(255).optional().or(z.literal('')),
+    content: z.string().trim().max(10000).optional().or(z.literal('')),
+    orderIndex: z.coerce.number().int().min(0).optional(),
     chapterId: z.coerce.number().int().positive().nullable().optional(),
   })
   .strict();

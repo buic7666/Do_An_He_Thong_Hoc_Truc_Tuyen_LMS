@@ -15,7 +15,7 @@ const courseIdParamSchema = z
 const createChapterBodySchema = z
   .object({
     title: z.string().trim().min(3).max(255),
-    description: z.string().trim().max(2000).optional(),
+    description: z.string().trim().max(2000).optional().or(z.literal('')),
     orderIndex: z.coerce.number().int().min(0).optional(),
   })
   .strict();

@@ -18,6 +18,10 @@ import ManHinhTrangThaiGiaoDich from './screens/Hocsinh/ManHinhTrangThaiGiaoDich
 import ManHinhDangKyKhoaHoc from './screens/Hocsinh/ManHinhDangKyKhoaHoc';
 import ManHinhChinhGiaoVien from './screens/GiangVien/ManHinhChinhGiaoVien';
 import ManHinhQuanLyKhoaHoc from './screens/GiangVien/ManHinhQuanLyKhoaHoc';
+import Step1_DanhSachKhoaHoc from './screens/GiangVien/Step1_DanhSachKhoaHoc';
+import Step2_ChiTietKhoaHoc from './screens/GiangVien/Step2_ChiTietKhoaHoc';
+import Step3_ChiTietChapter from './screens/GiangVien/Step3_ChiTietChapter';
+import LessonDetail from './screens/GiangVien/LessonDetail';
 import ManHinhQuanLyNganHangCauhoi from './screens/GiangVien/ManHinhQuanLyNganHangCauhoi';
 import ManHinhTheoDoiDSoHocvien from './screens/GiangVien/ManHinhTheoDoi_DSoHocvien';
 import ManHInhChatGV from './screens/GiangVien/ManHInhChatGV';
@@ -177,7 +181,31 @@ function App() {
         path='/teacher/courses'
         element={
           <ProtectedRoute allowedRoles={['teacher']}>
-            <ManHinhQuanLyKhoaHoc />
+            <Step1_DanhSachKhoaHoc />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/chapters'
+        element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <Step2_ChiTietKhoaHoc />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/chapters/:chapterId/lessons'
+        element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <Step3_ChiTietChapter />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/chapters/:chapterId/lessons/:lessonId'
+        element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <LessonDetail />
           </ProtectedRoute>
         }
       />
