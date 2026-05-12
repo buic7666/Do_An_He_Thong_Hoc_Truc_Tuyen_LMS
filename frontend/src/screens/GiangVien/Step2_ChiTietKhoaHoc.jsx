@@ -168,9 +168,18 @@ function Step2_ChiTietKhoaHoc() {
         {/* Header chương học */}
         <div className="header-step2">
           <h2>📚 Danh Sách Chương Học ({chapters.length})</h2>
-          <button className="btn-add-chapter" onClick={handleOpenAddModal}>
-            ➕ Thêm Chương Mới
-          </button>
+          <div className="header-actions">
+            <button className="btn-add-chapter" onClick={handleOpenAddModal}>
+              ➕ Thêm Chương Mới
+            </button>
+            <button 
+              className="btn-feedback" 
+              onClick={() => navigate(`/teacher/courses/${courseId}/activity/feedback`)}
+              title="Quản lý khảo sát và phản hồi từ học viên"
+            >
+              📋 Phản Hồi
+            </button>
+          </div>
         </div>
 
         {error && <div className="alert-error">{error}</div>}

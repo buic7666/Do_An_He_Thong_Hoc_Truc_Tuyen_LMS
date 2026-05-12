@@ -8,6 +8,7 @@ import {
   updateLessonSegmentApi,
   deleteLessonSegmentApi
 } from '../../api/teacherManagementApi';
+import CommentThread from '../../components/CommentThread';
 import './LessonDetail.css';
 
 // Hàm lấy video ID từ URL YouTube
@@ -328,6 +329,15 @@ function LessonDetail() {
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="lesson-comments-section">
+              <CommentThread
+                courseId={Number(courseId)}
+                lessonId={Number(lessonId)}
+                chapterId={Number(chapterId)}
+                type="lesson"
+              />
             </div>
           </div>
         ) : (

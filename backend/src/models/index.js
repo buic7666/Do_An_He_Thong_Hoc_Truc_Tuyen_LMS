@@ -15,6 +15,7 @@ const Quiz = require('./quiz.model');
 const QuizQuestion = require('./quizQuestion.model');
 const StudentQuizAttempt = require('./studentQuizAttempt.model');
 const StudentAnswer = require('./studentAnswer.model');
+const Comment = require('./comment.model');
 
 // ===== User & Course Relationships =====
 Course.belongsTo(User, {
@@ -314,6 +315,38 @@ StudentAnswer.belongsTo(Question, {
   foreignKey: 'questionId',
 });
 
+// ===== Comment Relationships =====
+User.hasMany(Comment, {
+  as: 'comments',
+  foreignKey: 'userId',
+});
+
+Comment.belongsTo(User, {
+  as: 'author',
+  foreignKey: 'userId',
+});
+
+Course.hasMany(Comment, {
+  as: 'comments',
+  foreignKey: 'courseId',
+});
+
+Comment.belongsTo(Course, {
+  as: 'course',
+  foreignKey: 'courseId',
+});
+
+// Self-reference for replies
+Comment.hasMany(Comment, {
+  as: 'replies',
+  foreignKey: 'parentCommentId',
+});
+
+Comment.belongsTo(Comment, {
+  as: 'parentComment',
+  foreignKey: 'parentCommentId',
+});
+
 module.exports = {
   User,
   Course,
@@ -332,4 +365,5 @@ module.exports = {
   QuizQuestion,
   StudentQuizAttempt,
   StudentAnswer,
+  Comment,
 };

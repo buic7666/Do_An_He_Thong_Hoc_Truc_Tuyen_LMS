@@ -11,12 +11,16 @@ import {
 } from '../../api/lessonApi';
 import QuizList from '../../components/QuizList';
 import QuizTaker from '../../components/QuizTaker';
+import StudentFeedback from '../../components/StudentFeedback';
+import CourseReviews from '../../components/CourseReviews';
+import CommentThread from '../../components/CommentThread';
 import './ManHinhHocTap.css';
 
 const tabs = [
   { id: 'overview', label: 'Tổng quan bài học' },
   { id: 'documents', label: 'Tài liệu PDF' },
   { id: 'notes', label: 'Ghi chú cá nhân' },
+  { id: 'feedback', label: 'Feedback' },
 ];
 
 const formatDuration = (seconds) => {
@@ -813,6 +817,15 @@ function ManHinhHocTap() {
                   <button type='button' className='study-btn-resume study-btn-save-note'>
                     Lưu ghi chú
                   </button>
+                </div>
+              )}
+              {activeTab === 'feedback' && (
+                <div className='study-tab-pane'>
+                  <CommentThread
+                    courseId={selectedCourseId || courseDetail?.id}
+                    lessonId={selectedLessonId}
+                    type="lesson"
+                  />
                 </div>
               )}
             </div>

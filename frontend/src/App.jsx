@@ -23,6 +23,7 @@ import Step2_ChiTietKhoaHoc from './screens/GiangVien/Step2_ChiTietKhoaHoc';
 import Step3_ChiTietChapter from './screens/GiangVien/Step3_ChiTietChapter';
 import LessonDetail from './screens/GiangVien/LessonDetail';
 import ManHinhQuanLyNganHangCauhoi from './screens/GiangVien/ManHinhQuanLyNganHangCauhoi';
+import SurveyActivity from './screens/GiangVien/SurveyActivity';
 import ManHinhTheoDoiDSoHocvien from './screens/GiangVien/ManHinhTheoDoi_DSoHocvien';
 import ManHInhChatGV from './screens/GiangVien/ManHInhChatGV';
 import HoSoGiangVien from './screens/GiangVien/HoSoGiangVien';
@@ -214,6 +215,14 @@ function App() {
         element={
           <ProtectedRoute allowedRoles={['teacher']}>
             <ManHinhQuanLyNganHangCauhoi />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/activity/feedback'
+        element={
+          <ProtectedRoute allowedRoles={['teacher', 'student']}>
+            <SurveyActivity />
           </ProtectedRoute>
         }
       />

@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import httpClient from '../../api/httpClient';
+import { fetchCoursesApi } from '../../api/courseApi';
+import { getCurrentUserSafely } from '../../utils/authRedirect';
 import {
   createQuestionApi,
   createQuizApi,
@@ -10,6 +12,7 @@ import {
   updateQuestionApi,
 } from '../../api/teacherManagementApi';
 import TeacherSidebar from '../../components/TeacherSidebar';
+import QuestionFormModal from '../../components/QuestionFormModal';
 
 import './ManHinhQuanLyNganHangCauhoi.css';
 
@@ -115,6 +118,8 @@ function ManHinhQuanLyNganHangCauhoi() {
   const [selectedChapterId, setSelectedChapterId] = useState('');
   const [quizzes, setQuizzes] = useState([]);
   const [editingId, setEditingId] = useState(null);
+  const [wizardStep, setWizardStep] = useState(0); // 0: choose type, 1: fill content (deprecated, use isModalOpen)
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(true);
   const [error, setError] = useState('');
@@ -173,14 +178,25 @@ function ManHinhQuanLyNganHangCauhoi() {
   };
 
   const loadCourses = async () => {
-    const response = await httpClient.get('/courses');
-    const items = Array.isArray(response?.data?.data) ? response.data.data : [];
-    setCourses(items);
+    try {
+      const items = await fetchCoursesApi();
+      const allCourses = Array.isArray(items) ? items : [];
+      const currentUser = getCurrentUserSafely();
+      let visibleCourses = allCourses;
 
-    if (!selectedCourseId && items.length > 0) {
-      const firstCourseId = items[0].id;
-      setSelectedCourseId(String(firstCourseId));
-      await loadChapters(firstCourseId);
+      if (currentUser?.role === 'teacher') {
+        visibleCourses = allCourses.filter((c) => Number(c.instructor?.id ?? c.instructorId ?? -1) === Number(currentUser.id));
+      }
+
+      setCourses(visibleCourses);
+
+      if (!selectedCourseId && visibleCourses.length > 0) {
+        const firstCourseId = visibleCourses[0].id;
+        setSelectedCourseId(String(firstCourseId));
+        await loadChapters(firstCourseId);
+      }
+    } catch (_err) {
+      setCourses([]);
     }
   };
 
@@ -239,15 +255,48 @@ function ManHinhQuanLyNganHangCauhoi() {
     });
   };
 
-  const toggleCorrectIndex = (index) => {
+  const addOption = () => {
     setDraft((prev) => {
-      const exists = prev.correctIndices.includes(index);
-      const next = exists
-        ? prev.correctIndices.filter((item) => item !== index)
-        : [...prev.correctIndices, index];
+      if (prev.options.length >= 10) {
+        return prev;
+      }
+
       return {
         ...prev,
-        correctIndices: next.length ? next : [index],
+        options: [...prev.options, ''],
+      };
+    });
+  };
+
+  const removeOption = (index) => {
+    setDraft((prev) => {
+      if (prev.options.length <= 2) {
+        return prev;
+      }
+
+      const nextOptions = prev.options.filter((_, itemIndex) => itemIndex !== index);
+      const currentCorrectIndex = prev.correctIndices[0] ?? 0;
+      let nextCorrectIndex = currentCorrectIndex;
+
+      if (index === currentCorrectIndex) {
+        nextCorrectIndex = 0;
+      } else if (index < currentCorrectIndex) {
+        nextCorrectIndex = currentCorrectIndex - 1;
+      }
+
+      return {
+        ...prev,
+        options: nextOptions,
+        correctIndices: [Math.max(0, Math.min(nextCorrectIndex, nextOptions.length - 1))],
+      };
+    });
+  };
+
+  const toggleCorrectIndex = (index) => {
+    setDraft((prev) => {
+      return {
+        ...prev,
+        correctIndices: [index],
       };
     });
   };
@@ -255,6 +304,8 @@ function ManHinhQuanLyNganHangCauhoi() {
   const resetDraft = () => {
     setDraft(createEmptyDraft());
     setEditingId(null);
+    setWizardStep(0);
+    setIsModalOpen(false);
   };
 
   const resetQuizDraft = () => {
@@ -288,8 +339,9 @@ function ManHinhQuanLyNganHangCauhoi() {
         .filter((item) => item.value);
 
       const options = pairs.map((item) => item.value);
+      const selectedCorrectIndex = draft.correctIndices[0];
       const correctIndices = pairs
-        .map((item, index) => ({ index, isCorrect: draft.correctIndices.includes(item.rawIndex) }))
+        .map((item, index) => ({ index, isCorrect: item.rawIndex === selectedCorrectIndex }))
         .filter((item) => item.isCorrect)
         .map((item) => item.index);
 
@@ -379,6 +431,7 @@ function ManHinhQuanLyNganHangCauhoi() {
 
       await loadQuestions();
       resetDraft();
+      setIsModalOpen(false);
     } catch (err) {
       // eslint-disable-next-line no-alert
       alert(err?.response?.data?.message || err.message || 'Không thể lưu câu hỏi.');
@@ -558,7 +611,7 @@ function ManHinhQuanLyNganHangCauhoi() {
     if (draft.type === 'MULTIPLE_CHOICE') {
       return (
         <>
-          <label className="instructor-question-bank-form-label">Các lựa chọn đáp án (có thể chọn nhiều đáp án đúng)</label>
+          <label className="instructor-question-bank-form-label">Các lựa chọn đáp án</label>
           <div className="instructor-question-bank-options-list">
             {draft.options.map((option, index) => (
               <label className="instructor-question-bank-option-row" key={`option-${index + 1}`}>
@@ -566,7 +619,8 @@ function ManHinhQuanLyNganHangCauhoi() {
                   checked={draft.correctIndices.includes(index)}
                   className="instructor-question-bank-option-radio"
                   onChange={() => toggleCorrectIndex(index)}
-                  type="checkbox"
+                  name="question-correct-answer"
+                  type="radio"
                 />
                 <span className="instructor-question-bank-option-letter">{String.fromCharCode(65 + index)}</span>
                 <input
@@ -576,9 +630,26 @@ function ManHinhQuanLyNganHangCauhoi() {
                   type="text"
                   value={option}
                 />
+                <button
+                  className="instructor-question-bank-btn-icon delete"
+                  onClick={() => removeOption(index)}
+                  title="Xóa lựa chọn"
+                  type="button"
+                  disabled={draft.options.length <= 2}
+                >
+                  −
+                </button>
               </label>
             ))}
           </div>
+          <button
+            className="instructor-question-bank-btn instructor-question-bank-btn-primary"
+            type="button"
+            onClick={addOption}
+            disabled={draft.options.length >= 10}
+          >
+            + Thêm lựa chọn
+          </button>
         </>
       );
     }
@@ -832,78 +903,120 @@ function ManHinhQuanLyNganHangCauhoi() {
             </select>
           </div>
 
-          <div className="instructor-question-bank-options-list" style={{ gap: '12px' }}>
-            <div className="instructor-question-bank-form-group" style={{ flex: 1 }}>
-              <label className="instructor-question-bank-form-label" htmlFor="question-type">Loại câu hỏi</label>
-              <select
-                className="instructor-question-bank-form-control"
-                id="question-type"
-                value={draft.type}
-                onChange={(event) => setDraft((prev) => ({ ...prev, type: event.target.value }))}
-              >
-                {QUESTION_TYPES.map((type) => (
-                  <option key={type} value={type}>{QUESTION_TYPE_LABELS[type]}</option>
-                ))}
-              </select>
-            </div>
+          {!editingId ? (
+            <>
+              <div className="instructor-question-bank-options-list" style={{ gap: '12px' }}>
+                <div className="instructor-question-bank-form-group" style={{ flex: 1 }}>
+                  <label className="instructor-question-bank-form-label" htmlFor="question-type">Loại câu hỏi</label>
+                  <select
+                    className="instructor-question-bank-form-control"
+                    id="question-type"
+                    value={draft.type}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, type: event.target.value }))}
+                  >
+                    {QUESTION_TYPES.map((type) => (
+                      <option key={type} value={type}>{QUESTION_TYPE_LABELS[type]}</option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="instructor-question-bank-form-group" style={{ flex: 1 }}>
-              <label className="instructor-question-bank-form-label" htmlFor="question-difficulty">Độ khó</label>
-              <select
-                className="instructor-question-bank-form-control"
-                id="question-difficulty"
-                value={draft.difficulty}
-                onChange={(event) => setDraft((prev) => ({ ...prev, difficulty: event.target.value }))}
-              >
-                <option value="EASY">EASY</option>
-                <option value="MEDIUM">MEDIUM</option>
-                <option value="HARD">HARD</option>
-              </select>
-            </div>
-          </div>
+                <div className="instructor-question-bank-form-group" style={{ flex: 1 }}>
+                  <label className="instructor-question-bank-form-label" htmlFor="question-difficulty">Độ khó</label>
+                  <select
+                    className="instructor-question-bank-form-control"
+                    id="question-difficulty"
+                    value={draft.difficulty}
+                    onChange={(event) => setDraft((prev) => ({ ...prev, difficulty: event.target.value }))}
+                  >
+                    <option value="EASY">EASY</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="HARD">HARD</option>
+                  </select>
+                </div>
+              </div>
 
-          <div className="instructor-question-bank-form-group">
-            <label className="instructor-question-bank-form-label" htmlFor="question-content">Nội dung câu hỏi</label>
-            <textarea
-              className="instructor-question-bank-form-control"
-              id="question-content"
-              onChange={(event) => setDraft((prev) => ({ ...prev, content: event.target.value }))}
-              placeholder="Nhập nội dung câu hỏi..."
-              value={draft.content}
-            />
-          </div>
+              <div className="instructor-question-bank-actions">
+                <button
+                  className="instructor-question-bank-btn instructor-question-bank-btn-success"
+                  type="button"
+                  onClick={() => {
+                    if (!selectedCourseId) {
+                      // eslint-disable-next-line no-alert
+                      alert('Vui lòng chọn khóa học trước.');
+                      return;
+                    }
+                    if (!selectedChapterId) {
+                      // eslint-disable-next-line no-alert
+                      alert('Vui lòng chọn chương trước.');
+                      return;
+                    }
+                    setIsModalOpen(true);
+                  }}
+                >
+                  + Thêm câu hỏi
+                </button>
+              </div>
 
-          {renderTypeSpecificForm()}
+              <QuestionFormModal
+                isOpen={isModalOpen}
+                draft={draft}
+                onDraftChange={setDraft}
+                onConfirm={addOrUpdateQuestion}
+                onCancel={() => {
+                  resetDraft();
+                  setIsModalOpen(false);
+                }}
+                onOptionChange={handleOptionChange}
+                onAddOption={addOption}
+                onRemoveOption={removeOption}
+                onToggleCorrectIndex={toggleCorrectIndex}
+                renderTypeSpecificForm={renderTypeSpecificForm}
+              />
+            </>
+          ) : (
+            <>
+              <div className="instructor-question-bank-form-group">
+                <label className="instructor-question-bank-form-label" htmlFor="question-content">Nội dung câu hỏi</label>
+                <textarea
+                  className="instructor-question-bank-form-control"
+                  id="question-content"
+                  onChange={(event) => setDraft((prev) => ({ ...prev, content: event.target.value }))}
+                  placeholder="Nhập nội dung câu hỏi..."
+                  value={draft.content}
+                />
+              </div>
 
-          <div className="instructor-question-bank-form-group">
-            <label className="instructor-question-bank-form-label" htmlFor="question-explanation">Giải thích (không bắt buộc)</label>
-            <textarea
-              className="instructor-question-bank-form-control"
-              id="question-explanation"
-              onChange={(event) => setDraft((prev) => ({ ...prev, explanation: event.target.value }))}
-              value={draft.explanation}
-            />
-          </div>
+              {renderTypeSpecificForm()}
 
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-            <input
-              type="checkbox"
-              checked={draft.isPublished}
-              onChange={(event) => setDraft((prev) => ({ ...prev, isPublished: event.target.checked }))}
-            />
-            <span>Công khai câu hỏi ngay sau khi lưu</span>
-          </label>
+              <div className="instructor-question-bank-form-group">
+                <label className="instructor-question-bank-form-label" htmlFor="question-explanation">Giải thích (không bắt buộc)</label>
+                <textarea
+                  className="instructor-question-bank-form-control"
+                  id="question-explanation"
+                  onChange={(event) => setDraft((prev) => ({ ...prev, explanation: event.target.value }))}
+                  value={draft.explanation}
+                />
+              </div>
 
-          <div className="instructor-question-bank-actions">
-            <button className="instructor-question-bank-btn instructor-question-bank-btn-success" onClick={addOrUpdateQuestion} type="button">
-              {editingId ? 'Cập nhật câu hỏi' : '+ Thêm câu hỏi'}
-            </button>
-            {editingId ? (
-              <button className="instructor-question-bank-btn instructor-question-bank-btn-primary" onClick={resetDraft} type="button">
-                Hủy sửa
-              </button>
-            ) : null}
-          </div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <input
+                  type="checkbox"
+                  checked={draft.isPublished}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, isPublished: event.target.checked }))}
+                />
+                <span>Công khai câu hỏi ngay sau khi lưu</span>
+              </label>
+
+              <div className="instructor-question-bank-actions">
+                <button className="instructor-question-bank-btn instructor-question-bank-btn-success" onClick={addOrUpdateQuestion} type="button">
+                  Cập nhật câu hỏi
+                </button>
+                <button className="instructor-question-bank-btn instructor-question-bank-btn-primary" onClick={resetDraft} type="button">
+                  Hủy sửa
+                </button>
+              </div>
+            </>
+          )}
         </section>
 
         <section className="instructor-question-bank-card">
@@ -918,7 +1031,7 @@ function ManHinhQuanLyNganHangCauhoi() {
               let answerPreview = 'Chưa thiết lập';
 
               if (type === 'MULTIPLE_CHOICE') {
-                answerPreview = `Chỉ số đúng: ${(metadata.correctIndices || []).join(', ')}`;
+                answerPreview = `Đáp án đúng: ${(metadata.correctIndices || []).map((index) => String.fromCharCode(65 + Number(index))).join(', ')}`;
               } else if (type === 'TRUE_FALSE') {
                 answerPreview = `Đáp án đúng: ${metadata.correctAnswer ? 'Đúng' : 'Sai'}`;
               } else if (type === 'SHORT_ANSWER') {

@@ -119,6 +119,66 @@ export const fetchTeacherQuizzesApi = async () => {
   return response?.data?.data || response?.data || [];
 };
 
+export const createSurveyApi = async (payload) => {
+  const response = await httpClient.post('/surveys', payload);
+  return response?.data?.data || response?.data;
+};
+
+export const fetchSurveysByCourseApi = async (courseId) => {
+  const response = await httpClient.get(`/surveys/course/${courseId}`);
+  return response?.data?.data || response?.data || [];
+};
+
+export const getSurveyDetailApi = async (surveyId) => {
+  const response = await httpClient.get(`/surveys/${surveyId}`);
+  return response?.data?.data || response?.data;
+};
+
+// Comment APIs
+export const getCommentsApi = async (courseId, lessonId = null, chapterId = null) => {
+  const params = new URLSearchParams({ courseId });
+  if (lessonId) params.append('lessonId', lessonId);
+  if (chapterId) params.append('chapterId', chapterId);
+  const response = await httpClient.get(`/comments?${params.toString()}`);
+  return response?.data || [];
+};
+
+export const createCommentApi = async (payload) => {
+  const response = await httpClient.post('/comments', payload);
+  return response?.data || response?.data?.data;
+};
+
+export const updateCommentApi = async (commentId, payload) => {
+  const response = await httpClient.put(`/comments/${commentId}`, payload);
+  return response?.data || response?.data?.data;
+};
+
+export const deleteCommentApi = async (commentId) => {
+  const response = await httpClient.delete(`/comments/${commentId}`);
+  return response?.data;
+};
+
+export const submitSurveyResponseApi = async (surveyId, payload) => {
+  const response = await httpClient.post(`/surveys/${surveyId}/responses`, payload);
+  return response?.data?.data || response?.data;
+};
+
+// Reviews (public ratings + comments)
+export const createReviewApi = async (payload) => {
+  const response = await httpClient.post('/reviews', payload);
+  return response?.data?.data || response?.data;
+};
+
+export const fetchReviewsByCourseApi = async (courseId) => {
+  const response = await httpClient.get(`/reviews/course/${courseId}`);
+  return response?.data?.data || response?.data || { averageRating: 0, totalReviews: 0, reviews: [] };
+};
+
+export const getSurveyResponsesApi = async (surveyId) => {
+  const response = await httpClient.get(`/surveys/${surveyId}/responses`);
+  return response?.data?.data || response?.data || [];
+};
+
 export const addQuestionToQuizApi = async (quizId, questionId, payload = {}) => {
   const response = await httpClient.post(`/quiz-manager/${quizId}/questions/${questionId}`, payload);
   return response?.data?.data || response?.data;

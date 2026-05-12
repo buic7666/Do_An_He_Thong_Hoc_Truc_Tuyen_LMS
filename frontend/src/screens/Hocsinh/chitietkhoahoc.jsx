@@ -8,6 +8,8 @@ import { isAccessTokenValid } from '../../utils/authSession';
 import { getCourseImageDataUrl } from '../../utils/courseImage';
 import QuizList from '../../components/QuizList';
 import QuizTaker from '../../components/QuizTaker';
+import StudentFeedback from '../../components/StudentFeedback';
+import CourseReviews from '../../components/CourseReviews';
 
 const formatPrice = (price) => `${Number(price || 0).toLocaleString('vi-VN')}d`;
 
@@ -228,6 +230,12 @@ function ChiTietKhoaHoc() {
             </div>
           ) : (
             <p className='course-detail-quiz-message'>Vui lòng đăng ký khóa học để làm bài kiểm tra.</p>
+          )}
+
+          {isEnrolled && (
+            <div className='course-detail-feedback-section'>
+              <StudentFeedback courseId={id} />
+            </div>
           )}`r`n        </section>`r`n`r`n        <aside className='course-detail-sidebar'>`r`n          <p className='course-detail-price'>{formatPrice(courseDetail.price)}</p>
 
           <button
