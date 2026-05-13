@@ -1,7 +1,7 @@
 const lessonRepository = require('../repositories/lessonRepository');
 const enrollmentRepository = require('../repositories/enrollmentRepository');
 const { sequelize } = require('../config/database');
-const { Lesson, LessonSegment } = require('../models');
+const { Lesson, LessonSegment, LessonLabel } = require('../models');
 const { HttpError } = require('../utils/httpError');
 
 const parseId = (value, fieldName) => {
@@ -37,6 +37,19 @@ const assertSegmentRange = (startTime, endTime) => {
   if (startTime < 0 || endTime <= startTime) {
     throw new HttpError(400, 'endTime must be greater than startTime', 'INVALID_SEGMENT_RANGE');
   }
+};
+
+const mapLessonLabel = (label) => {
+  const plain = label.toJSON ? label.toJSON() : label;
+  return {
+    id: plain.id,
+    lessonId: plain.lessonId,
+    teacherId: plain.teacherId,
+    content: plain.content,
+    labelType: plain.labelType || 'note',
+    createdAt: plain.createdAt,
+    updatedAt: plain.updatedAt,
+  };
 };
 
 const getLessonsByCourse = async (courseId) => {
@@ -388,6 +401,112 @@ const deleteLessonSegment = async (segmentId, currentUser) => {
   return { id: parsedSegmentId, deleted: true };
 };
 
+const getLessonLabels = async (lessonId, currentUser) => {
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (currentUser?.role === 'teacher' && lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const labels = await LessonLabel.findAll({
+    where: { lessonId: parsedLessonId },
+    order: [['createdAt', 'DESC']],
+  });
+
+  return labels.map((item) => mapLessonLabel(item));
+};
+
+const createLessonLabel = async (lessonId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (currentUser.role !== 'admin' && lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const created = await LessonLabel.create({
+    lessonId: parsedLessonId,
+    teacherId: currentUser.id,
+    content: payload.content.trim(),
+    labelType: payload.labelType || 'note',
+  });
+
+  return mapLessonLabel(created);
+};
+
+const updateLessonLabel = async (labelId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLabelId = parseId(labelId, 'labelId');
+  const label = await LessonLabel.findByPk(parsedLabelId, {
+    include: [
+      {
+        association: 'lesson',
+        include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+      },
+    ],
+  });
+
+  if (!label) {
+    throw new HttpError(404, 'Lesson label not found', 'LESSON_LABEL_NOT_FOUND');
+  }
+
+  if (currentUser.role !== 'admin' && label.lesson?.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  label.content = payload.content.trim();
+  label.labelType = payload.labelType || label.labelType || 'note';
+  await label.save();
+  return mapLessonLabel(label);
+};
+
+const deleteLessonLabel = async (labelId, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLabelId = parseId(labelId, 'labelId');
+  const label = await LessonLabel.findByPk(parsedLabelId, {
+    include: [
+      {
+        association: 'lesson',
+        include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+      },
+    ],
+  });
+
+  if (!label) {
+    throw new HttpError(404, 'Lesson label not found', 'LESSON_LABEL_NOT_FOUND');
+  }
+
+  if (currentUser.role !== 'admin' && label.lesson?.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  await label.destroy();
+  return { id: parsedLabelId, deleted: true };
+};
+
 module.exports = {
   getLessonsByCourse,
   getLessonDetail,
@@ -399,4 +518,8 @@ module.exports = {
   createLessonSegmentsBulk,
   getLessonSegments,
   deleteLessonSegment,
+  getLessonLabels,
+  createLessonLabel,
+  updateLessonLabel,
+  deleteLessonLabel,
 };

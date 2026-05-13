@@ -60,6 +60,26 @@ export const deleteLessonSegmentApi = async (segmentId) => {
   return response?.data?.data || response?.data;
 };
 
+export const fetchLessonLabelsApi = async (lessonId) => {
+  const response = await httpClient.get(`/lessons/${lessonId}/labels`);
+  return response?.data?.data || response?.data || [];
+};
+
+export const createLessonLabelApi = async (lessonId, payload) => {
+  const response = await httpClient.post(`/lessons/${lessonId}/labels`, payload);
+  return response?.data?.data || response?.data;
+};
+
+export const updateLessonLabelApi = async (labelId, payload) => {
+  const response = await httpClient.put(`/lessons/labels/${labelId}`, payload);
+  return response?.data?.data || response?.data;
+};
+
+export const deleteLessonLabelApi = async (labelId) => {
+  const response = await httpClient.delete(`/lessons/labels/${labelId}`);
+  return response?.data?.data || response?.data;
+};
+
 export const updateCourseChapterApi = async (chapterId, payload) => {
   const response = await httpClient.put(`/chapters/${chapterId}`, payload);
   return response?.data?.data || response?.data;

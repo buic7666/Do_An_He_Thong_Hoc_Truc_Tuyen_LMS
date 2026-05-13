@@ -6,7 +6,11 @@ import {
   fetchLessonSegmentsApi,
   createLessonSegmentApi,
   updateLessonSegmentApi,
-  deleteLessonSegmentApi
+  deleteLessonSegmentApi,
+  fetchLessonLabelsApi,
+  createLessonLabelApi,
+  updateLessonLabelApi,
+  deleteLessonLabelApi,
 } from '../../api/teacherManagementApi';
 import CommentThread from '../../components/CommentThread';
 import './LessonDetail.css';
@@ -58,6 +62,12 @@ const parseTime = (timeStr) => {
   return parts[0] || 0;
 };
 
+const LABEL_TYPE_META = {
+  note: { icon: '📝', title: 'Note', className: 'is-note' },
+  warning: { icon: '⚠️', title: 'Warning', className: 'is-warning' },
+  tip: { icon: '💡', title: 'Tip', className: 'is-tip' },
+};
+
 function LessonDetail() {
   const { lessonId, courseId, chapterId } = useParams();
   const navigate = useNavigate();
@@ -78,6 +88,10 @@ function LessonDetail() {
   });
 
   const [playingSegmentId, setPlayingSegmentId] = useState(null);
+  const [labels, setLabels] = useState([]);
+  const [labelInput, setLabelInput] = useState('');
+  const [editingLabelId, setEditingLabelId] = useState(null);
+  const [labelType, setLabelType] = useState('note');
 
   // Log params để debug
   useEffect(() => {
@@ -117,17 +131,79 @@ function LessonDetail() {
     }
   };
 
+  const loadLabels = async () => {
+    try {
+      if (!lessonId) {
+        setLabels([]);
+        return;
+      }
+
+      const items = await fetchLessonLabelsApi(lessonId);
+      setLabels(Array.isArray(items) ? items : []);
+    } catch (err) {
+      console.error('Load lesson labels error:', err);
+      setLabels([]);
+    }
+  };
+
   useEffect(() => {
     if (lessonId && courseId && chapterId) {
       setLoading(true);
       setError('');
-      Promise.all([loadLessonDetail(), loadSegments()])
+      Promise.all([loadLessonDetail(), loadSegments(), loadLabels()])
         .finally(() => setLoading(false));
     } else {
       setError('Thông tin bài học không hợp lệ. Vui lòng quay lại và thử lại.');
       setLoading(false);
     }
   }, [lessonId, courseId, chapterId]);
+
+  const handleSaveLabel = async () => {
+    const text = labelInput.trim();
+    if (!text) {
+      alert('Vui lòng nhập nội dung Label.');
+      return;
+    }
+
+    try {
+      if (editingLabelId) {
+        await updateLessonLabelApi(editingLabelId, { content: text, labelType });
+      } else {
+        await createLessonLabelApi(lessonId, { content: text, labelType });
+      }
+
+      await loadLabels();
+      setEditingLabelId(null);
+      setLabelInput('');
+      setLabelType('note');
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Không thể lưu Label.');
+    }
+  };
+
+  const handleEditLabel = (item) => {
+    setEditingLabelId(item.id);
+    setLabelInput(item.content || '');
+    setLabelType(item.labelType || 'note');
+  };
+
+  const handleDeleteLabel = async (id) => {
+    if (!window.confirm('Bạn chắc chắn muốn xóa Label này?')) {
+      return;
+    }
+
+    try {
+      await deleteLessonLabelApi(id);
+      await loadLabels();
+      if (editingLabelId === id) {
+        setEditingLabelId(null);
+        setLabelInput('');
+        setLabelType('note');
+      }
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Không thể xóa Label.');
+    }
+  };
 
   // Mở modal thêm phân đoạn
   const handleOpenAddModal = () => {
@@ -326,6 +402,83 @@ function LessonDetail() {
                         </button>
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="lesson-label-section">
+              <div className="lesson-label-header">
+                <h2>🏷️ Resource Label ({labels.length})</h2>
+                <span className="lesson-label-subtitle">
+                  Label giúp giảng viên tạo các dãn ghi chú thêm thông tin về bài học.
+                </span>
+              </div>
+
+              <div className="lesson-label-form">
+                <textarea
+                  className="lesson-label-input"
+                  placeholder="Nhập nội dung label/ghi chú cho bài học..."
+                  value={labelInput}
+                  onChange={(event) => setLabelInput(event.target.value)}
+                />
+                <div className="lesson-label-type-row">
+                  <label htmlFor="lesson-label-type">Loại Label</label>
+                  <select
+                    id="lesson-label-type"
+                    className="lesson-label-type-select"
+                    value={labelType}
+                    onChange={(event) => setLabelType(event.target.value)}
+                  >
+                    <option value="note">📝 Note</option>
+                    <option value="warning">⚠️ Warning</option>
+                    <option value="tip">💡 Tip</option>
+                  </select>
+                </div>
+                <div className="lesson-label-actions">
+                  <button className="btn-add-segment" type="button" onClick={handleSaveLabel}>
+                    {editingLabelId ? '💾 Cập nhật Label' : '➕ Thêm Label'}
+                  </button>
+                  {editingLabelId ? (
+                    <button
+                      className="btn-cancel-segment"
+                      type="button"
+                      onClick={() => {
+                        setEditingLabelId(null);
+                        setLabelInput('');
+                      }}
+                    >
+                      Hủy sửa
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              {!labels.length ? (
+                <div className="no-segments">
+                  <p>Chưa có Label nào cho bài học này.</p>
+                </div>
+              ) : (
+                <div className="lesson-label-list">
+                  {labels.map((item, index) => (
+                    <article key={item.id} className={`lesson-label-item ${LABEL_TYPE_META[item.labelType || 'note']?.className || 'is-note'}`}>
+                      <div className="lesson-label-index">{index + 1}</div>
+                      <div className="lesson-label-content">
+                        <div className="lesson-label-type-badge">
+                          <span>{LABEL_TYPE_META[item.labelType || 'note']?.icon || '📝'}</span>
+                          <span>{LABEL_TYPE_META[item.labelType || 'note']?.title || 'Note'}</span>
+                        </div>
+                        <p>{item.content}</p>
+                      </div>
+                      <div className="lesson-label-item-actions">
+                        <button className="btn-edit-segment" type="button" onClick={() => handleEditLabel(item)}>
+                          ✏️
+                        </button>
+                        <button className="btn-delete-segment" type="button" onClick={() => handleDeleteLabel(item.id)}>
+                          🗑️
+                        </button>
+                      </div>
+                    </article>
                   ))}
                 </div>
               )}

@@ -1,4 +1,6 @@
 const { Course, Enrollment, User } = require('../models');
+const courseRepository = require('../repositories/courseRepository');
+const progressRepository = require('../repositories/progressRepository');
 const { HttpError } = require('../utils/httpError');
 
 const monthFormatter = new Intl.DateTimeFormat('vi-VN', {
@@ -86,6 +88,18 @@ const getDashboardOverview = async (currentUser) => {
 
   const activeEnrollments = allEnrollments.filter((item) => item.status === 'active');
   const activeStudentIds = new Set(activeEnrollments.map((item) => item.userId));
+  const lessonIdCache = new Map();
+
+  const getCourseLessonIds = async (courseId) => {
+    if (lessonIdCache.has(courseId)) {
+      return lessonIdCache.get(courseId);
+    }
+
+    const lessons = await courseRepository.findLessonsByCourseId(courseId);
+    const lessonIds = lessons.map((lesson) => lesson.id);
+    lessonIdCache.set(courseId, lessonIds);
+    return lessonIds;
+  };
 
   const now = new Date();
   const startOfCurrentMonth = getStartOfMonth(now);
@@ -127,16 +141,45 @@ const getDashboardOverview = async (currentUser) => {
       createdAt: enrollment.createdAt,
     }));
 
-  const enrollments = activeEnrollments.map((enrollment) => ({
-    id: enrollment.id,
-    userId: enrollment.userId,
-    studentName: enrollment.user?.name || 'Hoc vien',
-    studentEmail: enrollment.user?.email || '',
-    courseId: enrollment.course.id,
-    courseName: enrollment.course.title,
-    price: enrollment.course.price,
-    createdAt: enrollment.createdAt,
-  }));
+  const enrollments = await Promise.all(
+    activeEnrollments.map(async (enrollment) => {
+      const lessonIds = await getCourseLessonIds(enrollment.course.id);
+
+      if (lessonIds.length === 0) {
+        return {
+          id: enrollment.id,
+          userId: enrollment.userId,
+          studentName: enrollment.user?.name || 'Hoc vien',
+          studentEmail: enrollment.user?.email || '',
+          courseId: enrollment.course.id,
+          courseName: enrollment.course.title,
+          price: enrollment.course.price,
+          createdAt: enrollment.createdAt,
+          totalLessons: 0,
+          completedLessons: 0,
+          progressPercent: 0,
+        };
+      }
+
+      const completedLessons = await progressRepository.findCompletedByUserAndLessonIds(enrollment.userId, lessonIds);
+      const completedLessonCount = completedLessons.length;
+      const progressPercent = Math.round((completedLessonCount * 10000) / lessonIds.length) / 100;
+
+      return {
+        id: enrollment.id,
+        userId: enrollment.userId,
+        studentName: enrollment.user?.name || 'Hoc vien',
+        studentEmail: enrollment.user?.email || '',
+        courseId: enrollment.course.id,
+        courseName: enrollment.course.title,
+        price: enrollment.course.price,
+        createdAt: enrollment.createdAt,
+        totalLessons: lessonIds.length,
+        completedLessons: completedLessonCount,
+        progressPercent,
+      };
+    }),
+  );
 
   return {
     stats: {

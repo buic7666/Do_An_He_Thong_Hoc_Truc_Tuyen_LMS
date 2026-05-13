@@ -45,6 +45,24 @@ function ManHinhTheoDoiDSoHocvien() {
     });
   }, [enrollments, searchKeyword, selectedCourse]);
 
+  const getProgressValue = (student) => {
+    const value = Number(student?.progressPercent || 0);
+    if (!Number.isFinite(value) || value < 0) return 0;
+    if (value > 100) return 100;
+    return value;
+  };
+
+  const getProgressLabel = (student) => {
+    const progressValue = getProgressValue(student);
+    const completedLessons = Number(student?.completedLessons || 0);
+    const totalLessons = Number(student?.totalLessons || 0);
+    return totalLessons > 0 ? `${completedLessons}/${totalLessons} bài học` : 'Chưa có bài học';
+  };
+
+  const getStatusLabel = (student) => {
+    return getProgressValue(student) >= 100 ? 'Hoàn thành' : 'Đang học';
+  };
+
   const sendMessage = (studentName) => {
     // Placeholder action until API integration is ready.
     // eslint-disable-next-line no-alert
@@ -118,15 +136,27 @@ function ManHinhTheoDoiDSoHocvien() {
                   <td>{formatDate(student.createdAt)}</td>
                   <td>
                     <div className="instructor-progress-progress-wrapper">
-                      <div className="instructor-progress-progress-text">100%</div>
+                      <div className="instructor-progress-progress-text">{`${getProgressValue(student)}%`}</div>
                       <div className="instructor-progress-progress-track">
-                        <div className="instructor-progress-progress-fill" style={{ width: '100%' }} />
+                        <div
+                          className="instructor-progress-progress-fill"
+                          style={{ width: `${getProgressValue(student)}%` }}
+                        />
                       </div>
+                      <div className="instructor-progress-progress-detail">{getProgressLabel(student)}</div>
                     </div>
                   </td>
                   <td className="instructor-progress-score-text muted">Chua cap nhat</td>
                   <td>
-                    <span className="instructor-progress-status-badge instructor-progress-status-learning">Dang hoc</span>
+                    <span
+                      className={`instructor-progress-status-badge ${
+                        getProgressValue(student) >= 100
+                          ? 'instructor-progress-status-complete'
+                          : 'instructor-progress-status-learning'
+                      }`}
+                    >
+                      {getStatusLabel(student)}
+                    </span>
                   </td>
                   <td className="center">
                     <button className="instructor-progress-btn-action" onClick={() => sendMessage(student.studentName)} title="Gui tin nhan" type="button">

@@ -10,6 +10,7 @@ const {
   TeacherInteraction,
   LessonWatchPosition,
   LessonSegment,
+  LessonLabel,
 } = require('./src/models');
 
 const app = createApp();
@@ -23,6 +24,7 @@ const bootstrap = async () => {
     await TeacherInteraction.sync();
     await LessonWatchPosition.sync();
     await LessonSegment.sync();
+    await LessonLabel.sync({ alter: true });
 
     app.listen(env.port, () => {
       console.log(`Backend server is running on port ${env.port}`);

@@ -118,7 +118,6 @@ function ManHinhQuanLyNganHangCauhoi() {
   const [selectedChapterId, setSelectedChapterId] = useState('');
   const [quizzes, setQuizzes] = useState([]);
   const [editingId, setEditingId] = useState(null);
-  const [wizardStep, setWizardStep] = useState(0); // 0: choose type, 1: fill content (deprecated, use isModalOpen)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(true);
@@ -304,7 +303,6 @@ function ManHinhQuanLyNganHangCauhoi() {
   const resetDraft = () => {
     setDraft(createEmptyDraft());
     setEditingId(null);
-    setWizardStep(0);
     setIsModalOpen(false);
   };
 
@@ -966,10 +964,6 @@ function ManHinhQuanLyNganHangCauhoi() {
                   resetDraft();
                   setIsModalOpen(false);
                 }}
-                onOptionChange={handleOptionChange}
-                onAddOption={addOption}
-                onRemoveOption={removeOption}
-                onToggleCorrectIndex={toggleCorrectIndex}
                 renderTypeSpecificForm={renderTypeSpecificForm}
               />
             </>

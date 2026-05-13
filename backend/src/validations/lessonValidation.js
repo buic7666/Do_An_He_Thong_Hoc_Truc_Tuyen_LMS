@@ -54,6 +54,19 @@ const bulkCreateLessonSegmentsBodySchema = z
   })
   .strict();
 
+const labelIdParamSchema = z
+  .object({
+    labelId: z.coerce.number().int().positive(),
+  })
+  .strict();
+
+const lessonLabelBodySchema = z
+  .object({
+    content: z.string().trim().min(1).max(5000),
+    labelType: z.enum(['note', 'warning', 'tip']).optional().default('note'),
+  })
+  .strict();
+
 module.exports = {
   lessonIdParamSchema,
   courseIdParamSchema,
@@ -63,4 +76,6 @@ module.exports = {
   createLessonSegmentBodySchema,
   updateLessonSegmentBodySchema,
   bulkCreateLessonSegmentsBodySchema,
+  labelIdParamSchema,
+  lessonLabelBodySchema,
 };

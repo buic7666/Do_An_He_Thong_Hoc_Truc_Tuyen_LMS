@@ -91,6 +91,42 @@ const deleteLessonSegment = async (req, res, next) => {
   }
 };
 
+const getLessonLabels = async (req, res, next) => {
+  try {
+    const result = await lessonService.getLessonLabels(req.params.id, req.user);
+    return successResponse(res, 'Lesson labels retrieved', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const createLessonLabel = async (req, res, next) => {
+  try {
+    const result = await lessonService.createLessonLabel(req.params.id, req.body, req.user);
+    return successResponse(res, 'Lesson label created', result, 201);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const updateLessonLabel = async (req, res, next) => {
+  try {
+    const result = await lessonService.updateLessonLabel(req.params.labelId, req.body, req.user);
+    return successResponse(res, 'Lesson label updated', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const deleteLessonLabel = async (req, res, next) => {
+  try {
+    const result = await lessonService.deleteLessonLabel(req.params.labelId, req.user);
+    return successResponse(res, 'Lesson label deleted', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getLessonsByCourse,
   getLessonDetail,
@@ -102,4 +138,8 @@ module.exports = {
   updateLessonSegment,
   createLessonSegmentsBulk,
   deleteLessonSegment,
+  getLessonLabels,
+  createLessonLabel,
+  updateLessonLabel,
+  deleteLessonLabel,
 };

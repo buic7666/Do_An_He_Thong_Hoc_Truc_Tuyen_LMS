@@ -6,6 +6,7 @@ const LessonSegment = require('./lecture.model');
 const Enrollment = require('./enrollment.model');
 const Progress = require('./progress.model');
 const LessonWatchPosition = require('./lessonWatchPosition.model');
+const LessonLabel = require('./lessonLabel.model');
 const ContactMessage = require('./contactMessage.model');
 const TeacherProfile = require('./teacherProfile.model');
 const TeacherQuestion = require('./teacherQuestion.model');
@@ -133,6 +134,26 @@ Lesson.hasMany(LessonWatchPosition, {
 LessonWatchPosition.belongsTo(Lesson, {
   as: 'lesson',
   foreignKey: 'lessonId',
+});
+
+Lesson.hasMany(LessonLabel, {
+  as: 'labels',
+  foreignKey: 'lessonId',
+});
+
+LessonLabel.belongsTo(Lesson, {
+  as: 'lesson',
+  foreignKey: 'lessonId',
+});
+
+User.hasMany(LessonLabel, {
+  as: 'lessonLabels',
+  foreignKey: 'teacherId',
+});
+
+LessonLabel.belongsTo(User, {
+  as: 'teacher',
+  foreignKey: 'teacherId',
 });
 
 // Lesson segments (YouTube video slices)
@@ -356,6 +377,7 @@ module.exports = {
   Enrollment,
   Progress,
   LessonWatchPosition,
+  LessonLabel,
   ContactMessage,
   TeacherProfile,
   TeacherQuestion,

@@ -9,6 +9,7 @@ import {
   markLessonCompletedApi,
   saveLessonWatchPositionApi,
 } from '../../api/lessonApi';
+import { fetchLessonLabelsApi } from '../../api/teacherManagementApi';
 import QuizList from '../../components/QuizList';
 import QuizTaker from '../../components/QuizTaker';
 import StudentFeedback from '../../components/StudentFeedback';
@@ -22,6 +23,12 @@ const tabs = [
   { id: 'notes', label: 'Ghi chú cá nhân' },
   { id: 'feedback', label: 'Feedback' },
 ];
+
+const LABEL_TYPE_META = {
+  note: { icon: '📝', title: 'Note', className: 'is-note' },
+  warning: { icon: '⚠️', title: 'Warning', className: 'is-warning' },
+  tip: { icon: '💡', title: 'Tip', className: 'is-tip' },
+};
 
 const formatDuration = (seconds) => {
   const total = Math.max(0, Number(seconds || 0));
@@ -96,6 +103,7 @@ function ManHinhHocTap() {
   const [youtubeSubscribeMessage, setYoutubeSubscribeMessage] = useState('');
   const [isVideoUnlocked, setIsVideoUnlocked] = useState(false);
   const [lessonSegments, setLessonSegments] = useState([]);
+  const [lessonLabels, setLessonLabels] = useState([]);
 
   const initialQueryRef = useRef(null);
   const lessonSessionStartAtRef = useRef(null);
@@ -272,16 +280,19 @@ function ManHinhHocTap() {
       setResumeSeconds(0);
       setIframeStartSeconds(0);
       setLessonSegments([]);
+      setLessonLabels([]);
       return;
     }
 
-    const [lessonDetail, watchPosition] = await Promise.all([
+    const [lessonDetail, watchPosition, labels] = await Promise.all([
       fetchLessonDetailApi(lessonId),
       fetchLessonWatchPositionApi(lessonId),
+      fetchLessonLabelsApi(lessonId),
     ]);
 
     setCurrentLessonDetail(lessonDetail);
     setLessonSegments(Array.isArray(lessonDetail?.segments) ? lessonDetail.segments : []);
+    setLessonLabels(Array.isArray(labels) ? labels : []);
     const seconds = Number(watchPosition?.positionSeconds || 0);
     setResumeSeconds(seconds);
     setIframeStartSeconds(0);
@@ -753,6 +764,31 @@ function ManHinhHocTap() {
                   Mở trên YouTube
                 </button>
               </div>
+            )}
+          </div>
+
+          <div className='study-label-card study-label-card-inline'>
+            <h3 className='study-label-title'>🏷️ Label của giảng viên</h3>
+            {lessonLabels.length > 0 ? (
+              <div className='study-label-list'>
+                {lessonLabels.map((label, index) => {
+                  const meta = LABEL_TYPE_META[label.labelType || 'note'] || LABEL_TYPE_META.note;
+                  return (
+                    <article key={label.id} className={`study-label-item ${meta.className}`}>
+                      <span className='study-label-index'>{index + 1}</span>
+                      <div className='study-label-body'>
+                        <div className='study-label-type-badge'>
+                          <span>{meta.icon}</span>
+                          <span>{meta.title}</span>
+                        </div>
+                        <p className='study-label-text'>{label.content}</p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className='study-label-empty'>Giảng viên chưa thêm Label cho bài học này.</p>
             )}
           </div>
 

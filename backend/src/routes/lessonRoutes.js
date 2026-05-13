@@ -13,6 +13,8 @@ const {
 	createLessonSegmentBodySchema,
 	updateLessonSegmentBodySchema,
 	bulkCreateLessonSegmentsBodySchema,
+	labelIdParamSchema,
+	lessonLabelBodySchema,
 } = require('../validations/lessonValidation');
 const {
 	lessonIdParamSchema: progressLessonIdParamSchema,
@@ -46,6 +48,28 @@ router.post(
 	authorize('admin', 'teacher'),
 	validateRequest({ params: lessonIdParamSchema, body: bulkCreateLessonSegmentsBodySchema }),
 	lessonController.createLessonSegmentsBulk,
+);
+router.get('/:id/labels', authenticate, validateRequest({ params: lessonIdParamSchema }), lessonController.getLessonLabels);
+router.post(
+	'/:id/labels',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: lessonIdParamSchema, body: lessonLabelBodySchema }),
+	lessonController.createLessonLabel,
+);
+router.put(
+	'/labels/:labelId',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: labelIdParamSchema, body: lessonLabelBodySchema }),
+	lessonController.updateLessonLabel,
+);
+router.delete(
+	'/labels/:labelId',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: labelIdParamSchema }),
+	lessonController.deleteLessonLabel,
 );
 router.put(
 	'/segments/:segmentId',

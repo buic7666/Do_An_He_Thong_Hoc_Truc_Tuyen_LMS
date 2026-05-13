@@ -1,3 +1,109 @@
+.study-label-card {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.study-label-card-inline {
+  margin-top: 14px;
+}
+
+.study-label-title {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.study-label-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.study-label-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.study-label-item.is-note {
+  border-left: 4px solid #2563eb;
+  background: #eff6ff;
+}
+
+.study-label-item.is-warning {
+  border-left: 4px solid #f59e0b;
+  background: #fffbeb;
+}
+
+.study-label-item.is-tip {
+  border-left: 4px solid #10b981;
+  background: #ecfdf5;
+}
+
+.study-label-index {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.study-label-item.is-note .study-label-index {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.study-label-item.is-warning .study-label-index {
+  background: #fde68a;
+  color: #92400e;
+}
+
+.study-label-item.is-tip .study-label-index {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.study-label-body {
+  flex: 1;
+}
+
+.study-label-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.study-label-text {
+  margin: 0;
+  color: #111827;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.study-label-empty {
+  margin: 0;
+  color: #6b7280;
+}
 :root {
   --study-bg-main: #0f1115;
   --study-bg-surface: #1c1f26;
