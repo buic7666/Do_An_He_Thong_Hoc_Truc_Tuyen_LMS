@@ -55,6 +55,15 @@ const getLessonSegments = async (req, res, next) => {
   }
 };
 
+const getLessonSegmentById = async (req, res, next) => {
+  try {
+    const result = await lessonService.getLessonSegmentById(req.params.id, req.params.segmentId);
+    return successResponse(res, 'Segment retrieved', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const createLessonSegment = async (req, res, next) => {
   try {
     const result = await lessonService.createLessonSegment(req.params.id, req.body, req.user);
@@ -68,6 +77,15 @@ const updateLessonSegment = async (req, res, next) => {
   try {
     const result = await lessonService.updateLessonSegment(req.params.segmentId, req.body, req.user);
     return successResponse(res, 'Segment updated', result, 200);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const reorderLessonSegments = async (req, res, next) => {
+  try {
+    const result = await lessonService.reorderLessonSegments(req.params.id, req.body, req.user);
+    return successResponse(res, 'Segments reordered', result, 200);
   } catch (error) {
     return next(error);
   }
@@ -134,8 +152,10 @@ module.exports = {
   updateLesson,
   deleteLesson,
   getLessonSegments,
+  getLessonSegmentById,
   createLessonSegment,
   updateLessonSegment,
+  reorderLessonSegments,
   createLessonSegmentsBulk,
   deleteLessonSegment,
   getLessonLabels,

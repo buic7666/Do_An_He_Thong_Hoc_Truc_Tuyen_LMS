@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import httpClient from '../../api/httpClient';
 import { fetchCoursesApi } from '../../api/courseApi';
 import { getCurrentUserSafely } from '../../utils/authRedirect';
@@ -8,6 +9,8 @@ import {
   deleteQuestionApi,
   fetchQuestionsApi,
   fetchTeacherQuizzesApi,
+  fetchCourseLessonsApi,
+  fetchLessonSegmentsApi,
   getCourseChaptersApi,
   updateQuestionApi,
 } from '../../api/teacherManagementApi';
@@ -74,7 +77,6 @@ const parseJson = (value, fallback = {}) => {
 const createEmptyDraft = () => ({
   type: 'MULTIPLE_CHOICE',
   content: '',
-  difficulty: 'MEDIUM',
   isPublished: false,
   options: ['', '', '', ''],
   correctIndices: [0],
@@ -108,6 +110,8 @@ const createEmptyQuizDraft = () => ({
 });
 
 function ManHinhQuanLyNganHangCauhoi() {
+  const navigate = useNavigate();
+  const { courseId: routeCourseId } = useParams();
   const [activeTab, setActiveTab] = useState('questions'); // 'questions' or 'quizzes'
   const [draft, setDraft] = useState(createEmptyDraft());
   const [quizDraft, setQuizDraft] = useState(createEmptyQuizDraft());
@@ -116,6 +120,10 @@ function ManHinhQuanLyNganHangCauhoi() {
   const [chapters, setChapters] = useState([]);
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [selectedChapterId, setSelectedChapterId] = useState('');
+  const [lessons, setLessons] = useState([]);
+  const [segments, setSegments] = useState([]);
+  const [selectedLessonId, setSelectedLessonId] = useState('');
+  const [selectedSegmentId, setSelectedSegmentId] = useState('');
   const [quizzes, setQuizzes] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -123,6 +131,7 @@ function ManHinhQuanLyNganHangCauhoi() {
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(true);
   const [error, setError] = useState('');
   const [quizError, setQuizError] = useState('');
+  const isCourseScopedView = Boolean(routeCourseId);
 
   const questionCount = useMemo(() => questions.length, [questions]);
 
@@ -161,6 +170,10 @@ function ManHinhQuanLyNganHangCauhoi() {
     if (!courseId) {
       setChapters([]);
       setSelectedChapterId('');
+      setLessons([]);
+      setSelectedLessonId('');
+      setSegments([]);
+      setSelectedSegmentId('');
       return;
     }
     const items = await getCourseChaptersApi(courseId);
@@ -173,7 +186,58 @@ function ManHinhQuanLyNganHangCauhoi() {
       }
       return nextChapters.length > 0 ? String(nextChapters[0].id) : '';
     });
+    setSelectedLessonId('');
+    setSegments([]);
+    setSelectedSegmentId('');
     return nextChapters;
+  };
+
+  const loadLessons = async (courseId, chapterId) => {
+    if (!courseId || !chapterId) {
+      setLessons([]);
+      setSelectedLessonId('');
+      setSegments([]);
+      setSelectedSegmentId('');
+      return;
+    }
+
+    const items = await fetchCourseLessonsApi(courseId);
+    const nextLessons = Array.isArray(items)
+      ? items.filter((lesson) => String(lesson.chapterId) === String(chapterId))
+      : [];
+
+    setLessons(nextLessons);
+    setSelectedLessonId((previous) => {
+      const stillExists = nextLessons.some((lesson) => String(lesson.id) === String(previous));
+      if (stillExists) {
+        return previous;
+      }
+      return nextLessons.length > 0 ? String(nextLessons[0].id) : '';
+    });
+
+    return nextLessons;
+  };
+
+  const loadSegments = async (lessonId) => {
+    if (!lessonId) {
+      setSegments([]);
+      setSelectedSegmentId('');
+      return;
+    }
+
+    const items = await fetchLessonSegmentsApi(lessonId);
+    const nextSegments = Array.isArray(items) ? items : [];
+
+    setSegments(nextSegments);
+    setSelectedSegmentId((previous) => {
+      const stillExists = nextSegments.some((segment) => String(segment.id) === String(previous));
+      if (stillExists) {
+        return previous;
+      }
+      return nextSegments.length > 0 ? String(nextSegments[0].id) : '';
+    });
+
+    return nextSegments;
   };
 
   const loadCourses = async () => {
@@ -188,6 +252,12 @@ function ManHinhQuanLyNganHangCauhoi() {
       }
 
       setCourses(visibleCourses);
+
+      if (routeCourseId) {
+        setSelectedCourseId(String(routeCourseId));
+        await loadChapters(routeCourseId);
+        return;
+      }
 
       if (!selectedCourseId && visibleCourses.length > 0) {
         const firstCourseId = visibleCourses[0].id;
@@ -211,6 +281,8 @@ function ManHinhQuanLyNganHangCauhoi() {
       const items = await fetchQuestionsApi({
         courseId: Number(selectedCourseId),
         chapterId: selectedChapterId ? Number(selectedChapterId) : undefined,
+        lectureId: selectedLessonId ? Number(selectedLessonId) : undefined,
+        segmentId: selectedSegmentId ? Number(selectedSegmentId) : undefined,
       });
       setQuestions(Array.isArray(items) ? items : []);
     } catch (err) {
@@ -243,8 +315,30 @@ function ManHinhQuanLyNganHangCauhoi() {
   }, []);
 
   useEffect(() => {
-    loadQuestions();
+    if (!selectedCourseId || !selectedChapterId) {
+      setLessons([]);
+      setSelectedLessonId('');
+      setSegments([]);
+      setSelectedSegmentId('');
+      return;
+    }
+
+    loadLessons(selectedCourseId, selectedChapterId);
   }, [selectedCourseId, selectedChapterId]);
+
+  useEffect(() => {
+    if (!selectedLessonId) {
+      setSegments([]);
+      setSelectedSegmentId('');
+      return;
+    }
+
+    loadSegments(selectedLessonId);
+  }, [selectedLessonId]);
+
+  useEffect(() => {
+    loadQuestions();
+  }, [selectedCourseId, selectedChapterId, selectedLessonId, selectedSegmentId]);
 
   const handleOptionChange = (index, value) => {
     setDraft((prev) => {
@@ -321,13 +415,20 @@ function ManHinhQuanLyNganHangCauhoi() {
     if (!selectedChapterId) {
       throw new Error('Vui lòng chọn chương trước khi tạo câu hỏi.');
     }
+    if (!selectedLessonId) {
+      throw new Error('Vui lòng chọn bài học trước khi tạo câu hỏi.');
+    }
+    if (!selectedSegmentId) {
+      throw new Error('Vui lòng chọn phần bài học trước khi tạo câu hỏi.');
+    }
 
     const base = {
       type: draft.type,
       content,
-      difficulty: draft.difficulty,
       courseId: Number(selectedCourseId),
       chapterId: selectedChapterId ? Number(selectedChapterId) : undefined,
+      lectureId: selectedLessonId ? Number(selectedLessonId) : undefined,
+      segmentId: selectedSegmentId ? Number(selectedSegmentId) : undefined,
       isPublished: draft.isPublished,
     };
 
@@ -458,7 +559,6 @@ function ManHinhQuanLyNganHangCauhoi() {
       ...createEmptyDraft(),
       type,
       content: question.content || question.questionText || '',
-      difficulty: String(question.difficulty || 'MEDIUM').toUpperCase(),
       isPublished: Boolean(question.isPublished),
       options: metadata.options || question.options || ['', '', '', ''],
       correctIndices: metadata.correctIndices || (Number.isInteger(question.correctIndex) ? [question.correctIndex] : [0]),
@@ -473,6 +573,13 @@ function ManHinhQuanLyNganHangCauhoi() {
       wordLimitMax: Number(metadata.wordLimit?.max ?? 400),
       aiModel: metadata.aiModel || 'gpt-3.5-turbo',
     });
+
+    if (question.lectureId != null) {
+      setSelectedLessonId(String(question.lectureId));
+    }
+    if (metadata.segmentId != null) {
+      setSelectedSegmentId(String(metadata.segmentId));
+    }
   };
 
   const deleteQuestion = async (id) => {
@@ -489,6 +596,9 @@ function ManHinhQuanLyNganHangCauhoi() {
   };
 
   const handleSelectCourse = async (courseId) => {
+    if (isCourseScopedView) {
+      return;
+    }
     setSelectedCourseId(String(courseId));
     await loadChapters(courseId);
   };
@@ -803,7 +913,23 @@ function ManHinhQuanLyNganHangCauhoi() {
 
       <main className="instructor-question-bank-main-content">
         <header className="instructor-question-bank-page-header">
-          <h1 className="instructor-question-bank-page-title">Quản lý Bài Học</h1>
+          <h1 className="instructor-question-bank-page-title">Quản lý Ngân hàng Câu hỏi</h1>
+          {isCourseScopedView ? (
+            <div style={{ marginTop: 10 }}>
+              <p style={{ margin: 0, color: '#4b5563' }}>
+                Đang quản lý câu hỏi trong khóa học{' '}
+                <strong>{courses.find((course) => String(course.id) === String(selectedCourseId))?.title || 'đang tải'}</strong>.
+              </p>
+              <button
+                type="button"
+                className="instructor-question-bank-btn instructor-question-bank-btn-primary"
+                style={{ marginTop: 12 }}
+                onClick={() => navigate(`/teacher/courses/${selectedCourseId}/chapters`)}
+              >
+                ← Quay lại quản lý khóa học
+              </button>
+            </div>
+          ) : null}
           
           {/* Tab Navigation */}
           <div style={{ display: 'flex', gap: 12, marginTop: 20, borderBottom: '2px solid #e5e7eb' }}>
@@ -861,45 +987,66 @@ function ManHinhQuanLyNganHangCauhoi() {
             <section className="instructor-question-bank-card" style={{ marginBottom: 16, marginTop: 16 }}>
               <p style={{ margin: 0 }}>
                 Đang xem ngân hàng câu hỏi của khóa học{' '}
-                <strong>{courses.find((course) => String(course.id) === String(selectedCourseId))?.title || 'chưa chọn'}</strong>
-                {' '}và chương{' '}
-                <strong>{chapters.find((chapter) => String(chapter.id) === String(selectedChapterId))?.title || 'chưa chọn'}</strong>.
+                <strong>{courses.find((course) => String(course.id) === String(selectedCourseId))?.title || 'đang tải'}</strong>
+                {' '}với chương{' '}
+                <strong>{chapters.find((chapter) => String(chapter.id) === String(selectedChapterId))?.title || 'chưa chọn'}</strong>,
+                {' '}bài học{' '}
+                <strong>{lessons.find((lesson) => String(lesson.id) === String(selectedLessonId))?.title || 'chưa chọn'}</strong>
+                {' '}và phần bài học{' '}
+                <strong>{segments.find((segment) => String(segment.id) === String(selectedSegmentId))?.title || 'chưa chọn'}</strong>.
               </p>
             </section>
 
             <section className="instructor-question-bank-card highlighted">
               <h2 className="instructor-question-bank-card-title">{editingId ? 'Cập nhật câu hỏi' : 'Thêm câu hỏi'}</h2>
 
-          <div className="instructor-question-bank-form-group">
-            <label className="instructor-question-bank-form-label" htmlFor="quiz-course">Khóa học</label>
-            <select
-              className="instructor-question-bank-form-control"
-              id="quiz-course"
-              value={selectedCourseId}
-              onChange={async (event) => handleSelectCourse(event.target.value)}
-            >
-              <option value="">-- Chọn khóa học --</option>
-              {courses.map((course) => (
-                <option key={course.id} value={course.id}>{course.title}</option>
-              ))}
-            </select>
-          </div>
+              <div className="instructor-question-bank-form-group">
+                <label className="instructor-question-bank-form-label" htmlFor="question-chapter">Chương</label>
+                <select
+                  className="instructor-question-bank-form-control"
+                  id="question-chapter"
+                  value={selectedChapterId}
+                  onChange={(event) => setSelectedChapterId(event.target.value)}
+                  disabled={!chapters.length}
+                >
+                  <option value="">-- Chọn chương --</option>
+                  {chapters.map((chapter) => (
+                    <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="instructor-question-bank-form-group">
-            <label className="instructor-question-bank-form-label" htmlFor="question-chapter">Chương</label>
-            <select
-              className="instructor-question-bank-form-control"
-              id="question-chapter"
-              value={selectedChapterId}
-              onChange={(event) => setSelectedChapterId(event.target.value)}
-              disabled={!chapters.length}
-            >
-              <option value="">-- Chọn chương --</option>
-              {chapters.map((chapter) => (
-                <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
-              ))}
-            </select>
-          </div>
+              <div className="instructor-question-bank-form-group">
+                <label className="instructor-question-bank-form-label" htmlFor="question-lesson">Bài học</label>
+                <select
+                  className="instructor-question-bank-form-control"
+                  id="question-lesson"
+                  value={selectedLessonId}
+                  onChange={(event) => setSelectedLessonId(event.target.value)}
+                  disabled={!lessons.length}
+                >
+                  <option value="">-- Chọn bài học --</option>
+                  {lessons.map((lesson) => (
+                    <option key={lesson.id} value={lesson.id}>{lesson.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="instructor-question-bank-form-group">
+                <label className="instructor-question-bank-form-label" htmlFor="question-segment">Phần bài học</label>
+                <select
+                  className="instructor-question-bank-form-control"
+                  id="question-segment"
+                  value={selectedSegmentId}
+                  onChange={(event) => setSelectedSegmentId(event.target.value)}
+                  disabled={!segments.length}
+                >
+                  <option value="">-- Chọn phần bài học --</option>
+                  {segments.map((segment) => (
+                    <option key={segment.id} value={segment.id}>{segment.title}</option>
+                  ))}
+                </select>
+              </div>
 
           {!editingId ? (
             <>
@@ -917,20 +1064,6 @@ function ManHinhQuanLyNganHangCauhoi() {
                     ))}
                   </select>
                 </div>
-
-                <div className="instructor-question-bank-form-group" style={{ flex: 1 }}>
-                  <label className="instructor-question-bank-form-label" htmlFor="question-difficulty">Độ khó</label>
-                  <select
-                    className="instructor-question-bank-form-control"
-                    id="question-difficulty"
-                    value={draft.difficulty}
-                    onChange={(event) => setDraft((prev) => ({ ...prev, difficulty: event.target.value }))}
-                  >
-                    <option value="EASY">EASY</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="HARD">HARD</option>
-                  </select>
-                </div>
               </div>
 
               <div className="instructor-question-bank-actions">
@@ -938,14 +1071,19 @@ function ManHinhQuanLyNganHangCauhoi() {
                   className="instructor-question-bank-btn instructor-question-bank-btn-success"
                   type="button"
                   onClick={() => {
-                    if (!selectedCourseId) {
-                      // eslint-disable-next-line no-alert
-                      alert('Vui lòng chọn khóa học trước.');
-                      return;
-                    }
                     if (!selectedChapterId) {
                       // eslint-disable-next-line no-alert
                       alert('Vui lòng chọn chương trước.');
+                      return;
+                    }
+                    if (!selectedLessonId) {
+                      // eslint-disable-next-line no-alert
+                      alert('Vui lòng chọn bài học trước.');
+                      return;
+                    }
+                    if (!selectedSegmentId) {
+                      // eslint-disable-next-line no-alert
+                      alert('Vui lòng chọn phần bài học trước.');
                       return;
                     }
                     setIsModalOpen(true);

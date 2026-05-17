@@ -5,7 +5,6 @@ import './TeacherSidebar.css';
 const teacherNavItems = [
   { path: '/teacher/dashboard', label: 'Tổng quan' },
   { path: '/teacher/courses', label: 'Quản lý khóa học' },
-  { path: '/teacher/questions', label: 'Ngân hàng câu hỏi' },
   { path: '/teacher/students', label: 'Quản lý học viên' },
   { path: '/teacher/interaction', label: 'Tương tác học viên' },
   { path: '/teacher/profile', label: 'Hồ sơ giảng viên' },

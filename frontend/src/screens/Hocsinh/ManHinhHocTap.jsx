@@ -9,25 +9,16 @@ import {
   markLessonCompletedApi,
   saveLessonWatchPositionApi,
 } from '../../api/lessonApi';
-import { fetchLessonLabelsApi } from '../../api/teacherManagementApi';
 import QuizList from '../../components/QuizList';
 import QuizTaker from '../../components/QuizTaker';
-import StudentFeedback from '../../components/StudentFeedback';
-import CourseReviews from '../../components/CourseReviews';
-import CommentThread from '../../components/CommentThread';
 import './ManHinhHocTap.css';
 
-const tabs = [
-  { id: 'overview', label: 'Tổng quan bài học' },
-  { id: 'documents', label: 'Tài liệu PDF' },
-  { id: 'notes', label: 'Ghi chú cá nhân' },
-  { id: 'feedback', label: 'Feedback' },
-];
-
-const LABEL_TYPE_META = {
-  note: { icon: '📝', title: 'Note', className: 'is-note' },
-  warning: { icon: '⚠️', title: 'Warning', className: 'is-warning' },
-  tip: { icon: '💡', title: 'Tip', className: 'is-tip' },
+const SEGMENT_CONTENT_META = {
+  text: { icon: '📝', title: 'Text' },
+  document: { icon: '📎', title: 'Tài liệu' },
+  question: { icon: '❓', title: 'Câu hỏi' },
+  quiz: { icon: '🧪', title: 'Bài kiểm tra' },
+  videoClip: { icon: '🎬', title: 'Đoạn video' },
 };
 
 const formatDuration = (seconds) => {
@@ -69,6 +60,11 @@ const getYouTubeVideoId = (rawUrl) => {
         return normalizeYouTubeVideoId(url.pathname.split('/shorts/')[1]);
       }
     }
+
+    const direct = normalizeYouTubeVideoId(rawUrl);
+    if (direct) {
+      return direct;
+    }
   } catch (_error) {
     return null;
   }
@@ -78,7 +74,6 @@ const getYouTubeVideoId = (rawUrl) => {
 
 function ManHinhHocTap() {
   const GOOGLE_YOUTUBE_TOKEN_KEY = 'googleYoutubeAccessToken';
-  const [activeTab, setActiveTab] = useState('overview');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshingLessons, setIsRefreshingLessons] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -95,24 +90,22 @@ function ManHinhHocTap() {
   const [selectedQuizId, setSelectedQuizId] = useState(null);
   const [selectedQuizScope, setSelectedQuizScope] = useState(null);
   const [showQuizForChapterId, setShowQuizForChapterId] = useState(null);
-  const [youtubeAccessToken, setYoutubeAccessToken] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    return sessionStorage.getItem(GOOGLE_YOUTUBE_TOKEN_KEY) || '';
-  });
-  const [isSubscribingChannel, setIsSubscribingChannel] = useState(false);
-  const [youtubeSubscribeMessage, setYoutubeSubscribeMessage] = useState('');
-  const [isVideoUnlocked, setIsVideoUnlocked] = useState(false);
   const [lessonSegments, setLessonSegments] = useState([]);
-  const [lessonLabels, setLessonLabels] = useState([]);
+  const [selectedSegmentId, setSelectedSegmentId] = useState(null);
+  const [selectedContentKey, setSelectedContentKey] = useState(null);
+  const [viewedContentItems, setViewedContentItems] = useState({});
+  const [isVideoUnlocked, setIsVideoUnlocked] = useState(false);
+  const [youtubeAccessToken, setYoutubeAccessToken] = useState(() => sessionStorage.getItem(GOOGLE_YOUTUBE_TOKEN_KEY) || '');
+  const [youtubeSubscribeMessage, setYoutubeSubscribeMessage] = useState('');
 
-  const initialQueryRef = useRef(null);
-  const lessonSessionStartAtRef = useRef(null);
+  const currentLessonIdRef = useRef(null);
   const lessonBaseSecondsRef = useRef(0);
+  const lessonSessionStartAtRef = useRef(null);
   const lastSavedSecondsRef = useRef(0);
   const autoSaveIntervalRef = useRef(null);
-  const currentLessonIdRef = useRef(null);
+  const initialQueryRef = useRef(null);
 
-  if (!initialQueryRef.current && typeof window !== 'undefined') {
+  if (!initialQueryRef.current) {
     const params = new URLSearchParams(window.location.search);
     initialQueryRef.current = {
       courseId: params.get('courseId'),
@@ -186,10 +179,106 @@ function ManHinhHocTap() {
     [lessons, currentLessonId],
   );
 
+  const selectedSegment = useMemo(
+    () => lessonSegments.find((segment) => Number(segment.id) === Number(selectedSegmentId)) || null,
+    [lessonSegments, selectedSegmentId],
+  );
+
+  const selectedContent = useMemo(() => {
+    if (!selectedContentKey) {
+      return null;
+    }
+
+    const segment = lessonSegments.find((item) => Number(item.id) === Number(selectedContentKey.segmentId)) || null;
+    if (!segment || !Array.isArray(segment.contentItems)) {
+      return null;
+    }
+
+    const itemIndex = Number(selectedContentKey.itemIndex);
+    const item = segment.contentItems[itemIndex];
+    if (!item) {
+      return null;
+    }
+
+    return { segment, item, itemIndex };
+  }, [lessonSegments, selectedContentKey]);
+
   const currentVideoId = useMemo(() => getYouTubeVideoId(currentLesson?.videoUrl), [currentLesson?.videoUrl]);
 
-  const currentEmbedUrl = useMemo(() => {
-    if (!currentVideoId) {
+  const getSegmentStartSeconds = useCallback((segment) => {
+    if (!segment) {
+      return 0;
+    }
+
+    const videoClip = Array.isArray(segment.contentItems)
+      ? segment.contentItems.find((item) => item?.type === 'videoClip' && Number(item?.startTime) >= 0)
+      : null;
+
+    const clipStart = Number(videoClip?.startTime);
+    if (Number.isFinite(clipStart) && clipStart >= 0) {
+      return Math.floor(clipStart);
+    }
+
+    return Math.max(0, Math.floor(Number(segment.startTime || 0)));
+  }, []);
+
+  const handleSelectSegment = useCallback((segment) => {
+    if (!segment) {
+      return;
+    }
+
+    const segmentId = Number(segment.id);
+    setSelectedSegmentId(segmentId);
+    setSelectedContentKey(
+      Array.isArray(segment.contentItems) && segment.contentItems[0]
+        ? { segmentId, itemIndex: 0 }
+        : null,
+    );
+
+    const startAt = getSegmentStartSeconds(segment);
+    setIframeStartSeconds(startAt);
+    setIframeResumeNonce((prev) => prev + 1);
+    setPositionSaveMessage(`Đang học: ${segment.title || `Phần ${segmentId}`}`);
+  }, [getSegmentStartSeconds]);
+
+  const handleSelectContentItem = useCallback((segment, itemIndex) => {
+    if (!segment || !Array.isArray(segment.contentItems)) {
+      return;
+    }
+
+    const item = segment.contentItems[itemIndex];
+    if (!item) {
+      return;
+    }
+
+    const key = { segmentId: Number(segment.id), itemIndex };
+    // Toggle: if same item clicked again, close it
+    if (selectedContentKey && selectedContentKey.segmentId === key.segmentId && Number(selectedContentKey.itemIndex) === Number(key.itemIndex)) {
+      setSelectedContentKey(null);
+      // reset selected segment only if no other selected
+      setSelectedSegmentId(Number(segment.id));
+    } else {
+      setSelectedSegmentId(Number(segment.id));
+      setSelectedContentKey(key);
+    }
+
+    // Mark này là đã viewed
+    const viewedKey = `${segment.id}-${itemIndex}`;
+    setViewedContentItems((prev) => ({ ...prev, [viewedKey]: true }));
+  }, []);
+
+  // Check xem content item có bị lock không (phải xem item trước đó trước)
+  const isContentItemLocked = useCallback((segment, itemIndex) => {
+    if (!segment || !Array.isArray(segment.contentItems) || itemIndex <= 0) {
+      return false;
+    }
+    // Item bị lock nếu item trước đó chưa viewed
+    const prevKey = `${segment.id}-${itemIndex - 1}`;
+    return !viewedContentItems[prevKey];
+  }, [viewedContentItems]);
+
+  const selectedContentVideoUrl = useMemo(() => {
+    if (!isVideoUnlocked || !selectedContent || selectedContent.item?.type !== 'videoClip' || !currentVideoId) {
       return '';
     }
 
@@ -198,15 +287,35 @@ function ManHinhHocTap() {
       modestbranding: '1',
       playsinline: '1',
       enablejsapi: '1',
+      autoplay: '1',
     });
 
-    if (iframeStartSeconds > 0) {
-      params.set('start', String(Math.max(1, Math.floor(iframeStartSeconds))));
-      params.set('autoplay', '1');
+    const startSeconds = Math.max(0, Math.floor(Number(iframeStartSeconds || 0)));
+    if (startSeconds > 0) {
+      params.set('start', String(startSeconds));
     }
 
     return `https://www.youtube.com/embed/${currentVideoId}?${params.toString()}`;
-  }, [currentVideoId, iframeStartSeconds]);
+  }, [currentVideoId, iframeStartSeconds, isVideoUnlocked, selectedContent]);
+
+  const renderYoutubeSubscribeGate = useCallback((titleText) => {
+    const requiresLogin = !youtubeAccessToken;
+
+    return (
+      <div className='study-youtube-gate'>
+        <div className='study-youtube-gate-icon'>🔒</div>
+        <h4>{titleText || 'Video này cần đăng ký kênh YouTube'}</h4>
+        <p>
+          {youtubeSubscribeMessage || 'Nếu bạn đã đăng ký kênh của giảng viên thì bấm kiểm tra để xem ngay. Nếu chưa, hãy đăng nhập Google và đăng ký kênh trước khi xem.'}
+        </p>
+        <div className='study-youtube-gate-actions'>
+          <button type='button' className='study-btn-resume' onClick={requiresLogin ? () => loginAndSubscribe() : () => handleAutoSubscribeChannel()}>
+            {requiresLogin ? 'Đăng nhập Google để kiểm tra' : 'Kiểm tra / đăng ký kênh'}
+          </button>
+        </div>
+      </div>
+    );
+  }, [youtubeAccessToken, youtubeSubscribeMessage]);
 
   const completedLessonIdSet = useMemo(() => {
     const ids = Array.isArray(courseProgress?.completedLessonIds) ? courseProgress.completedLessonIds : [];
@@ -280,29 +389,55 @@ function ManHinhHocTap() {
       setResumeSeconds(0);
       setIframeStartSeconds(0);
       setLessonSegments([]);
-      setLessonLabels([]);
+      setViewedContentItems({});
       return;
     }
 
-    const [lessonDetail, watchPosition, labels] = await Promise.all([
+    const [lessonDetail, watchPosition] = await Promise.all([
       fetchLessonDetailApi(lessonId),
       fetchLessonWatchPositionApi(lessonId),
-      fetchLessonLabelsApi(lessonId),
     ]);
 
     setCurrentLessonDetail(lessonDetail);
-    setLessonSegments(Array.isArray(lessonDetail?.segments) ? lessonDetail.segments : []);
-    setLessonLabels(Array.isArray(labels) ? labels : []);
+    setSelectedContentKey(null);
+    setLessonSegments(
+      Array.isArray(lessonDetail?.segments)
+        ? [...lessonDetail.segments].sort((left, right) => {
+            const leftOrder = Number(left.orderIndex || 0);
+            const rightOrder = Number(right.orderIndex || 0);
+            if (leftOrder !== rightOrder) {
+              return leftOrder - rightOrder;
+            }
+            return Number(left.startTime || 0) - Number(right.startTime || 0);
+          })
+        : [],
+    );
+    const nextSegments = Array.isArray(lessonDetail?.segments)
+      ? [...lessonDetail.segments].sort((left, right) => {
+          const leftOrder = Number(left.orderIndex || 0);
+          const rightOrder = Number(right.orderIndex || 0);
+          if (leftOrder !== rightOrder) {
+            return leftOrder - rightOrder;
+          }
+          return Number(left.startTime || 0) - Number(right.startTime || 0);
+        })
+      : [];
+    setLessonSegments(nextSegments);
+    setSelectedSegmentId(nextSegments[0]?.id ? Number(nextSegments[0].id) : null);
+    setSelectedContentKey(
+      nextSegments[0]?.contentItems?.[0]
+        ? { segmentId: Number(nextSegments[0].id), itemIndex: 0 }
+        : null,
+    );
     const seconds = Number(watchPosition?.positionSeconds || 0);
     setResumeSeconds(seconds);
-    setIframeStartSeconds(0);
-    setIframeResumeNonce(0);
+    setIframeStartSeconds(nextSegments[0] ? getSegmentStartSeconds(nextSegments[0]) : 0);
     lessonBaseSecondsRef.current = seconds;
     lessonSessionStartAtRef.current = Date.now();
     lastSavedSecondsRef.current = seconds;
     currentLessonIdRef.current = Number(lessonId);
     setPositionSaveMessage(seconds > 0 ? `Đã tìm thấy mốc ${formatDuration(seconds)}` : 'Bắt đầu từ đầu bài học.');
-  }, []);
+  }, [getSegmentStartSeconds]);
 
   useEffect(() => {
     currentLessonIdRef.current = Number(currentLessonId || 0) || null;
@@ -432,6 +567,8 @@ function ManHinhHocTap() {
       setSelectedQuizId(null);
       setSelectedQuizScope(null);
       setShowQuizForChapterId(null);
+      setSelectedSegmentId(null);
+      setSelectedContentKey(null);
       setIsVideoUnlocked(false);
       setYoutubeSubscribeMessage('');
       await loadLessonData(parsedLessonId);
@@ -455,6 +592,8 @@ function ManHinhHocTap() {
       setCourseDetail(updatedCourse);
       setLessons(sortedLessons);
       setShowQuizForChapterId(null);
+      setSelectedSegmentId(null);
+      setSelectedContentKey(null);
       
       // Expand all chapters by default
       const chapters = Array.isArray(updatedCourse.chapters) ? updatedCourse.chapters : [];
@@ -672,6 +811,196 @@ function ManHinhHocTap() {
     setSelectedQuizScope(null);
   };
 
+  const formatSegmentContentText = (item) => {
+    const text = String(item?.content || item?.title || '').trim();
+    return text || 'Chưa có nội dung mô tả.';
+  };
+
+  const renderSegmentContentItem = (segment, item, itemIndex) => {
+    const meta = SEGMENT_CONTENT_META[item.type] || SEGMENT_CONTENT_META.text;
+    const resourceUrl = String(item?.resourceUrl || '').trim();
+    const isSelected = Number(selectedContentKey?.segmentId) === Number(segment.id)
+      && Number(selectedContentKey?.itemIndex) === Number(itemIndex);
+    const isLocked = isContentItemLocked(segment, itemIndex);
+
+    return (
+      <article
+        key={`${segment.id}-${itemIndex}`}
+        className={`study-segment-content-item is-${item.type || 'text'} ${isSelected ? 'is-selected' : ''} ${isLocked ? 'is-locked' : ''}`}
+        role='button'
+        tabIndex={isLocked ? -1 : 0}
+        onClick={() => !isLocked && handleSelectContentItem(segment, itemIndex)}
+        onKeyDown={(event) => {
+          if (!isLocked && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            handleSelectContentItem(segment, itemIndex);
+          }
+        }}
+        aria-disabled={isLocked}
+      >
+        <div className='study-segment-content-item-header'>
+          <span className='study-segment-content-badge'>
+            <span>{isLocked ? '🔒' : meta.icon}</span>
+            <span>{isLocked ? `Khoá (xem phần ${itemIndex} trước)` : meta.title}</span>
+          </span>
+          <span className='study-segment-content-order'>#{item.orderIndex || itemIndex + 1}</span>
+        </div>
+
+        {item.title ? <h4 className='study-segment-content-title'>{item.title}</h4> : null}
+
+        {item.type === 'text' && <p className='study-segment-content-text'>{formatSegmentContentText(item)}</p>}
+
+        {item.type === 'document' && (
+          <div className='study-segment-content-body'>
+            <p>{formatSegmentContentText(item)}</p>
+            {resourceUrl && !isLocked ? (
+              <a className='study-segment-content-link' href={resourceUrl} target='_blank' rel='noreferrer'>
+                Mở tài liệu
+              </a>
+            ) : null}
+          </div>
+        )}
+
+        {item.type === 'question' && (
+          <div className='study-segment-content-body'>
+            <p>{formatSegmentContentText(item)}</p>
+            {resourceUrl && !isLocked ? (
+              <a className='study-segment-content-link' href={resourceUrl} target='_blank' rel='noreferrer'>
+                Mở câu hỏi
+              </a>
+            ) : null}
+          </div>
+        )}
+
+        {item.type === 'quiz' && (
+          <div className='study-segment-content-body'>
+            <p>{formatSegmentContentText(item)}</p>
+            {resourceUrl && !isLocked ? (
+              <a className='study-segment-content-link' href={resourceUrl} target='_blank' rel='noreferrer'>
+                Làm bài kiểm tra
+              </a>
+            ) : null}
+          </div>
+        )}
+
+        {item.type === 'videoClip' && (
+          <div className='study-segment-content-body'>
+            <p>{formatSegmentContentText(item)}</p>
+            <div className='study-segment-content-actions'>
+              <span className='study-segment-content-meta'>
+                {formatDuration(item.startTime)} - {formatDuration(item.endTime)}
+              </span>
+              <span className='study-segment-content-link-button'>Xem đoạn này</span>
+            </div>
+
+            {/* Inline player: render only when this item is selected */}
+            {selectedContentKey && Number(selectedContentKey.segmentId) === Number(segment.id) && Number(selectedContentKey.itemIndex) === Number(itemIndex) ? (
+              isVideoUnlocked ? (
+                (() => {
+                  const videoId = getYouTubeVideoId(currentLesson?.videoUrl);
+                  const start = Number(item.startTime || segment.startTime || 0);
+                  if (!videoId) {
+                    return <p className='study-segment-content-empty'>Không có video hợp lệ cho đoạn này.</p>;
+                  }
+                  const params = new URLSearchParams({
+                    rel: '0',
+                    modestbranding: '1',
+                    playsinline: '1',
+                    enablejsapi: '1',
+                    autoplay: '1',
+                  });
+                  if (Number.isFinite(start) && start > 0) params.set('start', String(Math.max(0, Math.floor(start))));
+                  const src = `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
+                  return (
+                    <iframe
+                      key={`inline-${segment.id}-${itemIndex}-${start}`}
+                      className='study-youtube-player study-clip-player inline-clip-player'
+                      src={src}
+                      title={item.title || segment.title || 'Video clip'}
+                      allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+                      allowFullScreen
+                    />
+                  );
+                })()
+              ) : (
+                renderYoutubeSubscribeGate('Cần đăng ký kênh để mở video này')
+              )
+            ) : null}
+          </div>
+        )}
+      </article>
+    );
+  };
+
+  const renderSelectedSegmentPanel = () => {
+    const segmentTabs = Array.isArray(lessonSegments) ? lessonSegments : [];
+
+    if (!selectedSegment && segmentTabs.length === 0) {
+      return (
+        <div className='study-segment-focus-empty'>
+          <h3>Chọn một phần để bắt đầu học</h3>
+          <p>Bấm vào từng phần trong danh sách bên phải để xem đúng nội dung của phần đó.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className='study-segment-focus-card'>
+        <div className='study-segment-focus-header'>
+          <div>
+            <div className='study-segment-focus-kicker'>Phần bài học</div>
+            <h3>{selectedSegment?.title || 'Chọn một phần bên dưới'}</h3>
+          </div>
+        </div>
+
+        <div className='study-segment-focus-body'>
+          {selectedSegment ? (
+            Array.isArray(selectedSegment.contentItems) && selectedSegment.contentItems.length > 0 ? (
+              <>
+                <div className='study-segment-focus-meta'>
+                  <span>{formatDuration(selectedSegment.startTime)} - {formatDuration(selectedSegment.endTime)}</span>
+                  <span>{`${selectedSegment.contentItems.length} nội dung`}</span>
+                </div>
+
+                <div className='study-content-items-tabs'>
+                  {selectedSegment.contentItems.map((item, itemIndex) => {
+                    const isSelected = Number(selectedContentKey?.segmentId) === Number(selectedSegment.id)
+                      && Number(selectedContentKey?.itemIndex) === Number(itemIndex);
+                    const meta = SEGMENT_CONTENT_META[item.type] || SEGMENT_CONTENT_META.text;
+
+                    return (
+                      <button
+                        key={`${selectedSegment.id}-${itemIndex}`}
+                        type='button'
+                        className={`study-content-item-tab ${isSelected ? 'is-active' : ''}`}
+                        onClick={() => handleSelectContentItem(selectedSegment, itemIndex)}
+                      >
+                        <span className='study-content-item-tab-icon'>{meta.icon}</span>
+                        <span className='study-content-item-tab-label'>{item.title || `${meta.title} #${itemIndex + 1}`}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {selectedContent ? (
+                  <div className='study-content-item-panel'>
+                    {renderSegmentContentItem(selectedSegment, selectedContent.item, selectedContent.itemIndex)}
+                  </div>
+                ) : (
+                  <p className='study-segment-content-empty'>Bấm vào tab phía trên để xem nội dung.</p>
+                )}
+              </>
+            ) : (
+              <p className='study-segment-content-empty'>Phần này chưa có phần mô tả chi tiết.</p>
+            )
+          ) : (
+            <p className='study-segment-content-empty'>Chọn một tab phần bài học để hiển thị nội dung ở bên dưới.</p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (isLoading) {
     return <div className='study-workspace-page study-loading-state'>Đang tải dữ liệu học tập...</div>;
   }
@@ -700,8 +1029,18 @@ function ManHinhHocTap() {
             </button>
           </div>
 
-          <div className='study-video-wrapper'>
-            {showQuizForChapterId ? (
+          {renderSelectedSegmentPanel()}
+
+          <div className='study-course-description-card'>
+            <div className='study-course-description-kicker'>Mô tả khóa học</div>
+            <h3 className='study-course-description-title'>{courseDetail?.title || 'Khóa học'}</h3>
+            <p className='study-course-description-text'>
+              {courseDetail?.description || currentLessonDetail?.content || currentLesson?.content || 'Chưa có mô tả khóa học.'}
+            </p>
+          </div>
+
+          {showQuizForChapterId ? (
+            <div className='study-video-wrapper'>
               <div className='study-quiz-section'>
                 {selectedQuizId && selectedQuizScope === 'chapter' ? (
                   <QuizTaker 
@@ -733,139 +1072,9 @@ function ManHinhHocTap() {
                   </div>
                 )}
               </div>
-            ) : currentEmbedUrl ? (
-              isVideoUnlocked ? (
-                <iframe
-                  key={`iframe-${currentLessonId}-${iframeStartSeconds}-${iframeResumeNonce}`}
-                  className='study-youtube-player'
-                  src={currentEmbedUrl}
-                  title={currentLesson?.title || 'Lesson video'}
-                  allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
-                  allowFullScreen
-                />
-              ) : (
-                <div className='study-player-error-overlay'>
-                  <p>Video này yêu cầu đăng ký kênh YouTube gốc trước khi xem.</p>
-                  <button
-                    type='button'
-                    className='study-btn-resume'
-                    onClick={handleAutoSubscribeChannel}
-                    disabled={isSubscribingChannel || !currentVideoId}
-                  >
-                    {isSubscribingChannel ? 'Đang xử lý đăng ký...' : 'Xem video (đăng nhập Google & tự động đăng ký kênh)'}
-                  </button>
-                  {youtubeSubscribeMessage ? <p className='study-position-message'>{youtubeSubscribeMessage}</p> : null}
-                </div>
-              )
-            ) : (
-              <div className='study-player-error-overlay'>
-                <p>Video hiện tại chưa phải YouTube URL hợp lệ.</p>
-                <button type='button' className='study-btn-resume' onClick={handleOpenCurrentVideoOnYoutube}>
-                  Mở trên YouTube
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className='study-label-card study-label-card-inline'>
-            <h3 className='study-label-title'>🏷️ Label của giảng viên</h3>
-            {lessonLabels.length > 0 ? (
-              <div className='study-label-list'>
-                {lessonLabels.map((label, index) => {
-                  const meta = LABEL_TYPE_META[label.labelType || 'note'] || LABEL_TYPE_META.note;
-                  return (
-                    <article key={label.id} className={`study-label-item ${meta.className}`}>
-                      <span className='study-label-index'>{index + 1}</span>
-                      <div className='study-label-body'>
-                        <div className='study-label-type-badge'>
-                          <span>{meta.icon}</span>
-                          <span>{meta.title}</span>
-                        </div>
-                        <p className='study-label-text'>{label.content}</p>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className='study-label-empty'>Giảng viên chưa thêm Label cho bài học này.</p>
-            )}
-          </div>
-
-
-          <div className='study-tabs-container'>
-            <div className='study-tabs-header'>
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type='button'
-                  className={`study-tab-btn ${activeTab === tab.id ? 'is-active' : ''}`}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setSelectedQuizId(null);
-                    setSelectedQuizScope(null);
-                    setShowQuizForChapterId(null);
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
             </div>
+          ) : null}
 
-            <div className='study-tab-content'>
-              {activeTab === 'overview' && (
-                <div className='study-tab-pane'>
-                  <h2 className='study-lesson-title'>{currentLesson?.title || 'Bài học'}</h2>
-                  <p>{currentLessonDetail?.content || currentLesson?.content || 'Nội dung đang cập nhật.'}</p>
-                  <ul className='study-overview-list'>
-                    <li>Đổi bài học sẽ đổi video ngay trong iframe, không cần reload trang.</li>
-                    <li>Mốc học được tự động lưu mỗi 5 giây cho từng bài học.</li>
-                    <li>Tiến độ hoàn thành hiển thị theo từng bài học.</li>
-                  </ul>
-                  <button type='button' className='study-btn-resume study-btn-save-note' onClick={handleMarkCompleted}>
-                    Đánh dấu hoàn thành bài học
-                  </button>
-                  {positionSaveMessage ? <p className='study-position-message'>{positionSaveMessage}</p> : null}
-                </div>
-              )}
-
-              {activeTab === 'documents' && (
-                <div className='study-tab-pane'>
-                  <h2 className='study-lesson-title'>Tài liệu tham khảo</h2>
-                  <p>Demo hiện tập trung vào luồng học video YouTube ổn định trong iframe.</p>
-                  <p>Khi bạn có URL PDF thật, có thể hiển thị tại đây theo từng bài học.</p>
-                </div>
-              )}
-
-              {activeTab === 'documents' && (
-                <div className='study-tab-pane'>
-                  <h2 className='study-lesson-title'>Tài liệu tham khảo</h2>
-                  <p>Demo hiện tập trung vào luồng học video YouTube ổn định trong iframe.</p>
-                </div>
-              )}
-
-
-
-              {activeTab === 'notes' && (
-                <div className='study-tab-pane'>
-                  <h2 className='study-lesson-title'>Ghi chú của bạn</h2>
-                  <textarea className='study-note-input' placeholder='Thêm ghi chú tại mốc thời gian hiện tại...' />
-                  <button type='button' className='study-btn-resume study-btn-save-note'>
-                    Lưu ghi chú
-                  </button>
-                </div>
-              )}
-              {activeTab === 'feedback' && (
-                <div className='study-tab-pane'>
-                  <CommentThread
-                    courseId={selectedCourseId || courseDetail?.id}
-                    lessonId={selectedLessonId}
-                    type="lesson"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
         </section>
 
         <aside className='study-sidebar'>
@@ -935,38 +1144,28 @@ function ManHinhHocTap() {
                                 </button>
 
                                 {isActive && lessonSegments.length > 0 && (
-                                  <div style={{ paddingLeft: '20px', display: 'grid', gap: '4px', marginTop: '4px', marginBottom: '8px' }}>
-                                    {lessonSegments.map((segment) => (
-                                      <button
-                                        key={segment.id}
-                                        type='button'
-                                        style={{
-                                          background: 'none',
-                                          border: 'none',
-                                          color: '#888',
-                                          fontSize: '12px',
-                                          textAlign: 'left',
-                                          cursor: 'pointer',
-                                          padding: '4px 8px',
-                                          borderRadius: '4px',
-                                          transition: 'background 0.2s',
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          e.target.style.background = '#e8e8e8';
-                                          e.target.style.color = '#333';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.target.style.background = 'none';
-                                          e.target.style.color = '#888';
-                                        }}
-                                        onClick={() => {
-                                          setIframeStartSeconds(segment.startTime);
-                                          setIframeResumeNonce((prev) => prev + 1);
-                                        }}
-                                      >
-                                        • {segment.title || `Phần ${segment.id}`} ({formatDuration(segment.startTime)} - {formatDuration(segment.endTime)})
-                                      </button>
-                                    ))}
+                                  <div className='study-sidebar-segment-tabs'>
+                                    {lessonSegments.map((segment) => {
+                                      const isSelected = Number(selectedSegmentId) === Number(segment.id);
+
+                                      return (
+                                        <button
+                                          key={segment.id}
+                                          type='button'
+                                          className={`study-sidebar-segment-tab ${isSelected ? 'is-active' : ''}`}
+                                          onClick={() => {
+                                            handleSelectSegment(segment);
+                                          }}
+                                        >
+                                          <span className='study-sidebar-segment-title'>
+                                            {segment.title || `Phần ${segment.id}`}
+                                          </span>
+                                          <span className='study-sidebar-segment-time'>
+                                            {formatDuration(segment.startTime)} - {formatDuration(segment.endTime)}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>
@@ -1021,38 +1220,28 @@ function ManHinhHocTap() {
                             </button>
 
                             {isActive && lessonSegments.length > 0 && (
-                              <div style={{ paddingLeft: '20px', display: 'grid', gap: '4px', marginTop: '4px', marginBottom: '8px' }}>
-                                {lessonSegments.map((segment) => (
-                                  <button
-                                    key={segment.id}
-                                    type='button'
-                                    style={{
-                                      background: 'none',
-                                      border: 'none',
-                                      color: '#888',
-                                      fontSize: '12px',
-                                      textAlign: 'left',
-                                      cursor: 'pointer',
-                                      padding: '4px 8px',
-                                      borderRadius: '4px',
-                                      transition: 'background 0.2s',
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.target.style.background = '#e8e8e8';
-                                      e.target.style.color = '#333';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.target.style.background = 'none';
-                                      e.target.style.color = '#888';
-                                    }}
-                                    onClick={() => {
-                                      setIframeStartSeconds(segment.startTime);
-                                      setIframeResumeNonce((prev) => prev + 1);
-                                    }}
-                                  >
-                                    • {segment.title || `Phần ${segment.id}`} ({formatDuration(segment.startTime)} - {formatDuration(segment.endTime)})
-                                  </button>
-                                ))}
+                              <div className='study-sidebar-segment-tabs'>
+                                {lessonSegments.map((segment) => {
+                                  const isSelected = Number(selectedSegmentId) === Number(segment.id);
+
+                                  return (
+                                    <button
+                                      key={segment.id}
+                                      type='button'
+                                      className={`study-sidebar-segment-tab ${isSelected ? 'is-active' : ''}`}
+                                      onClick={() => {
+                                        handleSelectSegment(segment);
+                                      }}
+                                    >
+                                      <span className='study-sidebar-segment-title'>
+                                        {segment.title || `Phần ${segment.id}`}
+                                      </span>
+                                      <span className='study-sidebar-segment-time'>
+                                        {formatDuration(segment.startTime)} - {formatDuration(segment.endTime)}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -1089,38 +1278,28 @@ function ManHinhHocTap() {
                         </button>
 
                         {isActive && lessonSegments.length > 0 && (
-                          <div style={{ paddingLeft: '20px', display: 'grid', gap: '4px', marginTop: '4px', marginBottom: '8px' }}>
-                            {lessonSegments.map((segment) => (
-                              <button
-                                key={segment.id}
-                                type='button'
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#888',
-                                  fontSize: '12px',
-                                  textAlign: 'left',
-                                  cursor: 'pointer',
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  transition: 'background 0.2s',
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.target.style.background = '#e8e8e8';
-                                  e.target.style.color = '#333';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.target.style.background = 'none';
-                                  e.target.style.color = '#888';
-                                }}
-                                onClick={() => {
-                                  setIframeStartSeconds(segment.startTime);
-                                  setIframeResumeNonce((prev) => prev + 1);
-                                }}
-                              >
-                                • {segment.title || `Phần ${segment.id}`} ({formatDuration(segment.startTime)} - {formatDuration(segment.endTime)})
-                              </button>
-                            ))}
+                          <div className='study-sidebar-segment-tabs'>
+                            {lessonSegments.map((segment) => {
+                              const isSelected = Number(selectedSegmentId) === Number(segment.id);
+
+                              return (
+                                <button
+                                  key={segment.id}
+                                  type='button'
+                                  className={`study-sidebar-segment-tab ${isSelected ? 'is-active' : ''}`}
+                                  onClick={() => {
+                                    handleSelectSegment(segment);
+                                  }}
+                                >
+                                  <span className='study-sidebar-segment-title'>
+                                    {segment.title || `Phần ${segment.id}`}
+                                  </span>
+                                  <span className='study-sidebar-segment-time'>
+                                    {formatDuration(segment.startTime)} - {formatDuration(segment.endTime)}
+                                  </span>
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>

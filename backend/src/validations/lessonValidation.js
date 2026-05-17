@@ -38,16 +38,48 @@ const segmentIdParamSchema = z
   })
   .strict();
 
+const segmentContentItemSchema = z
+  .object({
+    type: z.enum(['text', 'document', 'question', 'quiz', 'videoClip']),
+    title: z.string().trim().max(255).optional(),
+    content: z.string().trim().max(5000).optional(),
+    resourceUrl: z.string().trim().url().max(1000).optional().or(z.literal('')),
+    startTime: z.coerce.number().int().min(0).optional(),
+    endTime: z.coerce.number().int().min(1).optional(),
+    orderIndex: z.coerce.number().int().min(1).optional(),
+  })
+  .strict();
+
 const segmentBodySchema = z
   .object({
-    startTime: z.coerce.number().int().min(0),
-    endTime: z.coerce.number().int().min(1),
+    startTime: z.coerce.number().int().min(0).optional(),
+    endTime: z.coerce.number().int().min(1).optional(),
     title: z.string().trim().max(255).optional(),
+    orderIndex: z.coerce.number().int().min(1).optional(),
+    contentItems: z.array(segmentContentItemSchema).max(200).optional(),
   })
   .strict();
 
 const createLessonSegmentBodySchema = segmentBodySchema;
-const updateLessonSegmentBodySchema = segmentBodySchema;
+const updateLessonSegmentBodySchema = z
+  .object({
+    startTime: z.coerce.number().int().min(0).optional(),
+    endTime: z.coerce.number().int().min(1).optional(),
+    title: z.string().trim().max(255).optional(),
+    orderIndex: z.coerce.number().int().min(1).optional(),
+    contentItems: z.array(segmentContentItemSchema).max(200).optional(),
+  })
+  .strict()
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: 'At least one field is required to update segment',
+  });
+
+const reorderLessonSegmentsBodySchema = z
+  .object({
+    segmentIds: z.array(z.coerce.number().int().positive()).min(1),
+  })
+  .strict();
+
 const bulkCreateLessonSegmentsBodySchema = z
   .object({
     segments: z.array(segmentBodySchema).min(1),
@@ -67,14 +99,23 @@ const lessonLabelBodySchema = z
   })
   .strict();
 
+const lessonSegmentIdParamSchema = z
+  .object({
+    id: z.coerce.number().int().positive(),
+    segmentId: z.coerce.number().int().positive(),
+  })
+  .strict();
+
 module.exports = {
   lessonIdParamSchema,
   courseIdParamSchema,
   createLessonBodySchema,
   updateLessonBodySchema,
   segmentIdParamSchema,
+  lessonSegmentIdParamSchema,
   createLessonSegmentBodySchema,
   updateLessonSegmentBodySchema,
+  reorderLessonSegmentsBodySchema,
   bulkCreateLessonSegmentsBodySchema,
   labelIdParamSchema,
   lessonLabelBodySchema,

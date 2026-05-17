@@ -64,8 +64,7 @@ function QuestionFormModal({
             Tạo Câu Hỏi Theo Từng Bước
           </h2>
           <p style={{ margin: 0, fontSize: '14px', color: '#666' }}>
-            Loại câu hỏi: <strong>{QUESTION_TYPE_LABELS[draft.type] || draft.type}</strong> · 
-            Độ khó: <strong>{draft.difficulty}</strong>
+            Loại câu hỏi: <strong>{QUESTION_TYPE_LABELS[draft.type] || draft.type}</strong>
           </p>
         </div>
 
@@ -153,7 +152,6 @@ function QuestionFormModal({
           <div style={{ marginBottom: '24px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: 16 }}>
             <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>Xác nhận thông tin câu hỏi</h3>
             <p style={{ margin: '0 0 10px 0' }}><strong>Loại:</strong> {QUESTION_TYPE_LABELS[draft.type] || draft.type}</p>
-            <p style={{ margin: '0 0 10px 0' }}><strong>Độ khó:</strong> {draft.difficulty}</p>
             <p style={{ margin: '0 0 10px 0' }}><strong>Công khai:</strong> {draft.isPublished ? 'Có' : 'Không'}</p>
             <p style={{ margin: '0 0 6px 0' }}><strong>Nội dung câu hỏi:</strong></p>
             <div style={{ whiteSpace: 'pre-wrap', color: '#111827' }}>{draft.content || '(Trống)'}</div>

@@ -1,8 +1,11 @@
 const lessonRepository = require('../repositories/lessonRepository');
 const enrollmentRepository = require('../repositories/enrollmentRepository');
 const { sequelize } = require('../config/database');
+const { Op } = require('sequelize');
 const { Lesson, LessonSegment, LessonLabel } = require('../models');
 const { HttpError } = require('../utils/httpError');
+
+const SEGMENT_ITEM_TYPES = new Set(['text', 'document', 'question', 'quiz', 'videoClip']);
 
 const parseId = (value, fieldName) => {
   const id = Number(value);
@@ -16,17 +19,58 @@ const parseId = (value, fieldName) => {
 
 const mapLessonSegment = (segment) => {
   const plain = segment.toJSON ? segment.toJSON() : segment;
+  const contentItems = coerceSegmentContentItems(plain.contentItems);
 
   return {
     id: plain.id,
     lessonId: plain.lessonId,
-    startTime: plain.startTime,
-    endTime: plain.endTime,
-    duration: plain.duration,
+    startTime: plain.startTime,  // Now nullable - times managed at content item level
+    endTime: plain.endTime,      // Now nullable - times managed at content item level
+    duration: plain.duration,    // Now nullable
     title: plain.title,
+    orderIndex: Number(plain.orderIndex || 1),
+    contentItems: normalizeSegmentContentItems(contentItems),
     createdAt: plain.createdAt,
     updatedAt: plain.updatedAt,
   };
+};
+
+const coerceSegmentContentItems = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (value == null) {
+    return [];
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      if (parsed && typeof parsed === 'object' && parsed.type) {
+        return [parsed];
+      }
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.items)) {
+      return value.items;
+    }
+
+    if (value.type) {
+      return [value];
+    }
+
+    return Object.values(value).filter((item) => item && typeof item === 'object');
+  }
+
+  return [];
 };
 
 const assertSegmentRange = (startTime, endTime) => {
@@ -37,6 +81,81 @@ const assertSegmentRange = (startTime, endTime) => {
   if (startTime < 0 || endTime <= startTime) {
     throw new HttpError(400, 'endTime must be greater than startTime', 'INVALID_SEGMENT_RANGE');
   }
+};
+
+const normalizeSegmentContentItems = (items = []) => {
+  const normalizedInput = coerceSegmentContentItems(items);
+
+  const toNullableInteger = (value) => {
+    if (value == null || value === '') {
+      return null;
+    }
+
+    const numericValue = Number(value);
+    return Number.isInteger(numericValue) ? numericValue : null;
+  };
+
+  return normalizedInput
+    .map((item, index) => {
+      const type = String(item?.type || '').trim();
+
+      if (!SEGMENT_ITEM_TYPES.has(type)) {
+        throw new HttpError(400, `Invalid content item type at index ${index}`, 'INVALID_SEGMENT_CONTENT_ITEMS');
+      }
+
+      const payload = {
+        type,
+        title: item?.title ? String(item.title).trim() : null,
+        content: item?.content ? String(item.content).trim() : null,
+        resourceUrl: item?.resourceUrl ? String(item.resourceUrl).trim() : null,
+        startTime: toNullableInteger(item?.startTime),
+        endTime: toNullableInteger(item?.endTime),
+        orderIndex: Number.isInteger(Number(item?.orderIndex)) && Number(item.orderIndex) > 0
+          ? Number(item.orderIndex)
+          : index + 1,
+      };
+
+      if (payload.type === 'videoClip') {
+        const hasStart = Number.isInteger(payload.startTime);
+        const hasEnd = Number.isInteger(payload.endTime);
+
+        if (!hasStart && !hasEnd) {
+          payload.startTime = null;
+          payload.endTime = null;
+        } else if (!hasStart || !hasEnd || payload.endTime <= payload.startTime) {
+          throw new HttpError(400, 'videoClip requires valid startTime/endTime', 'INVALID_SEGMENT_CONTENT_ITEMS');
+        }
+      }
+
+      return payload;
+    })
+    .sort((left, right) => left.orderIndex - right.orderIndex)
+    .map((item, index) => ({
+      ...item,
+      orderIndex: index + 1,
+    }));
+};
+
+const ensureSegmentOwnership = async (segmentId, currentUser) => {
+  const parsedSegmentId = parseId(segmentId, 'segmentId');
+  const segment = await LessonSegment.findByPk(parsedSegmentId, {
+    include: [
+      {
+        association: 'lesson',
+        include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+      },
+    ],
+  });
+
+  if (!segment) {
+    throw new HttpError(404, 'Segment not found', 'SEGMENT_NOT_FOUND');
+  }
+
+  if (segment.lesson?.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  return segment;
 };
 
 const mapLessonLabel = (label) => {
@@ -81,8 +200,8 @@ const getLessonDetail = async (lessonId, currentUser) => {
       },
       {
         association: 'segments',
-        attributes: ['id', 'startTime', 'endTime', 'duration', 'title'],
-        order: [['startTime', 'ASC']],
+        attributes: ['id', 'startTime', 'endTime', 'duration', 'title', 'orderIndex', 'contentItems'],
+        order: [['orderIndex', 'ASC'], ['startTime', 'ASC']],
       },
     ],
   });
@@ -116,6 +235,8 @@ const getLessonDetail = async (lessonId, currentUser) => {
           endTime: segment.endTime,
           duration: segment.duration,
           title: segment.title,
+          orderIndex: Number(segment.orderIndex || 1),
+          contentItems: normalizeSegmentContentItems(segment.contentItems || []),
         }))
       : [],
     createdAt: plain.createdAt,
@@ -253,16 +374,40 @@ const createLessonSegment = async (lessonId, payload, currentUser) => {
     throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
   }
 
-  const startTime = Number(payload.startTime);
-  const endTime = Number(payload.endTime);
-  assertSegmentRange(startTime, endTime);
+  const maxOrderIndex = Number(
+    (await LessonSegment.max('orderIndex', {
+      where: { lessonId: parsedLessonId },
+    })) || 0,
+  );
 
-  const created = await LessonSegment.create({
-    lessonId: parsedLessonId,
-    startTime,
-    endTime,
-    duration: endTime - startTime,
-    title: payload.title?.trim() || null,
+  const requestedOrderIndex = Number(payload.orderIndex || maxOrderIndex + 1);
+  const orderIndex = Number.isInteger(requestedOrderIndex) && requestedOrderIndex > 0
+    ? Math.min(requestedOrderIndex, maxOrderIndex + 1)
+    : maxOrderIndex + 1;
+
+  const normalizedItems = normalizeSegmentContentItems(payload.contentItems || []);
+
+  const created = await sequelize.transaction(async (transaction) => {
+    if (orderIndex <= maxOrderIndex) {
+      await LessonSegment.increment(
+        { orderIndex: 1 },
+        {
+          where: {
+            lessonId: parsedLessonId,
+            orderIndex: { [Op.gte]: orderIndex },
+          },
+          transaction,
+        },
+      );
+    }
+
+    return LessonSegment.create({
+      lessonId: parsedLessonId,
+      title: payload.title?.trim() || null,
+      orderIndex,
+      contentItems: normalizedItems,
+      // startTime, endTime, duration are now managed at content item level (videoClip)
+    }, { transaction });
   });
 
   return mapLessonSegment(created);
@@ -273,39 +418,77 @@ const updateLessonSegment = async (segmentId, payload, currentUser) => {
     throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
   }
 
-  const parsedSegmentId = parseId(segmentId, 'segmentId');
-  const segment = await LessonSegment.findByPk(parsedSegmentId, {
-    include: [
-      {
-        association: 'lesson',
-        include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
-      },
-    ],
-  });
+  const segment = await ensureSegmentOwnership(segmentId, currentUser);
 
-  if (!segment) {
-    throw new HttpError(404, 'Segment not found', 'SEGMENT_NOT_FOUND');
+  if (Object.prototype.hasOwnProperty.call(payload, 'contentItems')) {
+    segment.contentItems = normalizeSegmentContentItems(payload.contentItems || []);
   }
-
-  if (segment.lesson?.course?.instructorId !== currentUser.id) {
-    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
-  }
-
-  const nextStartTime = Object.prototype.hasOwnProperty.call(payload, 'startTime')
-    ? Number(payload.startTime)
-    : segment.startTime;
-  const nextEndTime = Object.prototype.hasOwnProperty.call(payload, 'endTime')
-    ? Number(payload.endTime)
-    : segment.endTime;
-
-  assertSegmentRange(nextStartTime, nextEndTime);
-
-  segment.startTime = nextStartTime;
-  segment.endTime = nextEndTime;
-  segment.duration = nextEndTime - nextStartTime;
 
   if (Object.prototype.hasOwnProperty.call(payload, 'title')) {
     segment.title = payload.title?.trim() || null;
+  }
+
+  // Note: startTime, endTime are now managed at content item level (videoClip items)
+  if (Object.prototype.hasOwnProperty.call(payload, 'orderIndex')) {
+    const requestedOrderIndex = Number(payload.orderIndex);
+    if (!Number.isInteger(requestedOrderIndex) || requestedOrderIndex <= 0) {
+      throw new HttpError(400, 'orderIndex must be a positive integer', 'INVALID_SEGMENT_ORDER');
+    }
+
+    const lessonId = segment.lessonId;
+
+    await sequelize.transaction(async (transaction) => {
+      const maxOrderIndex = Number(
+        (await LessonSegment.max('orderIndex', {
+          where: { lessonId },
+          transaction,
+        })) || 0,
+      );
+
+      const oldOrderIndex = Number(segment.orderIndex || 1);
+      const targetOrderIndex = Math.max(1, Math.min(requestedOrderIndex, maxOrderIndex));
+
+      if (targetOrderIndex !== oldOrderIndex) {
+        if (targetOrderIndex > oldOrderIndex) {
+          await LessonSegment.increment(
+            { orderIndex: -1 },
+            {
+              where: {
+                lessonId,
+                id: { [Op.ne]: segment.id },
+                orderIndex: {
+                  [Op.gt]: oldOrderIndex,
+                  [Op.lte]: targetOrderIndex,
+                },
+              },
+              transaction,
+            },
+          );
+        } else {
+          await LessonSegment.increment(
+            { orderIndex: 1 },
+            {
+              where: {
+                lessonId,
+                id: { [Op.ne]: segment.id },
+                orderIndex: {
+                  [Op.gte]: targetOrderIndex,
+                  [Op.lt]: oldOrderIndex,
+                },
+              },
+              transaction,
+            },
+          );
+        }
+
+        segment.orderIndex = targetOrderIndex;
+      }
+
+      await segment.save({ transaction });
+    });
+
+    await segment.reload();
+    return mapLessonSegment(segment);
   }
 
   await segment.save();
@@ -336,25 +519,14 @@ const createLessonSegmentsBulk = async (lessonId, payload, currentUser) => {
 
   const normalizedSegments = payload.segments
     .map((segment, index) => {
-      const startTime = Number(segment.startTime);
-      const endTime = Number(segment.endTime);
-      assertSegmentRange(startTime, endTime);
-
       return {
         lessonId: parsedLessonId,
-        startTime,
-        endTime,
-        duration: endTime - startTime,
+        orderIndex: index + 1,
         title: segment.title?.trim() || `Segment ${index + 1}`,
+        contentItems: normalizeSegmentContentItems(segment.contentItems || []),
+        // startTime, endTime, duration are now managed at content item level (videoClip)
       };
-    })
-    .sort((left, right) => left.startTime - right.startTime || left.endTime - right.endTime);
-
-  for (let index = 1; index < normalizedSegments.length; index += 1) {
-    if (normalizedSegments[index].startTime < normalizedSegments[index - 1].endTime) {
-      throw new HttpError(400, 'Segments must not overlap', 'INVALID_SEGMENT_RANGE');
-    }
-  }
+    });
 
   const createdSegments = await sequelize.transaction(async (transaction) => {
     return LessonSegment.bulkCreate(normalizedSegments, { transaction });
@@ -368,10 +540,25 @@ const getLessonSegments = async (lessonId) => {
 
   const segments = await LessonSegment.findAll({
     where: { lessonId: parsedLessonId },
-    order: [['startTime', 'ASC']],
+    order: [['orderIndex', 'ASC']],
   });
 
   return segments.map((segment) => mapLessonSegment(segment));
+};
+
+const getLessonSegmentById = async (lessonId, segmentId) => {
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const parsedSegmentId = parseId(segmentId, 'segmentId');
+
+  const segment = await LessonSegment.findOne({
+    where: { id: parsedSegmentId, lessonId: parsedLessonId },
+  });
+
+  if (!segment) {
+    throw new HttpError(404, 'Segment not found', 'SEGMENT_NOT_FOUND');
+  }
+
+  return mapLessonSegment(segment);
 };
 
 const deleteLessonSegment = async (segmentId, currentUser) => {
@@ -379,26 +566,88 @@ const deleteLessonSegment = async (segmentId, currentUser) => {
     throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
   }
 
-  const parsedSegmentId = parseId(segmentId, 'segmentId');
-  const segment = await LessonSegment.findByPk(parsedSegmentId, {
-    include: [
+  const segment = await ensureSegmentOwnership(segmentId, currentUser);
+  const parsedSegmentId = Number(segment.id);
+  const oldOrderIndex = Number(segment.orderIndex || 1);
+
+  await sequelize.transaction(async (transaction) => {
+    await segment.destroy({ transaction });
+    await LessonSegment.increment(
+      { orderIndex: -1 },
       {
-        association: 'lesson',
-        include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+        where: {
+          lessonId: segment.lessonId,
+          orderIndex: { [Op.gt]: oldOrderIndex },
+        },
+        transaction,
       },
-    ],
+    );
   });
 
-  if (!segment) {
-    throw new HttpError(404, 'Segment not found', 'SEGMENT_NOT_FOUND');
+  return { id: parsedSegmentId, deleted: true };
+};
+
+const reorderLessonSegments = async (lessonId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
   }
 
-  if (segment.lesson?.course?.instructorId !== currentUser.id) {
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (lesson.course?.instructorId !== currentUser.id) {
     throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
   }
 
-  await segment.destroy();
-  return { id: parsedSegmentId, deleted: true };
+  const segmentIds = Array.isArray(payload.segmentIds)
+    ? payload.segmentIds.map((id) => parseId(id, 'segmentId'))
+    : [];
+
+  if (!segmentIds.length) {
+    throw new HttpError(400, 'segmentIds must be a non-empty array', 'INVALID_SEGMENT_ORDER');
+  }
+
+  const segments = await LessonSegment.findAll({
+    where: { lessonId: parsedLessonId },
+    attributes: ['id'],
+  });
+
+  if (segments.length !== segmentIds.length) {
+    throw new HttpError(400, 'segmentIds must contain all lesson segments exactly once', 'INVALID_SEGMENT_ORDER');
+  }
+
+  const existingIdSet = new Set(segments.map((segment) => Number(segment.id)));
+  const payloadIdSet = new Set(segmentIds);
+
+  if (existingIdSet.size !== payloadIdSet.size) {
+    throw new HttpError(400, 'segmentIds contains duplicates', 'INVALID_SEGMENT_ORDER');
+  }
+
+  for (const id of payloadIdSet) {
+    if (!existingIdSet.has(id)) {
+      throw new HttpError(400, 'segmentIds contains invalid segment', 'INVALID_SEGMENT_ORDER');
+    }
+  }
+
+  await sequelize.transaction(async (transaction) => {
+    for (let index = 0; index < segmentIds.length; index += 1) {
+      await LessonSegment.update(
+        { orderIndex: index + 1 },
+        {
+          where: { id: segmentIds[index], lessonId: parsedLessonId },
+          transaction,
+        },
+      );
+    }
+  });
+
+  return getLessonSegments(parsedLessonId);
 };
 
 const getLessonLabels = async (lessonId, currentUser) => {
@@ -517,7 +766,9 @@ module.exports = {
   updateLessonSegment,
   createLessonSegmentsBulk,
   getLessonSegments,
+  getLessonSegmentById,
   deleteLessonSegment,
+  reorderLessonSegments,
   getLessonLabels,
   createLessonLabel,
   updateLessonLabel,

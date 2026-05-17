@@ -113,6 +113,7 @@ const normalizeQuestion = (question) => {
     isPublished: plain.isPublished || false,
     chapterId: metadata.chapterId != null ? Number(metadata.chapterId) : null,
     lectureId: plain.lectureId,
+    segmentId: metadata.segmentId != null ? Number(metadata.segmentId) : null,
     courseId: plain.courseId,
     creator: plain.creator
       ? {
@@ -228,7 +229,33 @@ const getQuestionsByCourse = async (courseId, filters = {}) => {
 
   if (filters.chapterId != null && String(filters.chapterId).trim() !== '') {
     const targetChapterId = Number(filters.chapterId);
-    return normalizedQuestions.filter((question) => Number(question.chapterId) === targetChapterId);
+    const byChapter = normalizedQuestions.filter((question) => Number(question.chapterId) === targetChapterId);
+
+    if (filters.lectureId != null && String(filters.lectureId).trim() !== '') {
+      const targetLectureId = Number(filters.lectureId);
+      const byLecture = byChapter.filter((question) => Number(question.lectureId) === targetLectureId);
+
+      if (filters.segmentId != null && String(filters.segmentId).trim() !== '') {
+        const targetSegmentId = Number(filters.segmentId);
+        return byLecture.filter((question) => Number(question.segmentId) === targetSegmentId);
+      }
+
+      return byLecture;
+    }
+
+    return byChapter;
+  }
+
+  if (filters.lectureId != null && String(filters.lectureId).trim() !== '') {
+    const targetLectureId = Number(filters.lectureId);
+    const byLecture = normalizedQuestions.filter((question) => Number(question.lectureId) === targetLectureId);
+
+    if (filters.segmentId != null && String(filters.segmentId).trim() !== '') {
+      const targetSegmentId = Number(filters.segmentId);
+      return byLecture.filter((question) => Number(question.segmentId) === targetSegmentId);
+    }
+
+    return byLecture;
   }
 
   return normalizedQuestions;
@@ -263,6 +290,7 @@ const createQuestion = async (payload, creatorId) => {
   const metadata = {
     ...buildMetadataForType(questionType, payload),
     chapterId: payload.chapterId ?? null,
+    segmentId: payload.segmentId ?? null,
   };
 
   const question = await Question.create({
@@ -310,6 +338,7 @@ const updateQuestion = async (questionId, payload, creatorId) => {
   question.metadata = {
     ...buildMetadataForType(questionType, payload, currentMetadata),
     chapterId: payload.chapterId !== undefined ? payload.chapterId : (currentMetadata.chapterId ?? null),
+    segmentId: payload.segmentId !== undefined ? payload.segmentId : (currentMetadata.segmentId ?? null),
   };
 
   if (payload.difficulty != null) {
@@ -327,6 +356,12 @@ const updateQuestion = async (questionId, payload, creatorId) => {
   if (payload.chapterId !== undefined) {
     const nextMetadata = parseMetadata(question.metadata);
     nextMetadata.chapterId = payload.chapterId;
+    question.metadata = nextMetadata;
+  }
+
+  if (payload.segmentId !== undefined) {
+    const nextMetadata = parseMetadata(question.metadata);
+    nextMetadata.segmentId = payload.segmentId;
     question.metadata = nextMetadata;
   }
 

@@ -8,7 +8,7 @@ const { successResponse } = require('../utils/response');
 const getQuestionsByCourse = async (req, res, next) => {
   try {
     const { courseId } = req.params;
-    const { type, difficulty, isPublished, chapterId } = req.query;
+    const { type, difficulty, isPublished, chapterId, lectureId, segmentId } = req.query;
 
     const questions = await questionService.getQuestionsByCourse(
       courseId,
@@ -16,6 +16,8 @@ const getQuestionsByCourse = async (req, res, next) => {
         type,
         difficulty,
         chapterId,
+        lectureId,
+        segmentId,
         isPublished: isPublished === 'true' ? true : isPublished === 'false' ? false : undefined,
       },
     );

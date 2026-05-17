@@ -55,6 +55,11 @@ export const updateLessonSegmentApi = async (segmentId, payload) => {
   return response?.data?.data || response?.data;
 };
 
+export const reorderLessonSegmentsApi = async (lessonId, payload) => {
+  const response = await httpClient.put(`/lessons/${lessonId}/segments/reorder`, payload);
+  return response?.data?.data || response?.data;
+};
+
 export const deleteLessonSegmentApi = async (segmentId) => {
   const response = await httpClient.delete(`/lessons/segments/${segmentId}`);
   return response?.data?.data || response?.data;
@@ -96,12 +101,14 @@ export const deleteCourseApi = async (courseId) => {
 };
 
 export const fetchQuestionsApi = async (filters = {}) => {
-  const { courseId, chapterId, type, difficulty, isPublished } = filters;
+  const { courseId, chapterId, lectureId, segmentId, type, difficulty, isPublished } = filters;
 
   if (courseId) {
     const response = await httpClient.get(`/questions/course/${courseId}`, {
       params: {
         chapterId: chapterId || undefined,
+        lectureId: lectureId || undefined,
+        segmentId: segmentId || undefined,
         type: type || undefined,
         difficulty: difficulty || undefined,
         isPublished: isPublished == null ? undefined : String(Boolean(isPublished)),

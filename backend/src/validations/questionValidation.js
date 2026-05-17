@@ -20,8 +20,6 @@ const courseIdParamSchema = z.object({
 });
 
 // ===== SHARED SCHEMAS =====
-const difficultyEnum = z.enum(['EASY', 'MEDIUM', 'HARD']).optional().default('MEDIUM');
-
 // ===== MULTIPLE_CHOICE SCHEMA =====
 const createMultipleChoiceQuestionSchema = z.object({
   type: z.literal('MULTIPLE_CHOICE'),
@@ -29,10 +27,10 @@ const createMultipleChoiceQuestionSchema = z.object({
   options: z.array(z.string().trim().min(1).max(500)).min(2).max(10),
   correctIndices: z.array(z.number().int().min(0).max(9)).min(1),
   explanation: z.string().trim().max(2000).optional(),
-  difficulty: difficultyEnum,
   courseId: z.coerce.number().int().positive().optional(),
   chapterId: z.coerce.number().int().positive().optional(),
   lectureId: z.coerce.number().int().positive().optional(),
+  segmentId: z.coerce.number().int().positive().optional(),
   isPublished: z.boolean().optional().default(false),
 });
 
@@ -42,10 +40,10 @@ const createTrueFalseQuestionSchema = z.object({
   content: z.string().trim().min(10).max(2000),
   correctAnswer: z.boolean(),
   explanation: z.string().trim().max(2000).optional(),
-  difficulty: difficultyEnum,
   courseId: z.coerce.number().int().positive().optional(),
   chapterId: z.coerce.number().int().positive().optional(),
   lectureId: z.coerce.number().int().positive().optional(),
+  segmentId: z.coerce.number().int().positive().optional(),
   isPublished: z.boolean().optional().default(false),
 });
 
@@ -57,10 +55,10 @@ const createShortAnswerQuestionSchema = z.object({
   caseSensitive: z.boolean().optional().default(false),
   fuzzyMatch: z.boolean().optional().default(true),
   explanation: z.string().trim().max(2000).optional(),
-  difficulty: difficultyEnum,
   courseId: z.coerce.number().int().positive().optional(),
   chapterId: z.coerce.number().int().positive().optional(),
   lectureId: z.coerce.number().int().positive().optional(),
+  segmentId: z.coerce.number().int().positive().optional(),
   isPublished: z.boolean().optional().default(false),
 });
 
@@ -81,10 +79,10 @@ const createEssayQuestionSchema = z.object({
     max: z.number().int().min(1).optional().default(5000),
   }).optional(),
   aiModel: z.enum(['gpt-4', 'gpt-3.5-turbo', 'gpt-4o']).optional().default('gpt-3.5-turbo'),
-  difficulty: difficultyEnum,
   courseId: z.coerce.number().int().positive().optional(),
   chapterId: z.coerce.number().int().positive().optional(),
   lectureId: z.coerce.number().int().positive().optional(),
+  segmentId: z.coerce.number().int().positive().optional(),
   isPublished: z.boolean().optional().default(false),
 });
 
@@ -104,11 +102,11 @@ const updateQuestionBodySchema = z.union([
   z.object({
     type: z.enum(['MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY']).optional(),
     content: z.string().trim().min(10).max(2000).optional(),
-    difficulty: difficultyEnum,
     isPublished: z.boolean().optional(),
     courseId: z.coerce.number().int().positive().optional(),
     chapterId: z.coerce.number().int().positive().optional(),
     lectureId: z.coerce.number().int().positive().optional(),
+    segmentId: z.coerce.number().int().positive().optional(),
   }),
 ]);
 

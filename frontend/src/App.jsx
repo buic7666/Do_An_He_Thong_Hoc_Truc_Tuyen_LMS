@@ -22,6 +22,7 @@ import Step1_DanhSachKhoaHoc from './screens/GiangVien/Step1_DanhSachKhoaHoc';
 import Step2_ChiTietKhoaHoc from './screens/GiangVien/Step2_ChiTietKhoaHoc';
 import Step3_ChiTietChapter from './screens/GiangVien/Step3_ChiTietChapter';
 import LessonDetail from './screens/GiangVien/LessonDetail';
+import SegmentDetailView from './screens/GiangVien/SegmentDetailView';
 import ManHinhQuanLyNganHangCauhoi from './screens/GiangVien/ManHinhQuanLyNganHangCauhoi';
 import SurveyActivity from './screens/GiangVien/SurveyActivity';
 import ManHinhTheoDoiDSoHocvien from './screens/GiangVien/ManHinhTheoDoi_DSoHocvien';
@@ -195,6 +196,14 @@ function App() {
         }
       />
       <Route
+        path='/teacher/courses/:courseId/question-bank'
+        element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <ManHinhQuanLyNganHangCauhoi />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path='/teacher/courses/:courseId/chapters/:chapterId/lessons'
         element={
           <ProtectedRoute allowedRoles={['teacher']}>
@@ -211,11 +220,17 @@ function App() {
         }
       />
       <Route
-        path='/teacher/questions'
+        path='/teacher/courses/:courseId/chapters/:chapterId/lessons/:lessonId/segments/:segmentId'
         element={
           <ProtectedRoute allowedRoles={['teacher']}>
-            <ManHinhQuanLyNganHangCauhoi />
+            <SegmentDetailView />
           </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/questions'
+        element={
+          <Navigate to='/teacher/courses' replace />
         }
       />
       <Route

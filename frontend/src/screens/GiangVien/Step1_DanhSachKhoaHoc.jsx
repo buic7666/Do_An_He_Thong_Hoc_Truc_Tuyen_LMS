@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import TeacherSidebar from '../../components/TeacherSidebar';
 import httpClient from '../../api/httpClient';
 import { createCourseApi, deleteCourseApi } from '../../api/teacherManagementApi';
+import { getCurrentUserSafely } from '../../utils/authRedirect';
 import './Step1_DanhSachKhoaHoc.css';
 
 function Step1_DanhSachKhoaHoc() {
@@ -10,7 +11,7 @@ function Step1_DanhSachKhoaHoc() {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUserSafely());
   
   // State cho modal thêm/sửa khóa học
   const [showModal, setShowModal] = useState(false);
@@ -21,18 +22,14 @@ function Step1_DanhSachKhoaHoc() {
     price: ''
   });
 
-  // Lấy user hiện tại
-  useEffect(() => {
-    try {
-      const userJson = sessionStorage.getItem('currentUser');
-      if (userJson) {
-        const user = JSON.parse(userJson);
-        setCurrentUser(user);
-      }
-    } catch (_error) {
-      console.error('Error parsing user:', _error);
+  const isOwnedByCurrentTeacher = (course) => {
+    if (!course || !currentUser) {
+      return false;
     }
-  }, []);
+
+    const courseOwnerId = course.instructor?.id ?? course.instructorId ?? course.teacherId ?? course.createdBy;
+    return Number(courseOwnerId) === Number(currentUser.id);
+  };
 
   // Lấy danh sách khóa học
   const loadCourses = async () => {
@@ -41,16 +38,9 @@ function Step1_DanhSachKhoaHoc() {
     try {
       const response = await httpClient.get('/courses');
       const allCourses = Array.isArray(response?.data?.data) ? response.data.data : [];
-      
-      // Lọc chỉ khóa học của giáo viên hiện tại
-      if (currentUser) {
-        const myCourses = allCourses.filter(
-          (course) => Number(course.instructor?.id) === Number(currentUser.id)
-        );
-        setCourses(myCourses);
-      } else {
-        setCourses(allCourses);
-      }
+
+      // Chỉ hiển thị khóa học thuộc giáo viên đang đăng nhập
+      setCourses(allCourses.filter((course) => isOwnedByCurrentTeacher(course)));
     } catch (err) {
       setError(err?.response?.data?.message || 'Không thể tải danh sách khóa học');
       setCourses([]);
@@ -61,7 +51,7 @@ function Step1_DanhSachKhoaHoc() {
 
   useEffect(() => {
     loadCourses();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // Mở modal thêm khóa học
   const handleOpenAddModal = () => {

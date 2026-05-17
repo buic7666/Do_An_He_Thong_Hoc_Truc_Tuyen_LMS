@@ -18,6 +18,12 @@ const app = createApp();
 const bootstrap = async () => {
   try {
     await sequelize.authenticate();
+    try {
+      await sequelize.query("UPDATE lesson_segments SET content_items = JSON_ARRAY() WHERE content_items IS NULL");
+      await sequelize.query("UPDATE lesson_segments SET order_index = id WHERE order_index IS NULL OR order_index = 0");
+    } catch (cleanupError) {
+      console.warn('Skipping lesson_segments cleanup before sync:', cleanupError.message);
+    }
     await ContactMessage.sync();
     await TeacherProfile.sync();
     await TeacherQuestion.sync();

@@ -133,6 +133,10 @@ function Step2_ChiTietKhoaHoc() {
     navigate(`/teacher/courses/${courseId}/chapters/${chapterId}/lessons`);
   };
 
+  const handleOpenQuestionBank = () => {
+    navigate(`/teacher/courses/${courseId}/question-bank`);
+  };
+
   return (
     <div className="container-step2">
       <TeacherSidebar />
@@ -162,6 +166,11 @@ function Step2_ChiTietKhoaHoc() {
             {course.description && (
               <p className="course-description-step2">{course.description}</p>
             )}
+            <div style={{ marginTop: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <button className="btn-view" onClick={handleOpenQuestionBank}>
+                📚 Quản lý ngân hàng câu hỏi
+              </button>
+            </div>
           </div>
         )}
 

@@ -10,8 +10,10 @@ const {
 	createLessonBodySchema,
 	updateLessonBodySchema,
 	segmentIdParamSchema,
+	lessonSegmentIdParamSchema,
 	createLessonSegmentBodySchema,
 	updateLessonSegmentBodySchema,
+	reorderLessonSegmentsBodySchema,
 	bulkCreateLessonSegmentsBodySchema,
 	labelIdParamSchema,
 	lessonLabelBodySchema,
@@ -35,6 +37,7 @@ router.post(
 
 // Segment-specific routes (must come before /:id routes)
 router.get('/:id/segments', authenticate, validateRequest({ params: lessonIdParamSchema }), lessonController.getLessonSegments);
+router.get('/:id/segments/:segmentId', authenticate, validateRequest({ params: lessonSegmentIdParamSchema }), lessonController.getLessonSegmentById);
 router.post(
 	'/:id/segments',
 	authenticate,
@@ -48,6 +51,13 @@ router.post(
 	authorize('admin', 'teacher'),
 	validateRequest({ params: lessonIdParamSchema, body: bulkCreateLessonSegmentsBodySchema }),
 	lessonController.createLessonSegmentsBulk,
+);
+router.put(
+	'/:id/segments/reorder',
+	authenticate,
+	authorize('admin', 'teacher'),
+	validateRequest({ params: lessonIdParamSchema, body: reorderLessonSegmentsBodySchema }),
+	lessonController.reorderLessonSegments,
 );
 router.get('/:id/labels', authenticate, validateRequest({ params: lessonIdParamSchema }), lessonController.getLessonLabels);
 router.post(
