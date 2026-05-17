@@ -11,6 +11,8 @@ import {
   reorderLessonSegmentsApi,
 } from '../../api/teacherManagementApi';
 import CommentThread from '../../components/CommentThread';
+import QuestionFormModal from '../../components/QuestionFormModal';
+import { createQuestionApi, updateQuestionApi } from '../../api/teacherManagementApi';
 import './LessonDetail.css';
 
 // Hàm lấy video ID từ URL YouTube
@@ -322,6 +324,327 @@ function LessonDetail() {
     if (input) {
       input.click();
     }
+  };
+
+  const handleOpenQuestionManager = () => {
+    // replaced by modal flow below — keep for backward compat but noop here
+    return;
+  };
+
+  // Question modal state (used when adding from Lesson modal)
+  const createEmptyQuestionDraft = () => ({
+    type: 'MULTIPLE_CHOICE',
+    content: '',
+    isPublished: false,
+    options: ['', '', '', ''],
+    correctIndices: [0],
+    explanation: '',
+    correctAnswer: true,
+    acceptedAnswersText: '',
+    caseSensitive: false,
+    fuzzyMatch: true,
+    instructions: '',
+    rubric: [
+      { name: 'Nội dung', weight: 40, description: '' },
+      { name: 'Lập luận', weight: 30, description: '' },
+      { name: 'Ngôn ngữ', weight: 30, description: '' },
+    ],
+    wordLimitMin: 100,
+    wordLimitMax: 400,
+    aiModel: 'gpt-3.5-turbo',
+  });
+
+  const [questionModalOpen, setQuestionModalOpen] = useState(false);
+  const [questionDraft, setQuestionDraft] = useState(createEmptyQuestionDraft());
+  const [questionEditingId, setQuestionEditingId] = useState(null);
+
+  const handleAddQuestionInLesson = () => {
+    if (!editingSegment?.id) return alert('Vui lòng lưu phần trước khi thêm câu hỏi.');
+    setQuestionEditingId(null);
+    setQuestionDraft(createEmptyQuestionDraft());
+    setQuestionModalOpen(true);
+  };
+
+  const buildQuestionPayload = () => {
+    const content = questionDraft.content.trim();
+    if (!content) throw new Error('Vui lòng nhập nội dung câu hỏi.');
+
+    const base = {
+      type: questionDraft.type,
+      content,
+      courseId: Number(courseId),
+      chapterId: Number(chapterId),
+      lectureId: Number(lessonId),
+      segmentId: Number(editingSegment?.id),
+      isPublished: questionDraft.isPublished,
+    };
+
+    if (questionDraft.type === 'MULTIPLE_CHOICE') {
+      const pairs = questionDraft.options
+        .map((item, index) => ({ rawIndex: index, value: item.trim() }))
+        .filter((item) => item.value);
+
+      const options = pairs.map((item) => item.value);
+      const selectedCorrectIndex = questionDraft.correctIndices[0];
+      const correctIndices = pairs
+        .map((item, index) => ({ index, isCorrect: item.rawIndex === selectedCorrectIndex }))
+        .filter((item) => item.isCorrect)
+        .map((item) => item.index);
+
+      if (options.length < 2) {
+        throw new Error('Câu hỏi trắc nghiệm cần ít nhất 2 đáp án.');
+      }
+      if (!correctIndices.length) {
+        throw new Error('Hãy chọn ít nhất 1 đáp án đúng.');
+      }
+
+      return {
+        ...base,
+        options,
+        correctIndices,
+        explanation: questionDraft.explanation.trim() || undefined,
+      };
+    }
+
+    if (questionDraft.type === 'TRUE_FALSE') {
+      return {
+        ...base,
+        correctAnswer: questionDraft.correctAnswer,
+        explanation: questionDraft.explanation.trim() || undefined,
+      };
+    }
+
+    if (questionDraft.type === 'SHORT_ANSWER') {
+      const acceptedAnswers = questionDraft.acceptedAnswersText
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      if (!acceptedAnswers.length) {
+        throw new Error('Câu trả lời ngắn cần ít nhất 1 đáp án chấp nhận.');
+      }
+
+      return {
+        ...base,
+        acceptedAnswers,
+        caseSensitive: questionDraft.caseSensitive,
+        fuzzyMatch: questionDraft.fuzzyMatch,
+        explanation: questionDraft.explanation.trim() || undefined,
+      };
+    }
+
+    const rubric = questionDraft.rubric
+      .map((item) => ({
+        name: item.name.trim(),
+        weight: Number(item.weight),
+        description: item.description.trim(),
+      }))
+      .filter((item) => item.name && item.description && Number.isFinite(item.weight));
+
+    const totalWeight = rubric.reduce((sum, item) => sum + item.weight, 0);
+    if (!rubric.length) {
+      throw new Error('Câu tự luận cần ít nhất 1 tiêu chí hợp lệ.');
+    }
+    if (totalWeight !== 100) {
+      throw new Error('Tổng trọng số rubric của ESSAY phải bằng 100.');
+    }
+
+    return {
+      ...base,
+      instructions: questionDraft.instructions.trim(),
+      rubric,
+      wordLimit: {
+        min: Number(questionDraft.wordLimitMin),
+        max: Number(questionDraft.wordLimitMax),
+      },
+      aiModel: questionDraft.aiModel,
+    };
+  };
+
+  const handleSaveQuestionFromLesson = async () => {
+    try {
+      const payload = buildQuestionPayload();
+      if (questionEditingId) {
+        await updateQuestionApi(questionEditingId, payload);
+      } else {
+        await createQuestionApi(payload);
+      }
+      setQuestionModalOpen(false);
+      setQuestionEditingId(null);
+      setQuestionDraft(createEmptyQuestionDraft());
+      // Optionally refresh segments/questions in parent
+      await loadSegments();
+    } catch (err) {
+      alert(err?.response?.data?.message || err.message || 'Không thể lưu câu hỏi.');
+    }
+  };
+
+  const renderQuestionTypeSpecificForm = () => {
+    if (questionDraft.type === 'MULTIPLE_CHOICE') {
+      return (
+        <>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Các lựa chọn đáp án</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {questionDraft.options.map((option, index) => (
+              <label key={`question-option-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="radio"
+                  name="question-correct-answer"
+                  checked={questionDraft.correctIndices.includes(index)}
+                  onChange={() => setQuestionDraft((prev) => ({ ...prev, correctIndices: [index] }))}
+                />
+                <span style={{ width: 22, fontWeight: 700 }}>{String.fromCharCode(65 + index)}</span>
+                <input
+                  className="form-input"
+                  style={{ flex: 1 }}
+                  value={option}
+                  onChange={(event) => {
+                    const next = [...questionDraft.options];
+                    next[index] = event.target.value;
+                    setQuestionDraft((prev) => ({ ...prev, options: next }));
+                  }}
+                  placeholder={`Nhập đáp án ${String.fromCharCode(65 + index)}`}
+                />
+              </label>
+            ))}
+          </div>
+        </>
+      );
+    }
+
+    if (questionDraft.type === 'TRUE_FALSE') {
+      return (
+        <div className="form-group">
+          <label>Đáp án đúng</label>
+          <select
+            className="form-input"
+            value={String(questionDraft.correctAnswer)}
+            onChange={(event) => setQuestionDraft((prev) => ({ ...prev, correctAnswer: event.target.value === 'true' }))}
+          >
+            <option value="true">Đúng</option>
+            <option value="false">Sai</option>
+          </select>
+        </div>
+      );
+    }
+
+    if (questionDraft.type === 'SHORT_ANSWER') {
+      return (
+        <>
+          <div className="form-group">
+            <label>Danh sách đáp án chấp nhận (mỗi dòng 1 đáp án)</label>
+            <textarea
+              className="form-textarea"
+              value={questionDraft.acceptedAnswersText}
+              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, acceptedAnswersText: event.target.value }))}
+            />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={questionDraft.caseSensitive}
+              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, caseSensitive: event.target.checked }))}
+            />
+            <span>Phân biệt chữ hoa/thường</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={questionDraft.fuzzyMatch}
+              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, fuzzyMatch: event.target.checked }))}
+            />
+            <span>Khớp mềm (fuzzy match)</span>
+          </label>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <div className="form-group">
+          <label>Hướng dẫn bài viết</label>
+          <textarea
+            className="form-textarea"
+            value={questionDraft.instructions}
+            onChange={(event) => setQuestionDraft((prev) => ({ ...prev, instructions: event.target.value }))}
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>Số từ tối thiểu</label>
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              value={questionDraft.wordLimitMin}
+              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, wordLimitMin: event.target.value }))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Số từ tối đa</label>
+            <input
+              className="form-input"
+              type="number"
+              min="1"
+              value={questionDraft.wordLimitMax}
+              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, wordLimitMax: event.target.value }))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Mô hình AI</label>
+            <select
+              className="form-input"
+              value={questionDraft.aiModel}
+              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, aiModel: event.target.value }))}
+            >
+              <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+              <option value="gpt-4">gpt-4</option>
+              <option value="gpt-4o">gpt-4o</option>
+            </select>
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Rubric</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {questionDraft.rubric.map((item, index) => (
+              <div key={`rubric-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 2fr', gap: 10 }}>
+                <input
+                  className="form-input"
+                  placeholder="Tên tiêu chí"
+                  value={item.name}
+                  onChange={(event) => {
+                    const next = [...questionDraft.rubric];
+                    next[index] = { ...next[index], name: event.target.value };
+                    setQuestionDraft((prev) => ({ ...prev, rubric: next }));
+                  }}
+                />
+                <input
+                  className="form-input"
+                  type="number"
+                  placeholder="Trọng số"
+                  value={item.weight}
+                  onChange={(event) => {
+                    const next = [...questionDraft.rubric];
+                    next[index] = { ...next[index], weight: event.target.value };
+                    setQuestionDraft((prev) => ({ ...prev, rubric: next }));
+                  }}
+                />
+                <textarea
+                  className="form-textarea"
+                  placeholder="Mô tả tiêu chí"
+                  value={item.description}
+                  onChange={(event) => {
+                    const next = [...questionDraft.rubric];
+                    next[index] = { ...next[index], description: event.target.value };
+                    setQuestionDraft((prev) => ({ ...prev, rubric: next }));
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    );
   };
 
   const uploadFileForContentItem = async (index, file) => {
@@ -707,6 +1030,22 @@ function LessonDetail() {
           <div className="loading">Đang tải bài học...</div>
         )}
 
+        {/* Question modal used when adding from Lesson editor */}
+        <QuestionFormModal
+          isOpen={questionModalOpen}
+          draft={questionDraft}
+          onDraftChange={setQuestionDraft}
+          renderTypeSpecificForm={renderQuestionTypeSpecificForm}
+          onCancel={() => setQuestionModalOpen(false)}
+          onConfirm={handleSaveQuestionFromLesson}
+          chapterId={chapterId}
+          lectureId={lessonId}
+          segmentId={editingSegment?.id}
+          chapterTitle={chapterId}
+          lectureTitle={lesson?.title}
+          segmentTitle={editingSegment?.title}
+        />
+
         {/* Modal thêm/sửa phần */}
         {showModal && (
           <div className="modal-overlay-segment" onClick={() => setShowModal(false)}>
@@ -797,26 +1136,45 @@ function LessonDetail() {
                         </select>
                       </div>
 
-                      <div className="form-group-segment">
-                        <label>Tiêu đề nội dung</label>
-                        <input
-                          type="text"
-                          value={item.title}
-                          onChange={(event) => handleContentItemChange(index, 'title', event.target.value)}
-                          placeholder="Nhập tiêu đề nội dung"
-                        />
-                      </div>
+                      {item.type === 'question' ? (
+                        <div className="form-group-segment" style={{ padding: '16px 18px', background: '#f8fafc', border: '1px dashed #d1d5db', borderRadius: 12 }}>
+                          <label>Quản lý câu hỏi của phần này</label>
+                          <p style={{ margin: '8px 0 14px', color: '#6b7280', lineHeight: 1.5 }}>
+                            Phần này không cần tiêu đề hay nội dung riêng. Bấm nút bên dưới để mở màn hình thêm và quản lý câu hỏi của đúng phần đang chọn.
+                          </p>
+                          <button
+                            type="button"
+                            className="btn-save-all"
+                            onClick={handleAddQuestionInLesson}
+                            disabled={!editingSegment?.id}
+                          >
+                            + Thêm câu hỏi / Quản lý câu hỏi
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="form-group-segment">
+                            <label>Tiêu đề nội dung</label>
+                            <input
+                              type="text"
+                              value={item.title}
+                              onChange={(event) => handleContentItemChange(index, 'title', event.target.value)}
+                              placeholder="Nhập tiêu đề nội dung"
+                            />
+                          </div>
 
-                      <div className="form-group-segment">
-                        <label>Nội dung</label>
-                        <textarea
-                          value={item.content}
-                          onChange={(event) => handleContentItemChange(index, 'content', event.target.value)}
-                          placeholder="Mô tả text hoặc nội dung chính"
-                        />
-                      </div>
+                          <div className="form-group-segment">
+                            <label>Nội dung</label>
+                            <textarea
+                              value={item.content}
+                              onChange={(event) => handleContentItemChange(index, 'content', event.target.value)}
+                              placeholder="Mô tả text hoặc nội dung chính"
+                            />
+                          </div>
+                        </>
+                      )}
 
-                      {(item.type === 'document' || item.type === 'quiz' || item.type === 'question') && (
+                      {(item.type === 'document' || item.type === 'quiz') && (
                         <div className="form-group-segment">
                           <label>Đường dẫn tài nguyên</label>
                           <input

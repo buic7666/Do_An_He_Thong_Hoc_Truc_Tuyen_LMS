@@ -109,9 +109,10 @@ const createEmptyQuizDraft = () => ({
   essayCount: '1',
 });
 
-function ManHinhQuanLyNganHangCauhoi() {
+function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
   const navigate = useNavigate();
   const { courseId: routeCourseId } = useParams();
+  const scopedCourseId = fixedCourseId || routeCourseId;
   const [activeTab, setActiveTab] = useState('questions'); // 'questions' or 'quizzes'
   const [draft, setDraft] = useState(createEmptyDraft());
   const [quizDraft, setQuizDraft] = useState(createEmptyQuizDraft());
@@ -131,7 +132,7 @@ function ManHinhQuanLyNganHangCauhoi() {
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(true);
   const [error, setError] = useState('');
   const [quizError, setQuizError] = useState('');
-  const isCourseScopedView = Boolean(routeCourseId);
+  const isCourseScopedView = Boolean(scopedCourseId);
 
   const questionCount = useMemo(() => questions.length, [questions]);
 
@@ -253,9 +254,9 @@ function ManHinhQuanLyNganHangCauhoi() {
 
       setCourses(visibleCourses);
 
-      if (routeCourseId) {
-        setSelectedCourseId(String(routeCourseId));
-        await loadChapters(routeCourseId);
+      if (scopedCourseId) {
+        setSelectedCourseId(String(scopedCourseId));
+        await loadChapters(scopedCourseId);
         return;
       }
 
@@ -416,10 +417,10 @@ function ManHinhQuanLyNganHangCauhoi() {
       throw new Error('Vui lòng chọn chương trước khi tạo câu hỏi.');
     }
     if (!selectedLessonId) {
-      throw new Error('Vui lòng chọn bài học trước khi tạo câu hỏi.');
+      throw new Error('Vui lòng chọn bài giảng trước khi tạo câu hỏi.');
     }
     if (!selectedSegmentId) {
-      throw new Error('Vui lòng chọn phần bài học trước khi tạo câu hỏi.');
+      throw new Error('Vui lòng chọn phần bài giảng trước khi tạo câu hỏi.');
     }
 
     const base = {
@@ -908,13 +909,13 @@ function ManHinhQuanLyNganHangCauhoi() {
   };
 
   return (
-    <div className="instructor-question-bank-page">
-      <TeacherSidebar />
+    <div className={embedded ? '' : 'instructor-question-bank-page'}>
+      {!embedded ? <TeacherSidebar /> : null}
 
-      <main className="instructor-question-bank-main-content">
+      <main className="instructor-question-bank-main-content" style={embedded ? { marginLeft: 0, padding: 0 } : undefined}>
         <header className="instructor-question-bank-page-header">
           <h1 className="instructor-question-bank-page-title">Quản lý Ngân hàng Câu hỏi</h1>
-          {isCourseScopedView ? (
+          {isCourseScopedView && !embedded ? (
             <div style={{ marginTop: 10 }}>
               <p style={{ margin: 0, color: '#4b5563' }}>
                 Đang quản lý câu hỏi trong khóa học{' '}
@@ -990,9 +991,9 @@ function ManHinhQuanLyNganHangCauhoi() {
                 <strong>{courses.find((course) => String(course.id) === String(selectedCourseId))?.title || 'đang tải'}</strong>
                 {' '}với chương{' '}
                 <strong>{chapters.find((chapter) => String(chapter.id) === String(selectedChapterId))?.title || 'chưa chọn'}</strong>,
-                {' '}bài học{' '}
+                {' '}bài giảng{' '}
                 <strong>{lessons.find((lesson) => String(lesson.id) === String(selectedLessonId))?.title || 'chưa chọn'}</strong>
-                {' '}và phần bài học{' '}
+                {' '}và phần bài giảng{' '}
                 <strong>{segments.find((segment) => String(segment.id) === String(selectedSegmentId))?.title || 'chưa chọn'}</strong>.
               </p>
             </section>
@@ -1017,7 +1018,7 @@ function ManHinhQuanLyNganHangCauhoi() {
               </div>
 
               <div className="instructor-question-bank-form-group">
-                <label className="instructor-question-bank-form-label" htmlFor="question-lesson">Bài học</label>
+                <label className="instructor-question-bank-form-label" htmlFor="question-lesson">Bài giảng</label>
                 <select
                   className="instructor-question-bank-form-control"
                   id="question-lesson"
@@ -1025,7 +1026,7 @@ function ManHinhQuanLyNganHangCauhoi() {
                   onChange={(event) => setSelectedLessonId(event.target.value)}
                   disabled={!lessons.length}
                 >
-                  <option value="">-- Chọn bài học --</option>
+                  <option value="">-- Chọn bài giảng --</option>
                   {lessons.map((lesson) => (
                     <option key={lesson.id} value={lesson.id}>{lesson.title}</option>
                   ))}
@@ -1033,7 +1034,7 @@ function ManHinhQuanLyNganHangCauhoi() {
               </div>
 
               <div className="instructor-question-bank-form-group">
-                <label className="instructor-question-bank-form-label" htmlFor="question-segment">Phần bài học</label>
+                <label className="instructor-question-bank-form-label" htmlFor="question-segment">Phần bài giảng</label>
                 <select
                   className="instructor-question-bank-form-control"
                   id="question-segment"
@@ -1041,7 +1042,7 @@ function ManHinhQuanLyNganHangCauhoi() {
                   onChange={(event) => setSelectedSegmentId(event.target.value)}
                   disabled={!segments.length}
                 >
-                  <option value="">-- Chọn phần bài học --</option>
+                  <option value="">-- Chọn phần bài giảng --</option>
                   {segments.map((segment) => (
                     <option key={segment.id} value={segment.id}>{segment.title}</option>
                   ))}
@@ -1078,12 +1079,12 @@ function ManHinhQuanLyNganHangCauhoi() {
                     }
                     if (!selectedLessonId) {
                       // eslint-disable-next-line no-alert
-                      alert('Vui lòng chọn bài học trước.');
+                      alert('Vui lòng chọn bài giảng trước.');
                       return;
                     }
                     if (!selectedSegmentId) {
                       // eslint-disable-next-line no-alert
-                      alert('Vui lòng chọn phần bài học trước.');
+                      alert('Vui lòng chọn phần bài giảng trước.');
                       return;
                     }
                     setIsModalOpen(true);

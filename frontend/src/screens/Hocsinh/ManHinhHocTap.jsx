@@ -21,6 +21,14 @@ const SEGMENT_CONTENT_META = {
   videoClip: { icon: '🎬', title: 'Đoạn video' },
 };
 
+const isStudentVisibleContentItem = (item) => item && item.type !== 'question';
+
+const getStudentVisibleContentItems = (segment) => (
+  Array.isArray(segment?.contentItems)
+    ? segment.contentItems.filter(isStudentVisibleContentItem)
+    : []
+);
+
 const formatDuration = (seconds) => {
   const total = Math.max(0, Number(seconds || 0));
   const mins = Math.floor(total / 60);
@@ -196,7 +204,7 @@ function ManHinhHocTap() {
 
     const itemIndex = Number(selectedContentKey.itemIndex);
     const item = segment.contentItems[itemIndex];
-    if (!item) {
+    if (!item || !isStudentVisibleContentItem(item)) {
       return null;
     }
 
@@ -230,8 +238,8 @@ function ManHinhHocTap() {
     const segmentId = Number(segment.id);
     setSelectedSegmentId(segmentId);
     setSelectedContentKey(
-      Array.isArray(segment.contentItems) && segment.contentItems[0]
-        ? { segmentId, itemIndex: 0 }
+      getStudentVisibleContentItems(segment)[0]
+        ? { segmentId, itemIndex: segment.contentItems.findIndex((item) => isStudentVisibleContentItem(item)) }
         : null,
     );
 
@@ -247,7 +255,7 @@ function ManHinhHocTap() {
     }
 
     const item = segment.contentItems[itemIndex];
-    if (!item) {
+    if (!item || !isStudentVisibleContentItem(item)) {
       return;
     }
 
@@ -425,8 +433,8 @@ function ManHinhHocTap() {
     setLessonSegments(nextSegments);
     setSelectedSegmentId(nextSegments[0]?.id ? Number(nextSegments[0].id) : null);
     setSelectedContentKey(
-      nextSegments[0]?.contentItems?.[0]
-        ? { segmentId: Number(nextSegments[0].id), itemIndex: 0 }
+      getStudentVisibleContentItems(nextSegments[0])[0]
+        ? { segmentId: Number(nextSegments[0].id), itemIndex: nextSegments[0].contentItems.findIndex((item) => isStudentVisibleContentItem(item)) }
         : null,
     );
     const seconds = Number(watchPosition?.positionSeconds || 0);
@@ -817,6 +825,10 @@ function ManHinhHocTap() {
   };
 
   const renderSegmentContentItem = (segment, item, itemIndex) => {
+    if (!isStudentVisibleContentItem(item)) {
+      return null;
+    }
+
     const meta = SEGMENT_CONTENT_META[item.type] || SEGMENT_CONTENT_META.text;
     const resourceUrl = String(item?.resourceUrl || '').trim();
     const isSelected = Number(selectedContentKey?.segmentId) === Number(segment.id)
@@ -959,11 +971,15 @@ function ManHinhHocTap() {
               <>
                 <div className='study-segment-focus-meta'>
                   <span>{formatDuration(selectedSegment.startTime)} - {formatDuration(selectedSegment.endTime)}</span>
-                  <span>{`${selectedSegment.contentItems.length} nội dung`}</span>
+                  <span>{`${getStudentVisibleContentItems(selectedSegment).length} nội dung`}</span>
                 </div>
 
                 <div className='study-content-items-tabs'>
                   {selectedSegment.contentItems.map((item, itemIndex) => {
+                    if (!isStudentVisibleContentItem(item)) {
+                      return null;
+                    }
+
                     const isSelected = Number(selectedContentKey?.segmentId) === Number(selectedSegment.id)
                       && Number(selectedContentKey?.itemIndex) === Number(itemIndex);
                     const meta = SEGMENT_CONTENT_META[item.type] || SEGMENT_CONTENT_META.text;
@@ -987,11 +1003,11 @@ function ManHinhHocTap() {
                     {renderSegmentContentItem(selectedSegment, selectedContent.item, selectedContent.itemIndex)}
                   </div>
                 ) : (
-                  <p className='study-segment-content-empty'>Bấm vào tab phía trên để xem nội dung.</p>
+                  <p className='study-segment-content-empty'>Phần này không có nội dung hiển thị cho học sinh.</p>
                 )}
               </>
             ) : (
-              <p className='study-segment-content-empty'>Phần này chưa có phần mô tả chi tiết.</p>
+              <p className='study-segment-content-empty'>Phần này chưa có nội dung hiển thị cho học sinh.</p>
             )
           ) : (
             <p className='study-segment-content-empty'>Chọn một tab phần bài học để hiển thị nội dung ở bên dưới.</p>
