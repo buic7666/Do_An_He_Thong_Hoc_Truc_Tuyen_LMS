@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import httpClient from '../api/httpClient';
+import RichContentRenderer from './RichContentRenderer';
 import './QuizTaker.css';
 
 const parseJson = (value, fallback = {}) => {
@@ -347,7 +348,19 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
                 onChange={() => toggleMultipleChoiceOption(question.id, index)}
                 disabled={isSubmitted}
               />
-              <span className="option-text">{option}</span>
+                <span className="option-text">
+                  {typeof option === 'string' ? (
+                    option
+                  ) : Array.isArray(option?.contentBlocks) ? (
+                    <RichContentRenderer blocks={option.contentBlocks} />
+                  ) : option?.blocks ? (
+                    <RichContentRenderer blocks={option.blocks} />
+                  ) : option?.text ? (
+                    option.text
+                  ) : (
+                    String(option || '')
+                  )}
+                </span>
             </label>
           ))}
         </div>
@@ -497,9 +510,11 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
 
       {currentQuestion ? (
         <div className="quiz-taker__question">
-          <h3 className="question-text">{currentQuestion.questionText}</h3>
-          {renderQuestionInput(currentQuestion)}
-        </div>
+            <div className="question-text">
+              <RichContentRenderer blocks={currentQuestion?.metadata?.contentBlocks || currentQuestion?.contentBlocks || (currentQuestion?.content ? [{ type: 'text', text: currentQuestion.content }] : [])} />
+            </div>
+            {renderQuestionInput(currentQuestion)}
+          </div>
       ) : null}
 
       <div className="quiz-taker__navigation">
@@ -672,7 +687,17 @@ const QuizResult = ({ quiz, result, onBack }) => {
                   <div className="result-question-card__top">
                     <div>
                       <div className="result-question-card__label">Câu {index + 1}</div>
-                      <h4>{item.question?.content || `Câu hỏi ${item.questionId}`}</h4>
+                      {item.question ? (
+                        Array.isArray(item.question?.metadata?.contentBlocks) && item.question.metadata.contentBlocks.length ? (
+                          <RichContentRenderer blocks={item.question.metadata.contentBlocks} />
+                        ) : Array.isArray(item.question?.contentBlocks) && item.question.contentBlocks.length ? (
+                          <RichContentRenderer blocks={item.question.contentBlocks} />
+                        ) : (
+                          <h4>{item.question?.content || `Câu hỏi ${item.questionId}`}</h4>
+                        )
+                      ) : (
+                        <h4>{`Câu hỏi ${item.questionId}`}</h4>
+                      )}
                     </div>
                     <div className="result-question-card__score" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {Number(item.score || 0) >= Number(item.maxScore || 1) * 0.5 ? '✅' : '❌'}

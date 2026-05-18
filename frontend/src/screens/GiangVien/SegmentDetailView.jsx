@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import TeacherSidebar from '../../components/TeacherSidebar';
 import httpClient from '../../api/httpClient';
 import QuestionFormModal from '../../components/QuestionFormModal';
+import SelectQuestionsModal from '../../components/SelectQuestionsModal';
 import {
   fetchQuestionsApi,
   createQuestionApi,
@@ -73,6 +74,10 @@ const createEmptyContentItem = (type = 'text', orderIndex = 1) => ({
   title: '',
   content: '',
   resourceUrl: '',
+  questionIds: [],
+  questionTitles: [],
+  randomize: false,
+  randomCount: 0,
   startTime: '',
   endTime: '',
   orderIndex,
@@ -83,6 +88,10 @@ const normalizeContentItemForForm = (item, index) => ({
   title: item?.title ?? '',
   content: item?.content ?? '',
   resourceUrl: item?.resourceUrl ?? '',
+  questionIds: Array.isArray(item?.questionIds) ? item.questionIds : [],
+  questionTitles: Array.isArray(item?.questionTitles) ? item.questionTitles : [],
+  randomize: Boolean(item?.randomize),
+  randomCount: Number(item?.randomCount || 0),
   startTime: item?.startTime ?? '',
   endTime: item?.endTime ?? '',
   orderIndex: Number.isInteger(Number(item?.orderIndex)) && Number(item.orderIndex) > 0
@@ -95,6 +104,10 @@ const normalizeContentItemForPayload = (item, index) => ({
   title: typeof item?.title === 'string' ? item.title.trim() : String(item?.title ?? '').trim(),
   content: typeof item?.content === 'string' ? item.content.trim() : String(item?.content ?? '').trim(),
   resourceUrl: typeof item?.resourceUrl === 'string' ? item.resourceUrl.trim() : '',
+  questionIds: Array.isArray(item?.questionIds) ? item.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)) : [],
+  questionTitles: Array.isArray(item?.questionTitles) ? item.questionTitles.map((title) => String(title || '').trim()).filter(Boolean) : [],
+  randomize: Boolean(item?.randomize),
+  randomCount: Number(item?.randomCount || 0),
   ...(item?.startTime === '' || item?.startTime == null
     ? {}
     : { startTime: Number(item.startTime) }),
@@ -131,6 +144,7 @@ function SegmentDetailView() {
   const [questionDraft, setQuestionDraft] = useState(createEmptyQuestionDraft());
   const [questionEditingId, setQuestionEditingId] = useState(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState(null);
+  const [selectQuestionsModal, setSelectQuestionsModal] = useState({ open: false, itemIndex: null });
 
   const loadQuestions = async () => {
     if (!courseId || !chapterId || !lessonId || !segmentId) {
@@ -244,6 +258,11 @@ function SegmentDetailView() {
   const handleAddContentItem = (type = 'text') => {
     const newItem = createEmptyContentItem(type, contentItems.length + 1);
     setContentItems([...contentItems, newItem]);
+    if (type === 'quiz') {
+      setTimeout(() => {
+        setSelectQuestionsModal({ open: true, itemIndex: contentItems.length });
+      }, 0);
+    }
   };
 
   // Handle cập nhật content item
@@ -643,8 +662,13 @@ function SegmentDetailView() {
     }
   };
 
-  // Handle save changes
-  const handleSaveChanges = async () => {
+  const buildSegmentSaveData = () => ({
+    title: segment?.title,
+    orderIndex: segment?.orderIndex,
+    contentItems: contentItems.map((item, idx) => normalizeContentItemForPayload(item, idx)),
+  });
+
+  const persistSegmentChanges = async ({ successMessage = '✅ Lưu thành công!', shouldNavigate = true } = {}) => {
     if (!segment) return;
 
     try {
@@ -654,23 +678,51 @@ function SegmentDetailView() {
 
       setIsSaving(true);
 
-      const saveData = {
-        title: segment.title,
-        orderIndex: segment.orderIndex,
-        contentItems: contentItems.map((item, idx) => normalizeContentItemForPayload(item, idx)),
-      };
+      await updateLessonSegmentApi(segmentId, buildSegmentSaveData());
 
-      await updateLessonSegmentApi(segmentId, saveData);
-      alert('✅ Lưu thành công!');
-      navigate(
-        `/teacher/courses/${courseId}/chapters/${chapterId}/lessons/${lessonId}`
-      );
+      alert(successMessage);
+
+      if (shouldNavigate) {
+        navigate(`/teacher/courses/${courseId}/chapters/${chapterId}/lessons/${lessonId}`);
+      }
     } catch (err) {
       alert(err?.response?.data?.message || 'Lỗi khi lưu');
       console.error('Save error:', err);
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleSaveQuizItem = async () => {
+    const quizItem = contentItems[currentItemIndex];
+
+    if (!quizItem || quizItem.type !== 'quiz') {
+      alert('Vui lòng chọn đúng nội dung bài tập để lưu.');
+      return;
+    }
+
+    if (quizItem.randomize) {
+      if (Number(quizItem.randomCount || 0) < 1) {
+        alert('Hãy nhập số câu random hợp lệ trước khi lưu bài tập.');
+        return;
+      }
+    } else if (!Array.isArray(quizItem.questionIds) || quizItem.questionIds.length === 0) {
+      alert('Hãy chọn ít nhất một câu hỏi trước khi lưu bài tập.');
+      return;
+    }
+
+    await persistSegmentChanges({
+      successMessage: '✅ Đã lưu bài tập thành công!',
+      shouldNavigate: false,
+    });
+  };
+
+  // Handle save changes
+  const handleSaveChanges = async () => {
+    await persistSegmentChanges({
+      successMessage: '✅ Lưu thành công!',
+      shouldNavigate: true,
+    });
   };
 
   // Back button
@@ -690,6 +742,11 @@ function SegmentDetailView() {
   // Navigation giữa các items
   const currentItem = contentItems[currentItemIndex];
   const meta = SEGMENT_CONTENT_META[currentItem?.type] || SEGMENT_CONTENT_META.text;
+  const isCurrentQuizReadyToSave = currentItem?.type === 'quiz' && (
+    currentItem.randomize
+      ? Number(currentItem.randomCount || 0) > 0
+      : Array.isArray(currentItem.questionIds) && currentItem.questionIds.length > 0
+  );
 
   return (
     <div className="container-segment-detail">
@@ -795,6 +852,98 @@ function SegmentDetailView() {
                           </button>
                         </div>
                       </div>
+                    ) : currentItem.type === 'quiz' ? (
+                      <div className="form-group" style={{ padding: 16, background: '#faf5ff', border: '1px solid #ddd6fe', borderRadius: 12 }}>
+                        <label style={{ fontWeight: 700, color: '#4c1d95' }}>Thiết lập bài tập từ ngân hàng câu hỏi</label>
+                        <p style={{ margin: '8px 0 12px', color: '#6b7280', lineHeight: 1.5 }}>
+                          Bài tập này sẽ lấy câu hỏi từ ngân hàng của đúng phần học đang mở. Bạn có thể chọn từng câu hoặc random số câu.
+                        </p>
+
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                          <div>
+                            <div style={{ fontWeight: 700, color: '#4c1d95' }}>Ngân hàng câu hỏi</div>
+                            <div style={{ marginTop: 4, color: '#5b21b6' }}>
+                              {currentItem.randomize ? (
+                                <strong>Random {Number(currentItem.randomCount || 0)} câu</strong>
+                              ) : Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? (
+                                <strong>{currentItem.questionTitles.length} câu đã chọn</strong>
+                              ) : Array.isArray(currentItem.questionIds) && currentItem.questionIds.length ? (
+                                <strong>{currentItem.questionIds.length} câu đã chọn</strong>
+                              ) : (
+                                <span>Chưa chọn câu nào</span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-save-all"
+                            onClick={() => setSelectQuestionsModal({ open: true, itemIndex: currentItemIndex })}
+                            style={{ background: '#7c3aed' }}
+                          >
+                            📚 Chọn từ Ngân hàng Câu hỏi
+                          </button>
+                        </div>
+
+                        <div style={{ marginTop: 14, padding: 12, background: 'white', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#374151' }}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(currentItem.randomize)}
+                              onChange={(event) => {
+                                handleUpdateContentItem(currentItemIndex, 'randomize', event.target.checked);
+                                if (event.target.checked) {
+                                  handleUpdateContentItem(currentItemIndex, 'questionIds', []);
+                                  handleUpdateContentItem(currentItemIndex, 'questionTitles', []);
+                                } else {
+                                  handleUpdateContentItem(currentItemIndex, 'randomCount', 0);
+                                }
+                              }}
+                            />
+                            Random câu hỏi
+                          </label>
+                          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ color: '#6b7280' }}>Số câu:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              disabled={!currentItem.randomize}
+                              value={currentItem.randomCount || ''}
+                              onChange={(e) => handleUpdateContentItem(currentItemIndex, 'randomCount', e.target.value)}
+                              className="form-input"
+                              style={{ width: 120 }}
+                            />
+                          </div>
+                        </div>
+
+                        {((Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length) || (Array.isArray(currentItem.questionIds) && currentItem.questionIds.length)) && !currentItem.randomize ? (
+                          <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                            <div style={{ fontWeight: 700, marginBottom: 8, color: '#111827' }}>Câu hỏi đã chọn</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                              {(Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? currentItem.questionTitles : currentItem.questionIds).map((questionValue, questionIndex) => (
+                                <span key={`${questionValue}-${questionIndex}`} style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 10px', borderRadius: 999, background: '#ede9fe', color: '#5b21b6', fontWeight: 700, fontSize: 13 }}>
+                                  {Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? questionValue : `Câu #${questionValue}`}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                          <button
+                            type="button"
+                            className="btn-save-all"
+                            onClick={handleSaveQuizItem}
+                            disabled={!isCurrentQuizReadyToSave || isSaving}
+                            style={{
+                              background: isCurrentQuizReadyToSave ? '#7c3aed' : '#c4b5fd',
+                              opacity: isCurrentQuizReadyToSave && !isSaving ? 1 : 0.7,
+                              cursor: isCurrentQuizReadyToSave && !isSaving ? 'pointer' : 'not-allowed',
+                            }}
+                          >
+                            {isSaving ? 'Đang lưu...' : '💾 Lưu bài tập'}
+                          </button>
+                        </div>
+                      </div>
                     ) : (
                       <>
                         <div className="form-group">
@@ -821,7 +970,7 @@ function SegmentDetailView() {
                       </>
                     )}
 
-                    {(currentItem.type === 'document' || currentItem.type === 'quiz' || currentItem.type === 'videoClip') && (
+                    {(currentItem.type === 'document' || currentItem.type === 'videoClip') && (
                       <div className="form-group">
                         <label>
                           URL Tài Nguyên {currentItem.type === 'videoClip' ? '(YouTube)' : ''}
@@ -978,6 +1127,48 @@ function SegmentDetailView() {
                     chapterTitle={chapter?.title}
                     lectureTitle={lesson?.title}
                     segmentTitle={segment?.title}
+                  />
+
+                  <SelectQuestionsModal
+                    isOpen={selectQuestionsModal.open}
+                    filters={{
+                      courseId: Number(courseId),
+                      chapterId: Number(chapterId),
+                      lectureId: Number(lessonId),
+                      segmentId: Number(segmentId),
+                    }}
+                    initial={selectQuestionsModal.itemIndex != null ? (contentItems[selectQuestionsModal.itemIndex]?.questionIds || []) : []}
+                    onClose={() => setSelectQuestionsModal({ open: false, itemIndex: null })}
+                    onConfirm={(data) => {
+                      const idx = selectQuestionsModal.itemIndex;
+                      if (idx == null) return;
+                      
+                      // Update all quiz fields in a single state update
+                      setContentItems((prev) =>
+                        prev.map((item, i) => {
+                          if (i !== idx) return item;
+                          
+                          if (data.randomize) {
+                            return {
+                              ...item,
+                              questionIds: [],
+                              questionTitles: [],
+                              randomize: true,
+                              randomCount: Number(data.randomCount || 1),
+                            };
+                          } else {
+                            return {
+                              ...item,
+                              questionIds: Array.isArray(data.questionIds) ? data.questionIds : [],
+                              questionTitles: Array.isArray(data.questionTitles) ? data.questionTitles : [],
+                              randomize: false,
+                              randomCount: 0,
+                            };
+                          }
+                        })
+                      );
+                      setSelectQuestionsModal({ open: false, itemIndex: null });
+                    }}
                   />
 
                   {/* Navigation giữa items */}

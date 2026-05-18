@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from './RichContentEditor';
 
 const QUESTION_TYPE_LABELS = {
   MULTIPLE_CHOICE: 'Trắc nghiệm',
@@ -33,11 +34,12 @@ function QuestionFormModal({
     return null;
   }
 
-  const contentLen = String(draft.content || '').trim().length;
+  const contentText = richContentToPlainText(draft.contentBlocks) || String(draft.content || '').trim();
+  const contentLen = contentText.length;
   const canGoNext = contentLen >= 10;
   const validateDraft = (d) => {
     const errors = [];
-    const contentLength = String(d.content || '').trim().length;
+    const contentLength = (richContentToPlainText(d.contentBlocks) || String(d.content || '').trim()).length;
     if (contentLength < 10) {
       errors.push('Nội dung câu hỏi cần ít nhất 10 ký tự.');
     }
@@ -154,7 +156,12 @@ function QuestionFormModal({
                 const newType = e.target.value;
                 let next = { ...draft, type: newType };
                 if (newType === 'MULTIPLE_CHOICE') {
-                  next = { ...next, options: next.options && next.options.length ? next.options : ['', '', '', ''], correctIndices: next.correctIndices || [0] };
+                  next = {
+                    ...next,
+                    options: next.options && next.options.length ? next.options : ['', '', '', ''],
+                    optionsRich: next.optionsRich && next.optionsRich.length ? next.optionsRich : [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
+                    correctIndices: next.correctIndices || [0],
+                  };
                 } else if (newType === 'TRUE_FALSE') {
                   next = { ...next, correctAnswer: typeof next.correctAnswer === 'boolean' ? next.correctAnswer : true };
                 } else if (newType === 'SHORT_ANSWER') {
@@ -180,20 +187,15 @@ function QuestionFormModal({
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#333' }}>
                 Nội dung câu hỏi *
               </label>
-              <textarea
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  fontFamily: 'inherit',
-                  fontSize: '14px',
-                  resize: 'vertical',
-                  minHeight: '100px',
-                }}
-                placeholder="Nhập nội dung câu hỏi..."
-                value={draft.content}
-                onChange={(e) => onDraftChange({ ...draft, content: e.target.value })}
+              <RichContentEditor
+                title=""
+                helperText="Có thể thêm nhiều khối văn bản, ảnh hoặc video cho nội dung câu hỏi."
+                value={draft.contentBlocks}
+                onChange={(nextBlocks) => onDraftChange({
+                  ...draft,
+                  contentBlocks: nextBlocks,
+                  content: richContentToPlainText(nextBlocks),
+                })}
               />
             </div>
             {contentLen > 0 && contentLen < 10 ? (

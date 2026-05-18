@@ -12,6 +12,8 @@ import {
 } from '../../api/teacherManagementApi';
 import CommentThread from '../../components/CommentThread';
 import QuestionFormModal from '../../components/QuestionFormModal';
+import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from '../../components/RichContentEditor';
+import SelectQuestionsModal from '../../components/SelectQuestionsModal';
 import { createQuestionApi, updateQuestionApi } from '../../api/teacherManagementApi';
 import './LessonDetail.css';
 
@@ -75,6 +77,10 @@ const createEmptyContentItem = (type = 'text', orderIndex = 1) => ({
   title: '',
   content: '',
   resourceUrl: '',
+  questionIds: [],
+  questionTitles: [],
+  randomize: false,
+  randomCount: 0,
   startTime: '',
   endTime: '',
   orderIndex,
@@ -254,10 +260,14 @@ function LessonDetail() {
         if (itemIndex !== index) return item;
 
         if (field === 'type') {
-          return {
+          const nextItem = {
             ...createEmptyContentItem(value, index + 1),
             type: value,
           };
+          if (value === 'quiz') {
+            setTimeout(() => setSelectQuestionsModal({ open: true, itemIndex: index }), 0);
+          }
+          return nextItem;
         }
 
         return {
@@ -335,8 +345,10 @@ function LessonDetail() {
   const createEmptyQuestionDraft = () => ({
     type: 'MULTIPLE_CHOICE',
     content: '',
+    contentBlocks: createEmptyRichBlocks(),
     isPublished: false,
     options: ['', '', '', ''],
+    optionsRich: [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
     correctIndices: [0],
     explanation: '',
     correctAnswer: true,
@@ -357,6 +369,7 @@ function LessonDetail() {
   const [questionModalOpen, setQuestionModalOpen] = useState(false);
   const [questionDraft, setQuestionDraft] = useState(createEmptyQuestionDraft());
   const [questionEditingId, setQuestionEditingId] = useState(null);
+  const [selectQuestionsModal, setSelectQuestionsModal] = useState({ open: false, itemIndex: null });
 
   const handleAddQuestionInLesson = () => {
     if (!editingSegment?.id) return alert('Vui lòng lưu phần trước khi thêm câu hỏi.');
@@ -366,12 +379,13 @@ function LessonDetail() {
   };
 
   const buildQuestionPayload = () => {
-    const content = questionDraft.content.trim();
+    const content = richContentToPlainText(questionDraft.contentBlocks) || questionDraft.content.trim();
     if (!content) throw new Error('Vui lòng nhập nội dung câu hỏi.');
 
     const base = {
       type: questionDraft.type,
       content,
+      contentBlocks: questionDraft.contentBlocks,
       courseId: Number(courseId),
       chapterId: Number(chapterId),
       lectureId: Number(lessonId),
@@ -401,6 +415,7 @@ function LessonDetail() {
       return {
         ...base,
         options,
+        optionsRich: questionDraft.optionsRich,
         correctIndices,
         explanation: questionDraft.explanation.trim() || undefined,
       };
@@ -485,27 +500,52 @@ function LessonDetail() {
         <>
           <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Các lựa chọn đáp án</label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {questionDraft.options.map((option, index) => (
-              <label key={`question-option-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input
-                  type="radio"
-                  name="question-correct-answer"
-                  checked={questionDraft.correctIndices.includes(index)}
-                  onChange={() => setQuestionDraft((prev) => ({ ...prev, correctIndices: [index] }))}
-                />
-                <span style={{ width: 22, fontWeight: 700 }}>{String.fromCharCode(65 + index)}</span>
-                <input
-                  className="form-input"
-                  style={{ flex: 1 }}
-                  value={option}
-                  onChange={(event) => {
-                    const next = [...questionDraft.options];
-                    next[index] = event.target.value;
-                    setQuestionDraft((prev) => ({ ...prev, options: next }));
+            {questionDraft.optionsRich.map((optionBlocks, index) => (
+              <div key={`question-option-${index}`} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                  <input
+                    type="radio"
+                    name="question-correct-answer"
+                    checked={questionDraft.correctIndices.includes(index)}
+                    onChange={() => setQuestionDraft((prev) => ({ ...prev, correctIndices: [index] }))}
+                  />
+                  <span style={{ width: 22, fontWeight: 700 }}>{String.fromCharCode(65 + index)}</span>
+        <SelectQuestionsModal
+          isOpen={selectQuestionsModal.open}
+          filters={{ courseId: Number(courseId), chapterId: Number(chapterId), lectureId: Number(lessonId), segmentId: editingSegment?.id }}
+          initial={selectQuestionsModal.itemIndex != null ? (formData.contentItems[selectQuestionsModal.itemIndex]?.questionIds || []) : []}
+          onClose={() => setSelectQuestionsModal({ open: false, itemIndex: null })}
+          onConfirm={(data) => {
+            const idx = selectQuestionsModal.itemIndex;
+            if (idx == null) return;
+            if (data.randomize) {
+              handleContentItemChange(idx, 'questionIds', []);
+              handleContentItemChange(idx, 'questionTitles', []);
+              handleContentItemChange(idx, 'randomize', true);
+              handleContentItemChange(idx, 'randomCount', Number(data.randomCount || 1));
+            } else {
+              handleContentItemChange(idx, 'questionIds', Array.isArray(data.questionIds) ? data.questionIds : []);
+              handleContentItemChange(idx, 'questionTitles', Array.isArray(data.questionTitles) ? data.questionTitles : []);
+              handleContentItemChange(idx, 'randomize', false);
+              handleContentItemChange(idx, 'randomCount', 0);
+            }
+          }}
+        />
+                  <span style={{ color: '#6b7280' }}>Đáp án {String.fromCharCode(65 + index)}</span>
+                </label>
+                <RichContentEditor
+                  title=""
+                  helperText="Có thể dùng văn bản, ảnh hoặc video cho đáp án này."
+                  value={optionBlocks}
+                  onChange={(nextBlocks) => {
+                    const next = [...questionDraft.optionsRich];
+                    next[index] = nextBlocks;
+                    const nextPlainOptions = [...questionDraft.options];
+                    nextPlainOptions[index] = richContentToPlainText(nextBlocks);
+                    setQuestionDraft((prev) => ({ ...prev, optionsRich: next, options: nextPlainOptions }));
                   }}
-                  placeholder={`Nhập đáp án ${String.fromCharCode(65 + index)}`}
                 />
-              </label>
+              </div>
             ))}
           </div>
         </>
@@ -749,6 +789,10 @@ function LessonDetail() {
       title: item.title?.trim() || '',
       content: item.content?.trim() || '',
       resourceUrl: item.resourceUrl?.trim() || '',
+      questionIds: Array.isArray(item.questionIds) ? item.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)) : [],
+      questionTitles: Array.isArray(item.questionTitles) ? item.questionTitles.map((title) => String(title || '').trim()).filter(Boolean) : [],
+      randomize: Boolean(item.randomize),
+      randomCount: Number(item.randomCount || 0),
       startTime:
         item.startTime === '' || item.startTime == null
           ? undefined
@@ -1151,6 +1195,98 @@ function LessonDetail() {
                             + Thêm câu hỏi / Quản lý câu hỏi
                           </button>
                         </div>
+                      ) : item.type === 'quiz' ? (
+                        <>
+                          <div className="form-group-segment" style={{ padding: 16, border: '1px solid #ddd6fe', borderRadius: 12, background: '#faf5ff' }}>
+                            <label style={{ display: 'block', marginBottom: 8 }}>Thiết lập bài tập từ ngân hàng câu hỏi</label>
+                            <p style={{ margin: '0 0 12px 0', color: '#6b7280', lineHeight: 1.5 }}>
+                              Bài tập này sẽ lấy câu hỏi từ đúng phần học này. Bạn có thể chọn từng câu hoặc bật random số câu cần lấy.
+                            </p>
+                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div>
+                                <div style={{ fontWeight: 700, color: '#4c1d95' }}>Ngân hàng câu hỏi</div>
+                                <div style={{ marginTop: 4, color: '#5b21b6' }}>
+                                  {item.randomize ? (
+                                    <strong>Random {Number(item.randomCount || 0)} câu</strong>
+                                  ) : (Array.isArray(item.questionTitles) && item.questionTitles.length ? (
+                                    <strong>{item.questionTitles.length} câu đã chọn</strong>
+                                  ) : (Array.isArray(item.questionIds) && item.questionIds.length ? (
+                                    <strong>{item.questionIds.length} câu đã chọn</strong>
+                                  ) : (
+                                    <span>Chưa chọn câu nào</span>
+                                  )))
+                                  }
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn-upload-resource"
+                                onClick={() => setSelectQuestionsModal({ open: true, itemIndex: index })}
+                                style={{ backgroundColor: '#7c3aed', color: 'white', padding: '10px 14px', borderRadius: 10, border: 'none', fontWeight: 700, boxShadow: '0 6px 14px rgba(124,58,237,0.18)' }}
+                              >
+                                📚 Chọn từ Ngân hàng Câu hỏi
+                              </button>
+                            </div>
+
+                            <div style={{ marginTop: 16, padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#374151' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(item.randomize)}
+                                  onChange={(event) => {
+                                    handleContentItemChange(index, 'randomize', event.target.checked);
+                                    if (!event.target.checked) {
+                                      handleContentItemChange(index, 'randomCount', 0);
+                                    } else {
+                                      handleContentItemChange(index, 'questionIds', []);
+                                      handleContentItemChange(index, 'questionTitles', []);
+                                    }
+                                  }}
+                                />
+                                Random câu hỏi
+                              </label>
+                              <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ color: '#6b7280' }}>Số câu:</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  disabled={!item.randomize}
+                                  value={item.randomCount || ''}
+                                  onChange={(event) => handleContentItemChange(index, 'randomCount', event.target.value)}
+                                  style={{ width: 120, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8 }}
+                                />
+                              </div>
+                              <div style={{ marginTop: 10, color: '#6b7280', fontSize: 13 }}>
+                                Khi bật random, hệ thống sẽ khóa lựa chọn từng câu để tránh nhầm lẫn.
+                              </div>
+                            </div>
+
+                            {((Array.isArray(item.questionTitles) && item.questionTitles.length) || (Array.isArray(item.questionIds) && item.questionIds.length)) ? (
+                              <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                                <div style={{ fontWeight: 700, marginBottom: 8, color: '#111827' }}>Câu hỏi đã chọn</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                  {(Array.isArray(item.questionTitles) && item.questionTitles.length ? item.questionTitles : item.questionIds).map((questionValue, questionIndex) => (
+                                    <span
+                                      key={`${questionValue}-${questionIndex}`}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '6px 10px',
+                                        borderRadius: 999,
+                                        background: '#ede9fe',
+                                        color: '#5b21b6',
+                                        fontWeight: 700,
+                                        fontSize: 13,
+                                      }}
+                                    >
+                                      {Array.isArray(item.questionTitles) && item.questionTitles.length ? questionValue : `Câu #${questionValue}`}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </>
                       ) : (
                         <>
                           <div className="form-group-segment">
@@ -1174,7 +1310,7 @@ function LessonDetail() {
                         </>
                       )}
 
-                      {(item.type === 'document' || item.type === 'quiz') && (
+                      {(item.type === 'document') && (
                         <div className="form-group-segment">
                           <label>Đường dẫn tài nguyên</label>
                           <input

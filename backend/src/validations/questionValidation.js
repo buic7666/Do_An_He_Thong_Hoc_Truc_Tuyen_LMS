@@ -19,12 +19,35 @@ const courseIdParamSchema = z.object({
   courseId: z.coerce.number().int().positive(),
 });
 
+const richContentBlockSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('text'),
+    text: z.string().trim().min(1).max(5000),
+  }),
+  z.object({
+    type: z.literal('image'),
+    url: z.string().trim().url().max(1000),
+    alt: z.string().trim().max(255).optional().default(''),
+  }),
+  z.object({
+    type: z.literal('video'),
+    url: z.string().trim().url().max(1000),
+    title: z.string().trim().max(255).optional().default(''),
+  }),
+]);
+
+const richContentSchema = z.object({
+  blocks: z.array(richContentBlockSchema).min(1).max(50),
+});
+
 // ===== SHARED SCHEMAS =====
 // ===== MULTIPLE_CHOICE SCHEMA =====
 const createMultipleChoiceQuestionSchema = z.object({
   type: z.literal('MULTIPLE_CHOICE'),
   content: z.string().trim().min(10).max(2000),
+  contentBlocks: z.array(richContentBlockSchema).min(1).max(50).optional(),
   options: z.array(z.string().trim().min(1).max(500)).min(2).max(10),
+  optionsRich: z.array(z.array(richContentBlockSchema).min(1).max(20)).min(2).max(10).optional(),
   correctIndices: z.array(z.number().int().min(0).max(9)).min(1),
   explanation: z.string().trim().max(2000).optional(),
   courseId: z.coerce.number().int().positive().optional(),
@@ -38,6 +61,7 @@ const createMultipleChoiceQuestionSchema = z.object({
 const createTrueFalseQuestionSchema = z.object({
   type: z.literal('TRUE_FALSE'),
   content: z.string().trim().min(10).max(2000),
+  contentBlocks: z.array(richContentBlockSchema).min(1).max(50).optional(),
   correctAnswer: z.boolean(),
   explanation: z.string().trim().max(2000).optional(),
   courseId: z.coerce.number().int().positive().optional(),
@@ -51,6 +75,7 @@ const createTrueFalseQuestionSchema = z.object({
 const createShortAnswerQuestionSchema = z.object({
   type: z.literal('SHORT_ANSWER'),
   content: z.string().trim().min(10).max(2000),
+  contentBlocks: z.array(richContentBlockSchema).min(1).max(50).optional(),
   acceptedAnswers: z.array(z.string().trim().min(1).max(500)).min(1),
   caseSensitive: z.boolean().optional().default(false),
   fuzzyMatch: z.boolean().optional().default(true),
@@ -72,7 +97,9 @@ const rubricItemSchema = z.object({
 const createEssayQuestionSchema = z.object({
   type: z.literal('ESSAY'),
   content: z.string().trim().min(10).max(2000),
+  contentBlocks: z.array(richContentBlockSchema).min(1).max(50).optional(),
   instructions: z.string().trim().max(2000),
+  instructionsBlocks: z.array(richContentBlockSchema).min(1).max(50).optional(),
   rubric: z.array(rubricItemSchema).min(1).max(10),
   wordLimit: z.object({
     min: z.number().int().min(0).optional().default(0),
@@ -159,6 +186,8 @@ module.exports = {
   createTrueFalseQuestionSchema,
   createShortAnswerQuestionSchema,
   createEssayQuestionSchema,
+  richContentBlockSchema,
+  richContentSchema,
 
   // Quiz Schemas
   createQuizBodySchema,

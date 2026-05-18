@@ -127,7 +127,18 @@ const normalizeSegmentContentItems = (items = []) => {
         }
       }
 
-      return payload;
+      if (type === 'quiz') {
+        payload.questionIds = Array.isArray(item?.questionIds)
+          ? item.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+          : [];
+        payload.questionTitles = Array.isArray(item?.questionTitles)
+          ? item.questionTitles.map((title) => String(title || '').trim()).filter(Boolean)
+          : [];
+        payload.randomize = Boolean(item?.randomize);
+        payload.randomCount = toNullableInteger(item?.randomCount) || null;
+      }
+
+          return payload;
     })
     .sort((left, right) => left.orderIndex - right.orderIndex)
     .map((item, index) => ({

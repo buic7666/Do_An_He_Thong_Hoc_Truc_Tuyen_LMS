@@ -15,6 +15,8 @@ const ALLOWED_TYPES = [
   'ESSAY',
 ];
 
+const ALLOWED_RICH_BLOCK_TYPES = ['text', 'image', 'video'];
+
 const mapDifficultyToDb = (value) => {
   if (!value) {
     return 'MEDIUM';
@@ -48,19 +50,87 @@ const parseMetadata = (metadata) => {
   return metadata;
 };
 
+const normalizeRichBlock = (block) => {
+  if (!block || typeof block !== 'object') {
+    return null;
+  }
+
+  const type = String(block.type || 'text').toLowerCase();
+  if (!ALLOWED_RICH_BLOCK_TYPES.includes(type)) {
+    return null;
+  }
+
+  if (type === 'text') {
+    const text = String(block.text ?? '').trim();
+    if (!text) return null;
+    return { type, text };
+  }
+
+  const url = String(block.url ?? '').trim();
+  if (!url) return null;
+
+  if (type === 'image') {
+    return {
+      type,
+      url,
+      alt: String(block.alt ?? '').trim(),
+    };
+  }
+
+  return {
+    type,
+    url,
+    title: String(block.title ?? '').trim(),
+  };
+};
+
+const normalizeRichBlocks = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map(normalizeRichBlock).filter(Boolean);
+};
+
+const richBlocksToPlainText = (blocks = []) => blocks.map((block) => {
+  if (!block || typeof block !== 'object') {
+    return '';
+  }
+
+  if (block.type === 'text') {
+    return String(block.text || '').trim();
+  }
+
+  if (block.type === 'image') {
+    return `[Ảnh: ${String(block.alt || block.url || '').trim()}]`;
+  }
+
+  if (block.type === 'video') {
+    return `[Video: ${String(block.title || block.url || '').trim()}]`;
+  }
+
+  return '';
+}).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
 const buildMetadataForType = (type, payload = {}, current = {}) => {
   const questionType = String(type || 'MULTIPLE_CHOICE').toUpperCase();
+  const contentBlocks = normalizeRichBlocks(payload.contentBlocks ?? current.contentBlocks);
 
   switch (questionType) {
     case 'MULTIPLE_CHOICE': {
       const options = payload.options ?? current.options ?? [];
+      const optionsRich = Array.isArray(payload.optionsRich)
+        ? payload.optionsRich.map(normalizeRichBlocks)
+        : (Array.isArray(current.optionsRich) ? current.optionsRich.map(normalizeRichBlocks) : []);
       const correctIndices = payload.correctIndices
         ?? (payload.correctIndex != null ? [Number(payload.correctIndex)] : undefined)
         ?? current.correctIndices
         ?? (current.correctIndex != null ? [Number(current.correctIndex)] : [0]);
 
       return {
+        contentBlocks,
         options,
+        optionsRich,
         correctIndices,
         explanation: payload.explanation ?? current.explanation ?? null,
       };
@@ -68,6 +138,7 @@ const buildMetadataForType = (type, payload = {}, current = {}) => {
 
     case 'TRUE_FALSE':
       return {
+        contentBlocks,
         correctAnswer:
           payload.correctAnswer != null
             ? payload.correctAnswer === true || payload.correctAnswer === 'true'
@@ -77,6 +148,7 @@ const buildMetadataForType = (type, payload = {}, current = {}) => {
 
     case 'SHORT_ANSWER':
       return {
+        contentBlocks,
         acceptedAnswers: payload.acceptedAnswers ?? current.acceptedAnswers ?? [],
         caseSensitive: payload.caseSensitive ?? current.caseSensitive ?? false,
         fuzzyMatch: payload.fuzzyMatch ?? current.fuzzyMatch ?? true,
@@ -85,7 +157,9 @@ const buildMetadataForType = (type, payload = {}, current = {}) => {
 
     case 'ESSAY':
       return {
+        contentBlocks,
         instructions: payload.instructions ?? current.instructions ?? '',
+        instructionsBlocks: normalizeRichBlocks(payload.instructionsBlocks ?? current.instructionsBlocks),
         rubric: payload.rubric ?? current.rubric ?? [],
         wordLimit: payload.wordLimit ?? current.wordLimit ?? { min: 0, max: 2000 },
         aiModel: payload.aiModel ?? current.aiModel ?? null,
@@ -126,6 +200,8 @@ const normalizeQuestion = (question) => {
     updatedAt: plain.updatedAt,
   };
 
+  normalized.contentBlocks = Array.isArray(metadata.contentBlocks) ? metadata.contentBlocks : [];
+
   if (questionType === 'MULTIPLE_CHOICE') {
     const correctIndices = Array.isArray(metadata.correctIndices)
       ? metadata.correctIndices
@@ -133,6 +209,7 @@ const normalizeQuestion = (question) => {
 
     normalized.questionText = plain.content;
     normalized.options = Array.isArray(metadata.options) ? metadata.options : [];
+    normalized.optionsRich = Array.isArray(metadata.optionsRich) ? metadata.optionsRich : [];
     normalized.correctIndices = correctIndices;
     normalized.correctIndex = correctIndices[0] ?? 0;
     normalized.explanation = metadata.explanation || null;
@@ -293,8 +370,10 @@ const createQuestion = async (payload, creatorId) => {
     segmentId: payload.segmentId ?? null,
   };
 
+  const richContentText = richBlocksToPlainText(metadata.contentBlocks);
+
   const question = await Question.create({
-    content: payload.content,
+    content: payload.content || richContentText,
     type: questionType,
     metadata,
     difficulty: mapDifficultyToDb(payload.difficulty),
@@ -332,6 +411,15 @@ const updateQuestion = async (questionId, payload, creatorId) => {
 
   if (payload.content != null) {
     question.content = payload.content;
+  }
+
+  if (payload.contentBlocks) {
+    const nextMetadata = parseMetadata(question.metadata);
+    nextMetadata.contentBlocks = normalizeRichBlocks(payload.contentBlocks);
+    question.metadata = nextMetadata;
+    if (!payload.content) {
+      question.content = richBlocksToPlainText(nextMetadata.contentBlocks) || question.content;
+    }
   }
 
   question.type = questionType;

@@ -11,6 +11,7 @@ import {
 } from '../../api/lessonApi';
 import QuizList from '../../components/QuizList';
 import QuizTaker from '../../components/QuizTaker';
+import RichContentRenderer from '../../components/RichContentRenderer';
 import './ManHinhHocTap.css';
 
 const SEGMENT_CONTENT_META = {
@@ -280,9 +281,21 @@ function ManHinhHocTap() {
     if (!segment || !Array.isArray(segment.contentItems) || itemIndex <= 0) {
       return false;
     }
-    // Item bị lock nếu item trước đó chưa viewed
-    const prevKey = `${segment.id}-${itemIndex - 1}`;
-    return !viewedContentItems[prevKey];
+    // Item bị lock nếu item trước đó chưa viewed, nhưng bỏ qua các item type 'question'
+    // vì sinh viên không thể xem được các câu hỏi
+    let prevIndex = itemIndex - 1;
+    while (prevIndex >= 0) {
+      const prevItem = segment.contentItems[prevIndex];
+      // Nếu item trước là 'question', bỏ qua nó
+      if (prevItem && prevItem.type === 'question') {
+        prevIndex--;
+        continue;
+      }
+      // Kiểm tra xem item này đã được view chưa
+      const prevKey = `${segment.id}-${prevIndex}`;
+      return !viewedContentItems[prevKey];
+    }
+    return false;
   }, [viewedContentItems]);
 
   const selectedContentVideoUrl = useMemo(() => {
@@ -875,7 +888,13 @@ function ManHinhHocTap() {
 
         {item.type === 'question' && (
           <div className='study-segment-content-body'>
-            <p>{formatSegmentContentText(item)}</p>
+            {Array.isArray(item?.contentBlocks) && item.contentBlocks.length ? (
+              <RichContentRenderer blocks={item.contentBlocks} />
+            ) : item?.metadata?.contentBlocks && Array.isArray(item.metadata.contentBlocks) && item.metadata.contentBlocks.length ? (
+              <RichContentRenderer blocks={item.metadata.contentBlocks} />
+            ) : (
+              <p>{formatSegmentContentText(item)}</p>
+            )}
             {resourceUrl && !isLocked ? (
               <a className='study-segment-content-link' href={resourceUrl} target='_blank' rel='noreferrer'>
                 Mở câu hỏi
@@ -886,10 +905,57 @@ function ManHinhHocTap() {
 
         {item.type === 'quiz' && (
           <div className='study-segment-content-body'>
-            <p>{formatSegmentContentText(item)}</p>
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ marginBottom: 8 }}>{formatSegmentContentText(item) || 'Bài tập từ ngân hàng câu hỏi của phần này.'}</p>
+              {item.randomize ? (
+                <div className='study-segment-content-meta' style={{ marginBottom: 8 }}>
+                  Random {Number(item.randomCount || 0)} câu từ ngân hàng câu hỏi
+                </div>
+              ) : Array.isArray(item.questionTitles) && item.questionTitles.length ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  {item.questionTitles.map((title, questionIndex) => (
+                    <span
+                      key={`${title}-${questionIndex}`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '6px 10px',
+                        borderRadius: 999,
+                        background: '#ede9fe',
+                        color: '#5b21b6',
+                        fontWeight: 700,
+                        fontSize: 13,
+                      }}
+                    >
+                      {title}
+                    </span>
+                  ))}
+                </div>
+              ) : Array.isArray(item.questionIds) && item.questionIds.length ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  {item.questionIds.map((questionId, questionIndex) => (
+                    <span
+                      key={`${questionId}-${questionIndex}`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '6px 10px',
+                        borderRadius: 999,
+                        background: '#ede9fe',
+                        color: '#5b21b6',
+                        fontWeight: 700,
+                        fontSize: 13,
+                      }}
+                    >
+                      Câu #{questionId}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             {resourceUrl && !isLocked ? (
               <a className='study-segment-content-link' href={resourceUrl} target='_blank' rel='noreferrer'>
-                Làm bài kiểm tra
+                Làm bài tập
               </a>
             ) : null}
           </div>

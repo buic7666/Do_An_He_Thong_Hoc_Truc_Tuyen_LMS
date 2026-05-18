@@ -16,6 +16,7 @@ import {
 } from '../../api/teacherManagementApi';
 import TeacherSidebar from '../../components/TeacherSidebar';
 import QuestionFormModal from '../../components/QuestionFormModal';
+import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from '../../components/RichContentEditor';
 
 import './ManHinhQuanLyNganHangCauhoi.css';
 
@@ -77,8 +78,10 @@ const parseJson = (value, fallback = {}) => {
 const createEmptyDraft = () => ({
   type: 'MULTIPLE_CHOICE',
   content: '',
+  contentBlocks: createEmptyRichBlocks(),
   isPublished: false,
   options: ['', '', '', ''],
+  optionsRich: [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
   correctIndices: [0],
   explanation: '',
   correctAnswer: true,
@@ -358,6 +361,7 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
       return {
         ...prev,
         options: [...prev.options, ''],
+        optionsRich: [...prev.optionsRich, createEmptyRichBlocks()],
       };
     });
   };
@@ -381,6 +385,7 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
       return {
         ...prev,
         options: nextOptions,
+        optionsRich: prev.optionsRich.filter((_, itemIndex) => itemIndex !== index),
         correctIndices: [Math.max(0, Math.min(nextCorrectIndex, nextOptions.length - 1))],
       };
     });
@@ -406,7 +411,7 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
   };
 
   const createQuestionPayload = () => {
-    const content = draft.content.trim();
+    const content = richContentToPlainText(draft.contentBlocks) || draft.content.trim();
     if (!content) {
       throw new Error('Vui lòng nhập nội dung câu hỏi.');
     }
@@ -426,6 +431,7 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
     const base = {
       type: draft.type,
       content,
+      contentBlocks: draft.contentBlocks,
       courseId: Number(selectedCourseId),
       chapterId: selectedChapterId ? Number(selectedChapterId) : undefined,
       lectureId: selectedLessonId ? Number(selectedLessonId) : undefined,
@@ -455,6 +461,7 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
       return {
         ...base,
         options,
+        optionsRich: draft.optionsRich,
         correctIndices,
         explanation: draft.explanation.trim() || undefined,
       };
@@ -560,8 +567,10 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
       ...createEmptyDraft(),
       type,
       content: question.content || question.questionText || '',
+      contentBlocks: Array.isArray(metadata.contentBlocks) && metadata.contentBlocks.length ? metadata.contentBlocks : createEmptyDraft().contentBlocks,
       isPublished: Boolean(question.isPublished),
       options: metadata.options || question.options || ['', '', '', ''],
+      optionsRich: Array.isArray(metadata.optionsRich) && metadata.optionsRich.length ? metadata.optionsRich : createEmptyDraft().optionsRich,
       correctIndices: metadata.correctIndices || (Number.isInteger(question.correctIndex) ? [question.correctIndex] : [0]),
       explanation: metadata.explanation || question.explanation || '',
       correctAnswer: metadata.correctAnswer === true,
@@ -722,33 +731,41 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
         <>
           <label className="instructor-question-bank-form-label">Các lựa chọn đáp án</label>
           <div className="instructor-question-bank-options-list">
-            {draft.options.map((option, index) => (
-              <label className="instructor-question-bank-option-row" key={`option-${index + 1}`}>
-                <input
-                  checked={draft.correctIndices.includes(index)}
-                  className="instructor-question-bank-option-radio"
-                  onChange={() => toggleCorrectIndex(index)}
-                  name="question-correct-answer"
-                  type="radio"
+            {draft.optionsRich.map((optionBlocks, index) => (
+              <div className="instructor-question-bank-option-row" key={`option-${index + 1}`} style={{ alignItems: 'stretch', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input
+                    checked={draft.correctIndices.includes(index)}
+                    className="instructor-question-bank-option-radio"
+                    onChange={() => toggleCorrectIndex(index)}
+                    name="question-correct-answer"
+                    type="radio"
+                  />
+                  <span className="instructor-question-bank-option-letter">{String.fromCharCode(65 + index)}</span>
+                  <span style={{ fontWeight: 600, color: '#374151' }}>Đáp án {String.fromCharCode(65 + index)}</span>
+                  <button
+                    className="instructor-question-bank-btn-icon delete"
+                    onClick={() => removeOption(index)}
+                    title="Xóa lựa chọn"
+                    type="button"
+                    disabled={draft.optionsRich.length <= 2}
+                  >
+                    −
+                  </button>
+                </div>
+                <RichContentEditor
+                  title=""
+                  helperText="Có thể dùng văn bản, ảnh hoặc video cho đáp án này."
+                  value={optionBlocks}
+                  onChange={(nextBlocks) => {
+                    const nextRich = [...draft.optionsRich];
+                    nextRich[index] = nextBlocks;
+                    const nextOptions = [...draft.options];
+                    nextOptions[index] = richContentToPlainText(nextBlocks);
+                    setDraft((prev) => ({ ...prev, optionsRich: nextRich, options: nextOptions }));
+                  }}
                 />
-                <span className="instructor-question-bank-option-letter">{String.fromCharCode(65 + index)}</span>
-                <input
-                  className="instructor-question-bank-option-input"
-                  onChange={(event) => handleOptionChange(index, event.target.value)}
-                  placeholder={`Nhập đáp án ${String.fromCharCode(65 + index)}`}
-                  type="text"
-                  value={option}
-                />
-                <button
-                  className="instructor-question-bank-btn-icon delete"
-                  onClick={() => removeOption(index)}
-                  title="Xóa lựa chọn"
-                  type="button"
-                  disabled={draft.options.length <= 2}
-                >
-                  −
-                </button>
-              </label>
+              </div>
             ))}
           </div>
           <button
@@ -1110,12 +1127,15 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
             <>
               <div className="instructor-question-bank-form-group">
                 <label className="instructor-question-bank-form-label" htmlFor="question-content">Nội dung câu hỏi</label>
-                <textarea
-                  className="instructor-question-bank-form-control"
-                  id="question-content"
-                  onChange={(event) => setDraft((prev) => ({ ...prev, content: event.target.value }))}
-                  placeholder="Nhập nội dung câu hỏi..."
-                  value={draft.content}
+                <RichContentEditor
+                  title=""
+                  helperText="Có thể thêm văn bản, ảnh hoặc video cho nội dung câu hỏi."
+                  value={draft.contentBlocks}
+                  onChange={(nextBlocks) => setDraft((prev) => ({
+                    ...prev,
+                    contentBlocks: nextBlocks,
+                    content: richContentToPlainText(nextBlocks),
+                  }))}
                 />
               </div>
 

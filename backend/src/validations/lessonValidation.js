@@ -44,6 +44,11 @@ const segmentContentItemSchema = z
     title: z.string().trim().max(255).optional(),
     content: z.string().trim().max(5000).optional(),
     resourceUrl: z.string().trim().url().max(1000).optional().or(z.literal('')),
+    // Optional fields to support quiz setup from question bank
+    questionIds: z.array(z.coerce.number().int().positive()).optional(),
+    questionTitles: z.array(z.string()).optional(),
+    randomize: z.boolean().optional(),
+    randomCount: z.coerce.number().int().min(0).optional(),
     startTime: z.coerce.number().int().min(0).optional(),
     endTime: z.coerce.number().int().min(1).optional(),
     orderIndex: z.coerce.number().int().min(1).optional(),
