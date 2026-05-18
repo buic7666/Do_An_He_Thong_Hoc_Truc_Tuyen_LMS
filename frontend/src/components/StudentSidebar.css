@@ -1,0 +1,79 @@
+.student-shared-sidebar {
+  width: 250px;
+  background-color: #ffffff;
+  border-right: 1px solid #dadce0;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.student-shared-brand {
+  padding: 24px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a73e8;
+  border-bottom: 1px solid #dadce0;
+}
+
+.student-shared-nav {
+  list-style: none;
+  padding: 20px 0;
+  flex: 1;
+}
+
+.student-shared-nav-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 14px 24px;
+  color: #5f6368;
+  background: transparent;
+  border: 0;
+  border-left: 4px solid transparent;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.student-shared-nav-button:hover {
+  background-color: #f8f9fa;
+  color: #1a73e8;
+}
+
+.student-shared-nav-button.is-active {
+  background-color: #f0f7ff;
+  color: #1a73e8;
+  border-left-color: #1a73e8;
+}
+
+.student-shared-logout {
+  width: 100%;
+  padding: 20px 24px;
+  color: #d93025;
+  border: 0;
+  border-top: 1px solid #dadce0;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.student-shared-logout:hover {
+  background-color: #fce8e6;
+}
+
+@media (max-width: 900px) {
+  .student-shared-sidebar {
+    width: 70px;
+  }
+
+  .student-shared-brand,
+  .student-shared-nav-button span,
+  .student-shared-logout span {
+    display: none;
+  }
+}

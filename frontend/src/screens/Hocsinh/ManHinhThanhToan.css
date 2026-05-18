@@ -116,6 +116,12 @@
   gap: 12px;
 }
 
+.checkout-notice {
+  margin-top: 10px;
+  color: var(--checkout-text-gray);
+  font-size: 14px;
+}
+
 .checkout-input-field {
   flex: 1;
   padding: 14px 16px;

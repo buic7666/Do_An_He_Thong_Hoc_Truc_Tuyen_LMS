@@ -1,8 +1,8 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
 import './QuanLyNguoiDung.css';
-import { logout } from '../../utils/authSession';
+import AdminSidebar from '../../components/AdminSidebar';
 
 const usersSeed = [
   {
@@ -44,7 +44,6 @@ const usersSeed = [
 ];
 
 function QuanLyNguoiDung() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [roleFilter, setRoleFilter] = useState('');
   const [query, setQuery] = useState('');
@@ -54,12 +53,6 @@ function QuanLyNguoiDung() {
     const validRole = roleParam === 'instructor' || roleParam === 'student' ? roleParam : '';
     setRoleFilter(validRole);
   }, [searchParams]);
-
-  const handleLogout = () => {
-    logout({ navigate });
-  };
-
-  const goTo = (path) => () => navigate(path);
 
   const filteredUsers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -95,39 +88,7 @@ function QuanLyNguoiDung() {
 
   return (
     <div className="admin-users-page">
-      <aside className="admin-users-sidebar">
-        <div className="admin-users-brand">
-          <div className="admin-users-brand-icon">A</div>
-          <span>Admin Control</span>
-        </div>
-
-        <ul className="admin-users-nav-menu">
-          <li>
-            <button className="admin-users-nav-link" type="button" onClick={goTo('/admin/dashboard')}>
-              Bảng điều khiển
-            </button>
-          </li>
-          <li>
-            <button className="admin-users-nav-link active" type="button">
-              Quản lý người dùng
-            </button>
-          </li>
-          <li>
-            <button className="admin-users-nav-link" type="button" onClick={goTo('/admin/course-approval')}>
-              Phê duyệt khóa học
-            </button>
-          </li>
-          <li>
-            <button className="admin-users-nav-link" type="button" onClick={goTo('/admin/settings')}>
-              Cấu hình hệ thống
-            </button>
-          </li>
-        </ul>
-
-        <button className="admin-users-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <AdminSidebar />
 
       <main className="admin-users-main-content">
         <h1 className="admin-users-page-title">Quản lý tài khoản người dùng</h1>

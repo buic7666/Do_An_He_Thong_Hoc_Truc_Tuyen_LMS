@@ -93,6 +93,7 @@ const getCourseProgress = async (courseId, currentUser) => {
       totalLessons: 0,
       completedLessons: 0,
       completionPercent: 0,
+      completedLessonIds: [],
     };
   }
 
@@ -105,6 +106,7 @@ const getCourseProgress = async (courseId, currentUser) => {
     totalLessons: lessonIds.length,
     completedLessons,
     completionPercent,
+    completedLessonIds: completedProgress.map((item) => Number(item.lessonId)).filter(Boolean),
   };
 };
 

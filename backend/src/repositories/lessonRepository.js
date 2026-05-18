@@ -1,4 +1,4 @@
-const { Lesson, Course } = require('../models');
+const { Lesson, Course, LessonSegment } = require('../models');
 
 const findByCourseId = async (courseId) => {
   return Lesson.findAll({
@@ -18,6 +18,12 @@ const findByIdWithCourse = async (id) => {
         model: Course,
         as: 'course',
         attributes: ['id', 'title', 'description'],
+      },
+      {
+        model: LessonSegment,
+        as: 'segments',
+        attributes: ['id', 'startTime', 'endTime', 'duration', 'title'],
+        order: [['startTime', 'ASC']],
       },
     ],
   });

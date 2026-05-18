@@ -1,46 +1,80 @@
 ﻿import './ManHinhHoSoCaNhan.css';
-import { Link, useNavigate } from 'react-router-dom';
-import { logout } from '../../utils/authSession';
+import { useMemo, useState } from 'react';
+import { getCurrentUserSafely } from '../../utils/authRedirect';
+import StudentSidebar from '../../components/StudentSidebar';
 
 function ManHinhHoSoCaNhan() {
-  const navigate = useNavigate();
+  const currentUser = getCurrentUserSafely();
+  const [profileForm, setProfileForm] = useState({
+    fullName: currentUser?.name || currentUser?.fullName || '',
+    phone: currentUser?.phone || '',
+    email: currentUser?.email || '',
+    dob: currentUser?.dob || '',
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [profileMessage, setProfileMessage] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
 
-  const handleSubmit = (event) => {
+  const avatarCharacter = useMemo(() => {
+    const text = String(profileForm.fullName || profileForm.email || 'H').trim();
+    return text.charAt(0).toUpperCase();
+  }, [profileForm.email, profileForm.fullName]);
+
+  const handleSubmitProfile = (event) => {
     event.preventDefault();
+
+    const normalizedName = profileForm.fullName.trim();
+    if (!normalizedName) {
+      setProfileMessage('Họ và tên không được để trống.');
+      return;
+    }
+
+    const mergedUser = {
+      ...(currentUser || {}),
+      name: normalizedName,
+      fullName: normalizedName,
+      phone: profileForm.phone.trim(),
+      dob: profileForm.dob,
+      email: profileForm.email,
+    };
+
+    sessionStorage.setItem('currentUser', JSON.stringify(mergedUser));
+    setProfileMessage('Đã lưu thông tin hồ sơ trên phiên làm việc hiện tại.');
   };
 
-  const handleLogout = (event) => {
+  const handleSubmitPassword = (event) => {
     event.preventDefault();
-    logout({ navigate });
+
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      setPasswordMessage('Vui lòng nhập đầy đủ thông tin đổi mật khẩu.');
+      return;
+    }
+
+    if (passwordForm.newPassword.length < 8) {
+      setPasswordMessage('Mật khẩu mới phải có ít nhất 8 ký tự.');
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordMessage('Xác nhận mật khẩu mới không khớp.');
+      return;
+    }
+
+    setPasswordMessage('Đã ghi nhận yêu cầu đổi mật khẩu (demo local).');
+    setPasswordForm({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
   };
 
   return (
     <div className='student-profile-page'>
-      <aside className='student-profile-sidebar'>
-        <div className='student-profile-brand'>LMS Platform</div>
-
-        <ul className='student-profile-nav-menu'>
-          <li>
-            <Link to='/dashboard' className='student-profile-nav-link'>
-              <span>📚 Khóa học của tôi</span>
-            </Link>
-          </li>
-          <li>
-            <Link to='/profile' className='student-profile-nav-link is-active'>
-              <span>👤 Hồ sơ cá nhân</span>
-            </Link>
-          </li>
-          <li>
-            <Link to='/transactions' className='student-profile-nav-link'>
-              <span>💳 Lịch sử giao dịch</span>
-            </Link>
-          </li>
-        </ul>
-
-        <Link to='/login' className='student-profile-logout-btn' onClick={handleLogout}>
-          <span>🚪 Đăng xuất</span>
-        </Link>
-      </aside>
+      <StudentSidebar />
 
       <main className='student-profile-main-content'>
         <h1 className='student-profile-page-title'>Hồ sơ của tôi</h1>
@@ -50,13 +84,13 @@ function ManHinhHoSoCaNhan() {
             <h2 className='student-profile-card-title'>Thông tin cơ bản</h2>
 
             <div className='student-profile-avatar-section'>
-              <div className='student-profile-avatar-image'>Đ</div>
+              <div className='student-profile-avatar-image'>{avatarCharacter}</div>
               <button type='button' className='student-profile-btn-change-avatar'>
                 📷 Thay đổi ảnh
               </button>
             </div>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmitProfile}>
               <div className='student-profile-form-grid'>
                 <div className='student-profile-input-group'>
                   <label className='student-profile-input-label' htmlFor='student-fullname'>
@@ -66,7 +100,13 @@ function ManHinhHoSoCaNhan() {
                     id='student-fullname'
                     type='text'
                     className='student-profile-input-field'
-                    defaultValue='Bùi Văn Đồng'
+                    value={profileForm.fullName}
+                    onChange={(event) =>
+                      setProfileForm((prev) => ({
+                        ...prev,
+                        fullName: event.target.value,
+                      }))
+                    }
                   />
                 </div>
 
@@ -78,7 +118,13 @@ function ManHinhHoSoCaNhan() {
                     id='student-phone'
                     type='tel'
                     className='student-profile-input-field'
-                    defaultValue='0912 345 678'
+                    value={profileForm.phone}
+                    onChange={(event) =>
+                      setProfileForm((prev) => ({
+                        ...prev,
+                        phone: event.target.value,
+                      }))
+                    }
                   />
                 </div>
 
@@ -90,7 +136,7 @@ function ManHinhHoSoCaNhan() {
                     id='student-email'
                     type='email'
                     className='student-profile-input-field'
-                    defaultValue='dong.buivan@student.tlu.edu.vn'
+                    value={profileForm.email}
                     disabled
                   />
                 </div>
@@ -103,10 +149,18 @@ function ManHinhHoSoCaNhan() {
                     id='student-dob'
                     type='date'
                     className='student-profile-input-field'
-                    defaultValue='2003-01-15'
+                    value={profileForm.dob}
+                    onChange={(event) =>
+                      setProfileForm((prev) => ({
+                        ...prev,
+                        dob: event.target.value,
+                      }))
+                    }
                   />
                 </div>
               </div>
+
+              {profileMessage ? <p className='student-profile-form-message'>{profileMessage}</p> : null}
 
               <div className='student-profile-action-right'>
                 <button type='submit' className='student-profile-btn-submit student-profile-btn-primary'>
@@ -119,7 +173,7 @@ function ManHinhHoSoCaNhan() {
           <section className='student-profile-card'>
             <h2 className='student-profile-card-title'>Đổi mật khẩu</h2>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmitPassword}>
               <div className='student-profile-form-column'>
                 <div className='student-profile-input-group'>
                   <label className='student-profile-input-label' htmlFor='student-current-pwd'>
@@ -130,6 +184,13 @@ function ManHinhHoSoCaNhan() {
                     type='password'
                     className='student-profile-input-field'
                     placeholder='Nhập mật khẩu hiện tại'
+                    value={passwordForm.currentPassword}
+                    onChange={(event) =>
+                      setPasswordForm((prev) => ({
+                        ...prev,
+                        currentPassword: event.target.value,
+                      }))
+                    }
                   />
                 </div>
 
@@ -142,6 +203,13 @@ function ManHinhHoSoCaNhan() {
                     type='password'
                     className='student-profile-input-field'
                     placeholder='Mật khẩu mới (Tối thiểu 8 ký tự)'
+                    value={passwordForm.newPassword}
+                    onChange={(event) =>
+                      setPasswordForm((prev) => ({
+                        ...prev,
+                        newPassword: event.target.value,
+                      }))
+                    }
                   />
                 </div>
 
@@ -154,8 +222,17 @@ function ManHinhHoSoCaNhan() {
                     type='password'
                     className='student-profile-input-field'
                     placeholder='Nhập lại mật khẩu mới'
+                    value={passwordForm.confirmPassword}
+                    onChange={(event) =>
+                      setPasswordForm((prev) => ({
+                        ...prev,
+                        confirmPassword: event.target.value,
+                      }))
+                    }
                   />
                 </div>
+
+                {passwordMessage ? <p className='student-profile-form-message'>{passwordMessage}</p> : null}
 
                 <div>
                   <button type='submit' className='student-profile-btn-submit student-profile-btn-outline'>

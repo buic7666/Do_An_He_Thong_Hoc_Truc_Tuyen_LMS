@@ -18,6 +18,21 @@
   line-height: 1.6;
 }
 
+.course-list-page.is-student {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.course-list-student-shell {
+  display: flex;
+  height: 100%;
+}
+
+.course-list-student-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
 .course-list-page a {
   text-decoration: none;
   color: inherit;
@@ -149,6 +164,11 @@
   transition: var(--course-list-transition);
 }
 
+.course-list-card-link {
+  text-decoration: none;
+  color: inherit;
+}
+
 .course-list-card:hover {
   transform: translateY(-5px);
   box-shadow: var(--course-list-shadow-md);
@@ -174,6 +194,18 @@
   font-weight: 600;
   text-transform: uppercase;
   color: var(--course-list-primary-color);
+}
+
+.course-list-duration {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-bottom: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #e8f4ff;
+  color: var(--course-list-primary-color);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .course-list-title {
@@ -208,6 +240,52 @@
   margin-top: 20px;
   color: var(--course-list-text-light);
   font-size: 15px;
+}
+
+.course-list-action-message {
+  margin-bottom: 16px;
+  color: var(--course-list-text-light);
+}
+
+.course-list-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 20px 20px;
+}
+
+.course-list-action-btn {
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--course-list-primary-color);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  transition: var(--course-list-transition);
+}
+
+.course-list-action-btn-outline {
+  background: transparent;
+  color: var(--course-list-primary-color);
+}
+
+.course-list-action-btn-outline:hover {
+  background: #f0f7ff;
+}
+
+.course-list-action-btn-primary {
+  background: var(--course-list-primary-color);
+  color: var(--course-list-white);
+}
+
+.course-list-action-btn-primary:hover {
+  background: var(--course-list-primary-hover);
+}
+
+.course-list-action-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 @media (max-width: 900px) {

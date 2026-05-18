@@ -1,10 +1,9 @@
 ﻿import { useMemo, useState } from 'react';
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import './ManHinhTheoDoi_DSoHocvien.css';
+import TeacherSidebar from '../../components/TeacherSidebar';
 import { fetchTeacherDashboardApi } from '../../api/teacherApi';
-import { logout } from '../../utils/authSession';
 
 const formatDate = (value) => {
   if (!value) return '';
@@ -14,10 +13,6 @@ const formatDate = (value) => {
 const getInitial = (name) => (name || 'H').trim().charAt(0).toUpperCase();
 
 function ManHinhTheoDoiDSoHocvien() {
-  const navigate = useNavigate();
-  const handleLogout = () => {
-    logout({ navigate });
-  };
   const [enrollments, setEnrollments] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState('all');
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -50,6 +45,24 @@ function ManHinhTheoDoiDSoHocvien() {
     });
   }, [enrollments, searchKeyword, selectedCourse]);
 
+  const getProgressValue = (student) => {
+    const value = Number(student?.progressPercent || 0);
+    if (!Number.isFinite(value) || value < 0) return 0;
+    if (value > 100) return 100;
+    return value;
+  };
+
+  const getProgressLabel = (student) => {
+    const progressValue = getProgressValue(student);
+    const completedLessons = Number(student?.completedLessons || 0);
+    const totalLessons = Number(student?.totalLessons || 0);
+    return totalLessons > 0 ? `${completedLessons}/${totalLessons} bài học` : 'Chưa có bài học';
+  };
+
+  const getStatusLabel = (student) => {
+    return getProgressValue(student) >= 100 ? 'Hoàn thành' : 'Đang học';
+  };
+
   const sendMessage = (studentName) => {
     // Placeholder action until API integration is ready.
     // eslint-disable-next-line no-alert
@@ -58,54 +71,7 @@ function ManHinhTheoDoiDSoHocvien() {
 
   return (
     <div className="instructor-progress-page">
-      <aside className="instructor-progress-sidebar">
-        <div className="instructor-progress-brand">
-          <div className="instructor-progress-brand-icon">L</div>
-          <span>LMS Admin</span>
-        </div>
-
-        <ul className="instructor-progress-nav-menu">
-          <li>
-            <button className="instructor-progress-nav-link" onClick={() => navigate('/teacher/dashboard')} type="button">
-              Tổng quan
-            </button>
-          </li>
-          <li>
-            <button className="instructor-progress-nav-link" onClick={() => navigate('/teacher/courses')} type="button">
-              Quản lý khóa học
-            </button>
-          </li>
-          <li>
-            <button className="instructor-progress-nav-link" onClick={() => navigate('/teacher/questions')} type="button">
-              Ngân hàng câu hỏi
-            </button>
-          </li>
-          <li>
-            <button className="instructor-progress-nav-link active" onClick={() => navigate('/teacher/students')} type="button">
-              Quản lý học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-progress-nav-link" onClick={() => navigate('/teacher/interaction')} type="button">
-              Tương tác học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-progress-nav-link" onClick={() => navigate('/teacher/profile')} type="button">
-              Hồ sơ giảng viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-progress-nav-link" onClick={() => navigate('/teacher/revenue')} type="button">
-              Doanh thu
-            </button>
-          </li>
-        </ul>
-
-              <button className="instructor-progress-logout-btn" type="button" onClick={handleLogout}>
-                Đăng xuất
-              </button>
-      </aside>
+      <TeacherSidebar />
 
       <main className="instructor-progress-main-content">
         <div className="instructor-progress-page-header">
@@ -170,15 +136,27 @@ function ManHinhTheoDoiDSoHocvien() {
                   <td>{formatDate(student.createdAt)}</td>
                   <td>
                     <div className="instructor-progress-progress-wrapper">
-                      <div className="instructor-progress-progress-text">100%</div>
+                      <div className="instructor-progress-progress-text">{`${getProgressValue(student)}%`}</div>
                       <div className="instructor-progress-progress-track">
-                        <div className="instructor-progress-progress-fill" style={{ width: '100%' }} />
+                        <div
+                          className="instructor-progress-progress-fill"
+                          style={{ width: `${getProgressValue(student)}%` }}
+                        />
                       </div>
+                      <div className="instructor-progress-progress-detail">{getProgressLabel(student)}</div>
                     </div>
                   </td>
                   <td className="instructor-progress-score-text muted">Chua cap nhat</td>
                   <td>
-                    <span className="instructor-progress-status-badge instructor-progress-status-learning">Dang hoc</span>
+                    <span
+                      className={`instructor-progress-status-badge ${
+                        getProgressValue(student) >= 100
+                          ? 'instructor-progress-status-complete'
+                          : 'instructor-progress-status-learning'
+                      }`}
+                    >
+                      {getStatusLabel(student)}
+                    </span>
                   </td>
                   <td className="center">
                     <button className="instructor-progress-btn-action" onClick={() => sendMessage(student.studentName)} title="Gui tin nhan" type="button">

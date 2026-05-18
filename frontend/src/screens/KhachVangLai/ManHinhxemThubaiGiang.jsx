@@ -99,7 +99,7 @@ function ManHinhxemThubaiGiang() {
             </>
           )}
 
-          <Link to='/register' className='guest-preview-btn-register'>
+          <Link to={`/login?redirect=${encodeURIComponent(`/enroll/${courseId || ''}`)}`} className='guest-preview-btn-register'>
             🚀 Đăng ký tài khoản ngay
           </Link>
         </div>

@@ -1,99 +1,133 @@
 ﻿import './BangDieuKhienCaNhan.css';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { logout } from '../../utils/authSession';
-
-const stats = [
-  {
-    id: 1,
-    icon: '📖',
-    value: 3,
-    label: 'Khóa học đang học',
-    iconClass: 'student-dashboard-stat-icon is-primary',
-  },
-  {
-    id: 2,
-    icon: '✅',
-    value: 5,
-    label: 'Khóa học hoàn thành',
-    iconClass: 'student-dashboard-stat-icon is-success',
-  },
-  {
-    id: 3,
-    icon: '🏆',
-    value: 2,
-    label: 'Chứng chỉ đạt được',
-    iconClass: 'student-dashboard-stat-icon is-warning',
-  },
-];
-
-const courses = [
-  {
-    id: 1,
-    title: 'Xây dựng ứng dụng quản lý nhà trọ HousePal với Flutter',
-    image: 'https://via.placeholder.com/400x250/1A73E8/FFFFFF?text=Flutter+HousePal',
-    progress: 45,
-    alt: 'Flutter',
-  },
-  {
-    id: 2,
-    title: 'Trí tuệ nhân tạo: Nhập môn Reinforcement Learning',
-    image: 'https://via.placeholder.com/400x250/34A853/FFFFFF?text=Reinforcement+Learning',
-    progress: 80,
-    alt: 'Reinforcement Learning',
-  },
-  {
-    id: 3,
-    title: 'JavaScript chuyên sâu cho hệ thống Backend',
-    image: 'https://via.placeholder.com/400x250/f9ab00/FFFFFF?text=JavaScript+Backend',
-    progress: 15,
-    alt: 'JavaScript Backend',
-  },
-];
+import { fetchCourseDetailApi, fetchCourseProgressApi } from '../../api/courseApi';
+import { fetchMyEnrollmentsApi } from '../../api/enrollmentApi';
+import { getCurrentUserSafely } from '../../utils/authRedirect';
+import { getCourseImageDataUrl } from '../../utils/courseImage';
+import { getCourseDurationLabel } from '../../utils/courseDurationLabel';
+import StudentSidebar from '../../components/StudentSidebar';
 
 function BangDieuKhienCaNhan() {
   const navigate = useNavigate();
+  const currentUser = getCurrentUserSafely();
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [courses, setCourses] = useState([]);
 
-  const handleLogout = () => {
-    logout({ navigate });
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadDashboardData = async () => {
+      setIsLoading(true);
+      setErrorMessage('');
+
+      try {
+        const enrollments = await fetchMyEnrollmentsApi();
+        const enrolledCourses = Array.isArray(enrollments) ? enrollments : [];
+
+        const resolvedCourses = await Promise.all(
+          enrolledCourses.map(async (enrollment) => {
+            const [detail, progress] = await Promise.all([
+              fetchCourseDetailApi(enrollment.courseId),
+              fetchCourseProgressApi(enrollment.courseId).catch(() => null),
+            ]);
+
+            const sortedLessons = [...(Array.isArray(detail?.lessons) ? detail.lessons : [])].sort(
+              (left, right) => Number(left.orderIndex || 0) - Number(right.orderIndex || 0),
+            );
+
+            return {
+              id: enrollment.courseId,
+              title: detail?.title || enrollment?.course?.title || 'Khóa học',
+              image: getCourseImageDataUrl(detail?.title || enrollment?.course?.title || 'Course', enrollment.courseId),
+              alt: detail?.title || enrollment?.course?.title || 'Course',
+              durationLabel: getCourseDurationLabel(detail || enrollment?.course),
+              progressPercent: Number(progress?.completionPercent || 0),
+              completedLessons: Number(progress?.completedLessons || 0),
+              totalLessons: Number(progress?.totalLessons || sortedLessons.length || 0),
+              firstLessonId: sortedLessons.length > 0 ? sortedLessons[0].id : null,
+            };
+          }),
+        );
+
+        if (!isCancelled) {
+          setCourses(resolvedCourses);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setErrorMessage(error?.response?.data?.message || 'Không tải được dữ liệu dashboard.');
+          setCourses([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadDashboardData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  const stats = useMemo(() => {
+    const totalCourses = courses.length;
+    const completedCourses = courses.filter((course) => course.progressPercent >= 100).length;
+
+    return [
+      {
+        id: 1,
+        icon: '📖',
+        value: totalCourses,
+        label: 'Khóa học đang học',
+        iconClass: 'student-dashboard-stat-icon is-primary',
+      },
+      {
+        id: 2,
+        icon: '✅',
+        value: completedCourses,
+        label: 'Khóa học hoàn thành',
+        iconClass: 'student-dashboard-stat-icon is-success',
+      },
+      {
+        id: 3,
+        icon: '🏆',
+        value: completedCourses,
+        label: 'Chứng chỉ đạt được',
+        iconClass: 'student-dashboard-stat-icon is-warning',
+      },
+    ];
+  }, [courses]);
+
+  const goToLearn = (course) => {
+    if (!course?.firstLessonId) {
+      return;
+    }
+
+    navigate(`/learn?courseId=${course.id}&lessonId=${course.firstLessonId}`);
+  };
+
+  const getAvatarCharacter = () => {
+    const name = String(currentUser?.name || currentUser?.fullName || 'H').trim();
+    return name.charAt(0).toUpperCase();
   };
 
   return (
     <div className='student-dashboard'>
-      <aside className='student-dashboard-sidebar'>
-        <div className='student-dashboard-brand'>LMS Platform</div>
-
-        <ul className='student-dashboard-nav'>
-          <li>
-            <button type='button' className='student-dashboard-nav-link is-active'>
-              📚 Khóa học của tôi
-            </button>
-          </li>
-          <li>
-            <button type='button' className='student-dashboard-nav-link'>
-              👤 Hồ sơ cá nhân
-            </button>
-          </li>
-          <li>
-            <button type='button' className='student-dashboard-nav-link'>
-              💳 Lịch sử giao dịch
-            </button>
-          </li>
-        </ul>
-
-        <button type='button' className='student-dashboard-logout' onClick={handleLogout}>
-          🚪 Đăng xuất
-        </button>
-      </aside>
+      <StudentSidebar />
 
       <main className='student-dashboard-main'>
         <header className='student-dashboard-header'>
           <div>
-            <h1>Chào mừng trở lại, Đồng!</h1>
+            <h1>Chào mừng trở lại, {currentUser?.name || currentUser?.fullName || 'Bạn'}!</h1>
             <p>Tiếp tục hành trình học tập của bạn ngay hôm nay.</p>
           </div>
 
           <div className='student-dashboard-user'>
-            <div className='student-dashboard-avatar'>Đ</div>
+            <div className='student-dashboard-avatar'>{getAvatarCharacter()}</div>
           </div>
         </header>
 
@@ -112,26 +146,59 @@ function BangDieuKhienCaNhan() {
         <section>
           <h2 className='student-dashboard-section-title'>Khóa học đang diễn ra</h2>
 
+          {isLoading ? <p className='student-dashboard-state-text'>Đang tải danh sách khóa học...</p> : null}
+          {!isLoading && errorMessage ? <p className='student-dashboard-state-text'>{errorMessage}</p> : null}
+          {!isLoading && !errorMessage && courses.length === 0 ? (
+            <p className='student-dashboard-state-text'>Bạn chưa đăng ký khóa học nào.</p>
+          ) : null}
+
           <div className='student-dashboard-courses'>
             {courses.map((course) => (
-              <article key={course.id} className='student-dashboard-course-card'>
+              <article
+                key={course.id}
+                className='student-dashboard-course-card is-clickable'
+                role='button'
+                tabIndex={0}
+                onClick={() => goToLearn(course)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    goToLearn(course);
+                  }
+                }}
+              >
                 <img src={course.image} alt={course.alt} className='student-dashboard-course-thumb' />
 
                 <div className='student-dashboard-course-body'>
+                  <span className='student-dashboard-course-duration'>{course.durationLabel}</span>
                   <h3 className='student-dashboard-course-title'>{course.title}</h3>
 
                   <div className='student-dashboard-progress-wrap'>
                     <div className='student-dashboard-progress-text'>
                       <span>Tiến độ học tập</span>
-                      <span className='student-dashboard-progress-value'>{course.progress}%</span>
+                      <span className='student-dashboard-progress-value'>{course.progressPercent}%</span>
+                    </div>
+
+                    <div className='student-dashboard-progress-text'>
+                      <span>
+                        {course.completedLessons}/{course.totalLessons} bài học
+                      </span>
                     </div>
 
                     <div className='student-dashboard-progress-bg'>
-                      <div className='student-dashboard-progress-fill' style={{ width: `${course.progress}%` }} />
+                      <div className='student-dashboard-progress-fill' style={{ width: `${course.progressPercent}%` }} />
                     </div>
                   </div>
 
-                  <button type='button' className='student-dashboard-continue'>
+                  <button
+                    type='button'
+                    className='student-dashboard-continue'
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      goToLearn(course);
+                    }}
+                    disabled={!course.firstLessonId}
+                  >
                     ▶ Tiếp tục học
                   </button>
                 </div>

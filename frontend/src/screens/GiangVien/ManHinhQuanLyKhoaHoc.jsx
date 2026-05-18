@@ -1,662 +1,1319 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import TeacherSidebar from '../../components/TeacherSidebar';
+import httpClient from '../../api/httpClient';
+import {
+  bulkCreateLessonSegmentsApi,
+  createCourseApi,
+  createCourseChapterApi,
+  createLessonApi,
+  createLessonSegmentApi,
+  deleteLessonSegmentApi,
+  deleteLessonApi,
+  getCourseChaptersApi,
+  fetchCourseLessonsApi,
+  fetchLessonSegmentsApi,
+  updateCourseChapterApi,
+  updateLessonApi,
+  updateLessonSegmentApi,
+  deleteChapterApi,
+  deleteCourseApi,
+} from '../../api/teacherManagementApi';
 
 import './ManHinhQuanLyKhoaHoc.css';
-import { fetchCoursesApi } from '../../api/courseApi';
-import { uploadTeacherFileApi } from '../../api/teacherApi';
-import { getCurrentUserSafely } from '../../utils/authRedirect';
-import { logout } from '../../utils/authSession';
 
-const initialSections = [
-  {
-    id: 's1',
-    title: 'Chương 1: Khởi tạo dự án & Setup môi trường',
-    lessons: [
-      {
-        id: 'l1',
-        title: 'Bài 1: Cài đặt Flutter SDK và Android Studio',
-        expanded: false,
-        videoUrl: '',
-        videoName: '',
-        pdfUrl: '',
-        pdfName: '',
-      },
-      {
-        id: 'l2',
-        title: 'Bài 2: Cấu trúc thư mục chuẩn cho dự án',
-        expanded: true,
-        videoUrl: '',
-        videoName: '',
-        pdfUrl: '',
-        pdfName: '',
-      },
-    ],
-  },
-  {
-    id: 's2',
-    title: 'Chương 2: Xây dựng UI/UX cho module Đăng nhập',
-    lessons: [],
-  },
-];
+const emptyCourseDraft = {
+  title: '',
+  description: '',
+  price: '',
+};
+
+const emptyLessonDraft = {
+  title: '',
+  videoUrl: '',
+  content: '',
+  chapterId: '',
+  orderIndex: '',
+};
+
+const emptySegmentDraft = {
+  startTime: '',
+  endTime: '',
+  title: '',
+};
+
+const normalizeYouTubeVideoId = (candidate) => {
+  if (!candidate) return null;
+
+  const trimmed = String(candidate).trim();
+  const id = trimmed.split(/[?&#/]/)[0];
+  return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+};
+
+const getYouTubeVideoId = (rawUrl) => {
+  if (!rawUrl) return null;
+
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.replace('www.', '');
+
+    if (host === 'youtu.be') {
+      return normalizeYouTubeVideoId(url.pathname.slice(1));
+    }
+
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      if (url.pathname === '/watch') {
+        return normalizeYouTubeVideoId(url.searchParams.get('v'));
+      }
+
+      if (url.pathname.startsWith('/embed/')) {
+        return normalizeYouTubeVideoId(url.pathname.split('/embed/')[1]);
+      }
+
+      if (url.pathname.startsWith('/shorts/')) {
+        return normalizeYouTubeVideoId(url.pathname.split('/shorts/')[1]);
+      }
+    }
+  } catch (_error) {
+    return null;
+  }
+
+  return null;
+};
+
+const parseVideoTimestamp = (rawValue) => {
+  if (rawValue === null || rawValue === undefined) return null;
+
+  const normalized = String(rawValue).trim();
+  if (!normalized) return null;
+
+  if (/^\d+$/.test(normalized)) {
+    return Number(normalized);
+  }
+
+  const parts = normalized.split(':').map((part) => Number(part));
+  if (parts.some((part) => Number.isNaN(part))) {
+    return null;
+  }
+
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  }
+
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+
+  return null;
+};
+
+const formatVideoTimestamp = (seconds) => {
+  const total = Math.max(0, Number(seconds || 0));
+  const hrs = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = Math.floor(total % 60);
+
+  if (hrs > 0) {
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+};
+
+const buildSegmentsFromMarkerInput = (rawValue) => {
+  const markers = rawValue
+    .split(/[\n,;]+/)
+    .map((part) => parseVideoTimestamp(part))
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => left - right);
+
+  const uniqueMarkers = [...new Set(markers)];
+
+  if (uniqueMarkers.length < 2) {
+    throw new Error('Nhập ít nhất 2 mốc thời gian để tách nhanh.');
+  }
+
+  return uniqueMarkers.slice(0, -1).map((startTime, index) => {
+    const endTime = uniqueMarkers[index + 1];
+
+    if (endTime <= startTime) {
+      throw new Error('Các mốc phải tăng dần và không được trùng nhau.');
+    }
+
+    return {
+      startTime,
+      endTime,
+      title: `Phần ${index + 1} (${formatVideoTimestamp(startTime)} - ${formatVideoTimestamp(endTime)})`,
+    };
+  });
+};
 
 function ManHinhQuanLyKhoaHoc() {
-  const navigate = useNavigate();
-  const handleLogout = () => {
-    logout({ navigate });
+  const [courses, setCourses] = useState([]);
+  const [selectedCourseId, setSelectedCourseId] = useState(null);
+  const [chapters, setChapters] = useState([]);
+  const [selectedChapterId, setSelectedChapterId] = useState(null);
+  const [lessons, setLessons] = useState([]);
+  const [isLoadingCourses, setIsLoadingCourses] = useState(true);
+  const [isLoadingChapters, setIsLoadingChapters] = useState(false);
+  const [isLoadingLessons, setIsLoadingLessons] = useState(false);
+  const [courseDraft, setCourseDraft] = useState(emptyCourseDraft);
+  const [chapterTitle, setChapterTitle] = useState('');
+  const [chapterDescription, setChapterDescription] = useState('');
+  const [lessonDraft, setLessonDraft] = useState(emptyLessonDraft);
+  const [editingLesson, setEditingLesson] = useState(null);
+  const [segmentDraft, setSegmentDraft] = useState(emptySegmentDraft);
+  const [editingSegment, setEditingSegment] = useState(null);
+  const [quickSplitMarkers, setQuickSplitMarkers] = useState('');
+  const [selectedLessonId, setSelectedLessonId] = useState(null);
+  const [segments, setSegments] = useState([]);
+  const [isLoadingSegments, setIsLoadingSegments] = useState(false);
+  const [previewStartSeconds, setPreviewStartSeconds] = useState(0);
+  const [previewNonce, setPreviewNonce] = useState(0);
+  const [editingChapter, setEditingChapter] = useState(null);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // Get current user from sessionStorage
+  useEffect(() => {
+    try {
+      const userJson = sessionStorage.getItem('currentUser');
+      if (userJson) {
+        const user = JSON.parse(userJson);
+        setCurrentUser(user);
+      }
+    } catch (_error) {
+      // Ignore
+    }
+  }, []);
+
+  const isCurrentUserOwner = (course) => {
+    if (!currentUser || !course) return false;
+    return Number(course.instructor?.id) === Number(currentUser.id);
   };
-  const [courseName, setCourseName] = useState('Xây dựng ứng dụng HousePal với Flutter');
-  const [shortDescription, setShortDescription] = useState('Hướng dẫn toàn diện cách phát triển ứng dụng di động quản lý phòng trọ...');
-  const [price, setPrice] = useState('599000');
-  const [specialization, setSpecialization] = useState('Software Engineering');
-  const [sections, setSections] = useState(initialSections);
-  const [myCourses, setMyCourses] = useState([]);
-  const [coverImageUrl, setCoverImageUrl] = useState('');
-  const [coverImageName, setCoverImageName] = useState('');
-  const [uploadMessage, setUploadMessage] = useState('');
-  const [editingSectionId, setEditingSectionId] = useState(null);
-  const [editingText, setEditingText] = useState('');
-  const [editingLessonId, setEditingLessonId] = useState(null);
-  const [editingLessonSectionId, setEditingLessonSectionId] = useState(null);
-  const [editingLessonText, setEditingLessonText] = useState('');
-  const coverInputRef = useRef(null);
-  const editInputRef = useRef(null);
-  const editLessonInputRef = useRef(null);
+
+  const loadCourses = async () => {
+    setIsLoadingCourses(true);
+    setStatusMessage('');
+
+    try {
+      const response = await httpClient.get('/courses');
+      const items = Array.isArray(response?.data?.data) ? response.data.data : [];
+      setCourses(items);
+
+      if (items.length > 0) {
+        const firstCourseId = items[0].id;
+        setSelectedCourseId(firstCourseId);
+        await loadChapters(firstCourseId);
+        await loadLessons(firstCourseId);
+      } else {
+        setSelectedCourseId(null);
+        setChapters([]);
+        setLessons([]);
+        setSelectedLessonId(null);
+        setSegments([]);
+      }
+    } catch (error) {
+      setStatusMessage(error?.response?.data?.message || 'Không thể tải danh sách khóa học.');
+      setCourses([]);
+      setChapters([]);
+    } finally {
+      setIsLoadingCourses(false);
+    }
+  };
+
+  const loadChapters = async (courseId) => {
+    if (!courseId) return;
+
+    setIsLoadingChapters(true);
+    try {
+      const items = await getCourseChaptersApi(courseId);
+      setChapters(Array.isArray(items) ? items : []);
+      setSelectedChapterId(null);
+    } catch (error) {
+      setStatusMessage(error?.response?.data?.message || 'Không thể tải chương học.');
+      setChapters([]);
+      setSelectedChapterId(null);
+    } finally {
+      setIsLoadingChapters(false);
+    }
+  };
+
+  const loadLessons = async (courseId) => {
+    if (!courseId) return;
+
+    setIsLoadingLessons(true);
+    try {
+      const items = await fetchCourseLessonsApi(courseId);
+      const normalized = Array.isArray(items) ? items : [];
+      setLessons(normalized);
+
+      if (normalized.length > 0) {
+        if (!selectedLessonId || !normalized.some((lesson) => lesson.id === selectedLessonId)) {
+          setSelectedLessonId(normalized[0].id);
+          await loadSegments(normalized[0].id);
+        }
+      } else {
+        setSelectedLessonId(null);
+        setSegments([]);
+      }
+    } catch (error) {
+      setStatusMessage(error?.response?.data?.message || 'Không thể tải bài học.');
+      setLessons([]);
+      setSegments([]);
+    } finally {
+      setIsLoadingLessons(false);
+    }
+  };
+
+  const loadSegments = async (lessonId) => {
+    if (!lessonId) {
+      setSegments([]);
+      return;
+    }
+
+    setIsLoadingSegments(true);
+    try {
+      const items = await fetchLessonSegmentsApi(lessonId);
+      setSegments(Array.isArray(items) ? items : []);
+    } catch (error) {
+      setStatusMessage(error?.response?.data?.message || 'Không thể tải đoạn video.');
+      setSegments([]);
+    } finally {
+      setIsLoadingSegments(false);
+    }
+  };
 
   useEffect(() => {
-    const loadCourses = async () => {
-      try {
-        const data = await fetchCoursesApi();
-        const currentUser = getCurrentUserSafely();
-        const teacherCourses = (Array.isArray(data) ? data : []).filter((course) => Number(course?.instructor?.id) === Number(currentUser?.id));
-
-        setMyCourses(teacherCourses);
-
-        if (teacherCourses.length > 0) {
-          setCourseName(teacherCourses[0].title || '');
-          setShortDescription(teacherCourses[0].description || '');
-          setPrice(String(Number(teacherCourses[0].price || 0)));
-        }
-      } catch (_error) {
-        setMyCourses([]);
-      }
-    };
-
     loadCourses();
   }, []);
 
-  const totalStudents = useMemo(
-    () => myCourses.reduce((sum, course) => sum + Number(course.totalStudents || 0), 0),
-    [myCourses],
+  const myCoursesOnly = useMemo(() => {
+    if (!currentUser) return courses; // Fallback to all courses while loading
+    return courses.filter((course) => Number(course.instructor?.id) === Number(currentUser.id));
+  }, [courses, currentUser]);
+
+  const totalCourses = useMemo(() => myCoursesOnly.length, [myCoursesOnly]);
+  const totalChapters = useMemo(() => chapters.length, [chapters]);
+  
+  const filteredLessons = useMemo(() => {
+    if (!selectedChapterId) {
+      return lessons;
+    }
+    return lessons.filter((lesson) => Number(lesson.chapterId) === Number(selectedChapterId));
+  }, [lessons, selectedChapterId]);
+  
+  const totalLessons = useMemo(() => filteredLessons.length, [filteredLessons]);
+
+  const selectedLesson = useMemo(
+    () => lessons.find((lesson) => Number(lesson.id) === Number(selectedLessonId)) || null,
+    [lessons, selectedLessonId],
   );
 
-  const toggleLessonExpanded = (sectionId, lessonId) => {
-    setSections((previous) =>
-      previous.map((section) => {
-        if (section.id !== sectionId) return section;
-        return {
-          ...section,
-          lessons: section.lessons.map((lesson) =>
-            lesson.id === lessonId ? { ...lesson, expanded: !lesson.expanded } : lesson,
-          ),
-        };
-      }),
-    );
-  };
+  const selectedLessonVideoId = useMemo(() => getYouTubeVideoId(selectedLesson?.videoUrl), [selectedLesson?.videoUrl]);
 
-  const addLesson = (sectionId) => {
-    setSections((previous) =>
-      previous.map((section) => {
-        if (section.id !== sectionId) return section;
-        const nextIndex = section.lessons.length + 1;
-        return {
-          ...section,
-          lessons: [
-            ...section.lessons,
-            {
-              id: `${sectionId}-l${nextIndex}`,
-              title: `Bai ${nextIndex}: Bai giang moi`,
-              expanded: false,
-              videoUrl: '',
-              videoName: '',
-              pdfUrl: '',
-              pdfName: '',
-            },
-          ],
-        };
-      }),
-    );
-  };
-
-  const addSection = () => {
-    setSections((previous) => [
-      ...previous,
-      {
-        id: `s${previous.length + 1}`,
-        title: `Chuong ${previous.length + 1}: Chuong moi`,
-        lessons: [],
-      },
-    ]);
-  };
-
-  const renameSection = (sectionId) => {
-    const currentSection = sections.find((section) => section.id === sectionId);
-
-    if (!currentSection) {
-      return;
+  const selectedLessonEmbedUrl = useMemo(() => {
+    if (!selectedLessonVideoId) {
+      return '';
     }
 
-    setEditingSectionId(sectionId);
-    setEditingText(currentSection.title);
+    const params = new URLSearchParams({
+      rel: '0',
+      modestbranding: '1',
+      playsinline: '1',
+      enablejsapi: '1',
+      autoplay: '1',
+    });
+
+    if (previewStartSeconds > 0) {
+      params.set('start', String(Math.max(1, Math.floor(previewStartSeconds))));
+    }
+
+    params.set('nonce', String(previewNonce));
+
+    return `https://www.youtube.com/embed/${selectedLessonVideoId}?${params.toString()}`;
+  }, [previewNonce, previewStartSeconds, selectedLessonVideoId]);
+
+  const getChapterTitle = (chapterId) => {
+    const chapter = chapters.find((item) => item.id === chapterId);
+    return chapter?.title || `Chương #${chapterId}`;
   };
 
-  const saveRename = () => {
-    const normalizedTitle = editingText.trim();
+  const handleSelectCourse = async (courseId) => {
+    setSelectedCourseId(courseId);
+    await loadChapters(courseId);
+    await loadLessons(courseId);
+  };
 
-    if (!normalizedTitle) {
+  const handleSelectChapter = (chapterId) => {
+    setSelectedChapterId(chapterId);
+  };
+
+  const handleCreateCourse = async () => {
+    const title = courseDraft.title.trim();
+    if (!title) {
       // eslint-disable-next-line no-alert
-      alert('Ten chuong khong duoc de trong.');
+      alert('Vui lòng nhập tên khóa học.');
       return;
     }
-
-    setSections((previous) =>
-      previous.map((section) => 
-        section.id === editingSectionId ? { ...section, title: normalizedTitle } : section
-      ),
-    );
-
-    setEditingSectionId(null);
-    setEditingText('');
-  };
-
-  const cancelRename = () => {
-    setEditingSectionId(null);
-    setEditingText('');
-  };
-
-  const renameLesson = (sectionId, lessonId, currentTitle) => {
-    setEditingLessonSectionId(sectionId);
-    setEditingLessonId(lessonId);
-    setEditingLessonText(currentTitle);
-  };
-
-  const saveRenameLeson = () => {
-    const normalizedTitle = editingLessonText.trim();
-
-    if (!normalizedTitle) {
-      // eslint-disable-next-line no-alert
-      alert('Ten bai giang khong duoc de trong.');
-      return;
-    }
-
-    setSections((previous) =>
-      previous.map((section) => {
-        if (section.id !== editingLessonSectionId) return section;
-        return {
-          ...section,
-          lessons: section.lessons.map((lesson) =>
-            lesson.id === editingLessonId ? { ...lesson, title: normalizedTitle } : lesson
-          ),
-        };
-      }),
-    );
-
-    setEditingLessonId(null);
-    setEditingLessonSectionId(null);
-    setEditingLessonText('');
-  };
-
-  const cancelRenameLeson = () => {
-    setEditingLessonId(null);
-    setEditingLessonSectionId(null);
-    setEditingLessonText('');
-  };
-
-  useEffect(() => {
-    if (editInputRef.current && editingSectionId) {
-      editInputRef.current.focus();
-    }
-  }, [editingSectionId]);
-
-  useEffect(() => {
-    if (editLessonInputRef.current && editingLessonId) {
-      editLessonInputRef.current.focus();
-    }
-  }, [editingLessonId]);
-
-  const saveDraft = () => {
-    // Placeholder action until API integration is ready.
-    // eslint-disable-next-line no-alert
-    alert('Đã lưu bản nháp (demo).');
-  };
-
-  const publishCourse = () => {
-    // Placeholder action until API integration is ready.
-    // eslint-disable-next-line no-alert
-    alert('Đã gửi yêu cầu xuất bản khóa học (demo).');
-  };
-
-  const triggerFilePicker = (inputId) => {
-    const input = document.getElementById(inputId);
-    if (input) {
-      input.click();
-    }
-  };
-
-  const updateLessonFileState = (sectionId, lessonId, key, value) => {
-    setSections((previous) =>
-      previous.map((section) => {
-        if (section.id !== sectionId) {
-          return section;
-        }
-
-        return {
-          ...section,
-          lessons: section.lessons.map((lesson) => (lesson.id === lessonId ? { ...lesson, [key]: value } : lesson)),
-        };
-      }),
-    );
-  };
-
-  const handleCoverUpload = async (event) => {
-    const file = event.target.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    setUploadMessage('Dang tai anh bia...');
 
     try {
-      const result = await uploadTeacherFileApi(file, 'image');
-      setCoverImageUrl(result.url || '');
-      setCoverImageName(result.originalName || file.name);
-      setUploadMessage('Tai anh bia thanh cong.');
+      await createCourseApi({
+        title,
+        description: courseDraft.description.trim(),
+        price: Number(courseDraft.price || 0),
+      });
+      setCourseDraft(emptyCourseDraft);
+      await loadCourses();
+      // eslint-disable-next-line no-alert
+      alert('Đã tạo khóa học mới.');
     } catch (error) {
-      setUploadMessage(error?.response?.data?.message || 'Tai anh bia that bai.');
-    } finally {
-      event.target.value = '';
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể tạo khóa học.');
     }
   };
 
-  const handleLessonUpload = async (event, sectionId, lessonId, type) => {
-    const file = event.target.files?.[0];
-
-    if (!file) {
+  const handleCreateChapter = async () => {
+    if (!selectedCourseId) {
+      // eslint-disable-next-line no-alert
+      alert('Hãy chọn một khóa học trước.');
       return;
     }
 
-    setUploadMessage(type === 'video' ? 'Dang tai video bai hoc...' : 'Dang tai tai lieu PDF...');
+    const title = chapterTitle.trim();
+    if (!title) {
+      // eslint-disable-next-line no-alert
+      alert('Vui lòng nhập tên chương.');
+      return;
+    }
 
     try {
-      const result = await uploadTeacherFileApi(file, type === 'video' ? 'video' : 'document');
+      await createCourseChapterApi(selectedCourseId, {
+        title,
+        description: chapterDescription.trim(),
+        orderIndex: chapters.length + 1,
+      });
+      setChapterTitle('');
+      setChapterDescription('');
+      await loadChapters(selectedCourseId);
+      // eslint-disable-next-line no-alert
+      alert('Đã thêm chương mới.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể thêm chương.');
+    }
+  };
 
-      if (type === 'video') {
-        updateLessonFileState(sectionId, lessonId, 'videoUrl', result.url || '');
-        updateLessonFileState(sectionId, lessonId, 'videoName', result.originalName || file.name);
-      } else {
-        updateLessonFileState(sectionId, lessonId, 'pdfUrl', result.url || '');
-        updateLessonFileState(sectionId, lessonId, 'pdfName', result.originalName || file.name);
+  const handleCreateLesson = async () => {
+    if (!selectedCourseId) {
+      // eslint-disable-next-line no-alert
+      alert('Hãy chọn một khóa học trước.');
+      return;
+    }
+
+    const title = lessonDraft.title.trim();
+    const videoUrl = lessonDraft.videoUrl.trim();
+    const chapterId = lessonDraft.chapterId ? Number(lessonDraft.chapterId) : null;
+    const orderIndex = Number(lessonDraft.orderIndex || lessons.length + 1);
+
+    if (!title) {
+      // eslint-disable-next-line no-alert
+      alert('Vui lòng nhập tên bài học.');
+      return;
+    }
+
+    if (!videoUrl) {
+      // eslint-disable-next-line no-alert
+      alert('Vui lòng nhập link YouTube cho bài học.');
+      return;
+    }
+
+    try {
+      await createLessonApi(selectedCourseId, {
+        title,
+        videoUrl,
+        content: lessonDraft.content.trim(),
+        chapterId: chapterId || undefined,
+        orderIndex,
+      });
+      setLessonDraft(emptyLessonDraft);
+      await loadLessons(selectedCourseId);
+      // eslint-disable-next-line no-alert
+      alert('Đã thêm bài học mới.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể thêm bài học.');
+    }
+  };
+
+  const handleStartEditLesson = (lesson) => {
+    setEditingLesson({
+      id: lesson.id,
+      title: lesson.title || '',
+      videoUrl: lesson.videoUrl || '',
+      content: lesson.content || '',
+      chapterId: lesson.chapterId ? String(lesson.chapterId) : '',
+      orderIndex: lesson.orderIndex || lessons.length + 1,
+    });
+  };
+
+  const handleSaveLesson = async () => {
+    if (!editingLesson) return;
+
+    const title = editingLesson.title.trim();
+    const videoUrl = editingLesson.videoUrl.trim();
+
+    if (!title) {
+      // eslint-disable-next-line no-alert
+      alert('Tên bài học không được để trống.');
+      return;
+    }
+
+    if (!videoUrl) {
+      // eslint-disable-next-line no-alert
+      alert('Vui lòng nhập link YouTube.');
+      return;
+    }
+
+    try {
+      await updateLessonApi(editingLesson.id, {
+        title,
+        videoUrl,
+        content: editingLesson.content,
+        chapterId: editingLesson.chapterId ? Number(editingLesson.chapterId) : null,
+        orderIndex: Number(editingLesson.orderIndex || 1),
+      });
+      setEditingLesson(null);
+      await loadLessons(selectedCourseId);
+      // eslint-disable-next-line no-alert
+      alert('Đã cập nhật bài học.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể cập nhật bài học.');
+    }
+  };
+
+  const handleDeleteLesson = async (lessonId) => {
+    try {
+      await deleteLessonApi(lessonId);
+      if (Number(selectedLessonId) === Number(lessonId)) {
+        setSelectedLessonId(null);
+        setSegments([]);
+        setPreviewStartSeconds(0);
       }
-
-      setUploadMessage(type === 'video' ? 'Tai video thanh cong.' : 'Tai tai lieu PDF thanh cong.');
+      await loadLessons(selectedCourseId);
+      // eslint-disable-next-line no-alert
+      alert('Đã xóa bài học.');
     } catch (error) {
-      setUploadMessage(error?.response?.data?.message || 'Tai file that bai.');
-    } finally {
-      event.target.value = '';
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể xóa bài học.');
+    }
+  };
+
+  const handleDeleteChapter = async (chapterId) => {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm('Bạn có chắc chắn muốn xóa chương này? Các bài học trong chương sẽ không bị xóa nhưng sẽ mất liên kết.')) {
+      return;
+    }
+
+    try {
+      await deleteChapterApi(chapterId);
+      if (Number(selectedChapterId) === Number(chapterId)) {
+        setSelectedChapterId(null);
+      }
+      await loadChapters(selectedCourseId);
+      // eslint-disable-next-line no-alert
+      alert('Đã xóa chương.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể xóa chương.');
+    }
+  };
+
+  const handleDeleteCourse = async (courseId) => {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm('Bạn có chắc chắn muốn xóa khóa học này? Hành động này không thể hoàn tác.')) {
+      return;
+    }
+
+    try {
+      await deleteCourseApi(courseId);
+      if (Number(selectedCourseId) === Number(courseId)) {
+        setSelectedCourseId(null);
+        setChapters([]);
+        setLessons([]);
+        setSelectedLessonId(null);
+        setSegments([]);
+      }
+      await loadCourses();
+      // eslint-disable-next-line no-alert
+      alert('Đã xóa khóa học.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể xóa khóa học.');
+    }
+  };
+
+  const handleSelectLesson = async (lessonId) => {
+    const parsedLessonId = lessonId ? Number(lessonId) : null;
+    setSelectedLessonId(parsedLessonId);
+    setEditingSegment(null);
+    setQuickSplitMarkers('');
+    setPreviewStartSeconds(0);
+    setPreviewNonce((prev) => prev + 1);
+    await loadSegments(parsedLessonId);
+  };
+
+  const handleCreateSegment = async () => {
+    if (!selectedLessonId) {
+      // eslint-disable-next-line no-alert
+      alert('Hãy chọn bài học trước.');
+      return;
+    }
+
+    const startTime = Number(segmentDraft.startTime);
+    const endTime = Number(segmentDraft.endTime);
+
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) {
+      // eslint-disable-next-line no-alert
+      alert('Vui lòng nhập thời gian hợp lệ.');
+      return;
+    }
+
+    if (endTime <= startTime) {
+      // eslint-disable-next-line no-alert
+      alert('Thời gian kết thúc phải lớn hơn thời gian bắt đầu.');
+      return;
+    }
+
+    try {
+      await createLessonSegmentApi(selectedLessonId, {
+        startTime,
+        endTime,
+        title: segmentDraft.title.trim(),
+      });
+      setSegmentDraft(emptySegmentDraft);
+      await loadSegments(selectedLessonId);
+      // eslint-disable-next-line no-alert
+      alert('Đã thêm đoạn video.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể thêm đoạn video.');
+    }
+  };
+
+  const handleStartEditSegment = (segment) => {
+    setEditingSegment({
+      id: segment.id,
+      startTime: String(segment.startTime ?? ''),
+      endTime: String(segment.endTime ?? ''),
+      title: segment.title || '',
+    });
+  };
+
+  const handleCancelEditSegment = () => {
+    setEditingSegment(null);
+  };
+
+  const handleSaveSegment = async () => {
+    if (!editingSegment) return;
+
+    const startTime = Number(editingSegment.startTime);
+    const endTime = Number(editingSegment.endTime);
+
+    if (!Number.isInteger(startTime) || !Number.isInteger(endTime)) {
+      // eslint-disable-next-line no-alert
+      alert('Vui lòng nhập thời gian hợp lệ cho đoạn video.');
+      return;
+    }
+
+    if (endTime <= startTime) {
+      // eslint-disable-next-line no-alert
+      alert('Thời gian kết thúc phải lớn hơn thời gian bắt đầu.');
+      return;
+    }
+
+    try {
+      await updateLessonSegmentApi(editingSegment.id, {
+        startTime,
+        endTime,
+        title: editingSegment.title.trim(),
+      });
+      setEditingSegment(null);
+      await loadSegments(selectedLessonId);
+      // eslint-disable-next-line no-alert
+      alert('Đã cập nhật đoạn video.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể cập nhật đoạn video.');
+    }
+  };
+
+  const handleBulkSplitSegments = async () => {
+    if (!selectedLessonId) {
+      // eslint-disable-next-line no-alert
+      alert('Hãy chọn bài học trước.');
+      return;
+    }
+
+    try {
+      const segmentsToCreate = buildSegmentsFromMarkerInput(quickSplitMarkers);
+      await bulkCreateLessonSegmentsApi(selectedLessonId, { segments: segmentsToCreate });
+      setQuickSplitMarkers('');
+      await loadSegments(selectedLessonId);
+      // eslint-disable-next-line no-alert
+      alert('Đã tách nhanh nhiều đoạn video.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.message || error?.response?.data?.message || 'Không thể tách nhanh đoạn video.');
+    }
+  };
+
+  const handleDeleteSegment = async (segmentId) => {
+    try {
+      await deleteLessonSegmentApi(segmentId);
+      if (editingSegment?.id === segmentId) {
+        setEditingSegment(null);
+      }
+      await loadSegments(selectedLessonId);
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể xóa đoạn video.');
+    }
+  };
+
+  const formatTime = (seconds) => {
+    const total = Math.max(0, Number(seconds || 0));
+    const mins = Math.floor(total / 60);
+    const secs = Math.floor(total % 60);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const handleStartEditChapter = (chapter) => {
+    setEditingChapter({
+      id: chapter.id,
+      title: chapter.title || '',
+      description: chapter.description || '',
+      orderIndex: chapter.orderIndex || 1,
+    });
+  };
+
+  const handleSaveChapter = async () => {
+    if (!editingChapter) return;
+
+    const title = editingChapter.title.trim();
+    if (!title) {
+      // eslint-disable-next-line no-alert
+      alert('Tên chương không được để trống.');
+      return;
+    }
+
+    try {
+      await updateCourseChapterApi(editingChapter.id, {
+        title,
+        description: editingChapter.description,
+        orderIndex: editingChapter.orderIndex,
+      });
+      setEditingChapter(null);
+      await loadChapters(selectedCourseId);
+      // eslint-disable-next-line no-alert
+      alert('Đã cập nhật chương.');
+    } catch (error) {
+      // eslint-disable-next-line no-alert
+      alert(error?.response?.data?.message || 'Không thể cập nhật chương.');
     }
   };
 
   return (
     <div className="instructor-course-builder-page">
-      <aside className="instructor-course-builder-sidebar">
-        <div className="instructor-course-builder-brand">
-          <div className="instructor-course-builder-brand-icon">L</div>
-          <span>LMS Admin</span>
-        </div>
-
-        <ul className="instructor-course-builder-nav-menu">
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/dashboard')} type="button">
-              Tổng quan
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link active" onClick={() => navigate('/teacher/courses')} type="button">
-              Quản lý khóa học
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/questions')} type="button">
-              Ngân hàng câu hỏi
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/students')} type="button">
-              Quản lý học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/interaction')} type="button">
-              Tương tác học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/profile')} type="button">
-              Hồ sơ giảng viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-course-builder-nav-link" onClick={() => navigate('/teacher/revenue')} type="button">
-              Doanh thu
-            </button>
-          </li>
-        </ul>
-
-        <button className="instructor-course-builder-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <TeacherSidebar />
 
       <main className="instructor-course-builder-main-content">
-        <section className="instructor-course-builder-card">
-          <h2 className="instructor-course-builder-card-title">Thống kê khóa học từ CSDL</h2>
-          <p>Số khóa học của bạn: <b>{myCourses.length}</b></p>
-          <p>Tổng học viên đăng ký: <b>{totalStudents}</b></p>
-          {uploadMessage ? <p>{uploadMessage}</p> : null}
-        </section>
-
         <header className="instructor-course-builder-header">
-          <h1 className="instructor-course-builder-page-title">Tạo / Chỉnh sửa khóa học</h1>
+          <h1 className="instructor-course-builder-page-title">Quản lý khóa học</h1>
           <div className="instructor-course-builder-header-actions">
-            <button className="instructor-course-builder-btn instructor-course-builder-btn-draft" onClick={saveDraft} type="button">
-              Lưu bản nháp
-            </button>
-            <button className="instructor-course-builder-btn instructor-course-builder-btn-primary" onClick={publishCourse} type="button">
-              Xuất bản khóa học
+            <button className="instructor-course-builder-btn instructor-course-builder-btn-draft" onClick={loadCourses} type="button">
+              Tải lại
             </button>
           </div>
         </header>
 
+        {statusMessage ? (
+          <section className="instructor-course-builder-card" style={{ color: 'red' }}>
+            <p>{statusMessage}</p>
+          </section>
+        ) : null}
+
+        <section className="instructor-course-builder-card">
+          <h2 className="instructor-course-builder-card-title">Thống kê</h2>
+          {isLoadingCourses ? <p>Đang tải danh sách khóa học...</p> : null}
+          <p>Số khóa học: <b>{totalCourses}</b></p>
+          <p>Số chương của khóa đang chọn: <b>{totalChapters}</b></p>
+          <p>Số bài học của khóa đang chọn: <b>{totalLessons}</b></p>
+        </section>
+
         <div className="instructor-course-builder-grid">
           <section className="instructor-course-builder-card">
-            <h2 className="instructor-course-builder-card-title">Thông tin chung</h2>
+            <h2 className="instructor-course-builder-card-title">Tạo khóa học mới</h2>
 
             <div className="instructor-course-builder-form-group">
-              <label className="instructor-course-builder-form-label" htmlFor="course-name">
-                Tên khóa học
-              </label>
+              <label className="instructor-course-builder-form-label" htmlFor="course-title">Tên khóa học</label>
               <input
                 className="instructor-course-builder-form-control"
-                id="course-name"
-                onChange={(event) => setCourseName(event.target.value)}
-                placeholder="Nhập tên khóa học (VD: Lập trình Flutter cơ bản)"
-                type="text"
-                value={courseName}
+                id="course-title"
+                value={courseDraft.title}
+                onChange={(event) => setCourseDraft((previous) => ({ ...previous, title: event.target.value }))}
+                placeholder="Ví dụ: Lập trình Flutter cơ bản"
               />
             </div>
 
             <div className="instructor-course-builder-form-group">
-              <label className="instructor-course-builder-form-label" htmlFor="course-short-description">
-                Mô tả ngắn
-              </label>
+              <label className="instructor-course-builder-form-label" htmlFor="course-desc">Mô tả</label>
               <textarea
                 className="instructor-course-builder-form-control"
-                id="course-short-description"
-                onChange={(event) => setShortDescription(event.target.value)}
-                placeholder="Mô tả tóm tắt nội dung khóa học..."
-                value={shortDescription}
+                id="course-desc"
+                value={courseDraft.description}
+                onChange={(event) => setCourseDraft((previous) => ({ ...previous, description: event.target.value }))}
+                placeholder="Mô tả ngắn về khóa học"
               />
             </div>
 
             <div className="instructor-course-builder-inline-fields">
               <div className="instructor-course-builder-form-group">
-                <label className="instructor-course-builder-form-label" htmlFor="course-price">
-                  Giá bán (VND)
-                </label>
+                <label className="instructor-course-builder-form-label" htmlFor="course-price">Giá bán</label>
                 <input
                   className="instructor-course-builder-form-control"
                   id="course-price"
-                  onChange={(event) => setPrice(event.target.value)}
                   type="number"
-                  value={price}
+                  value={courseDraft.price}
+                  onChange={(event) => setCourseDraft((previous) => ({ ...previous, price: event.target.value }))}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            <button className="instructor-course-builder-btn instructor-course-builder-btn-primary full" onClick={handleCreateCourse} type="button">
+              Tạo khóa học
+            </button>
+
+            {myCoursesOnly.length > 0 && (
+              <div style={{ marginTop: '16px', display: 'grid', gap: '12px' }}>
+                <h3 style={{ marginBottom: '8px' }}>Danh sách khóa học ({myCoursesOnly.length})</h3>
+                {myCoursesOnly.map((course) => (
+                  <article key={course.id} className="instructor-course-builder-section-block" style={{ padding: '14px 16px' }}>
+                    <div style={{ fontWeight: 700 }}>{course.title}</div>
+                    <div style={{ marginTop: '4px', color: '#666', fontSize: '13px' }}>
+                      {course.description || 'Không có mô tả'}
+                    </div>
+                    <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                      <button
+                        className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
+                        onClick={() => handleSelectCourse(course.id)}
+                        type="button"
+                        style={{ backgroundColor: selectedCourseId === course.id ? '#3b82f6' : undefined, color: selectedCourseId === course.id ? 'white' : undefined }}
+                      >
+                        Chọn
+                      </button>
+                      <button
+                        className="instructor-course-builder-btn instructor-course-builder-btn-danger tiny"
+                        onClick={() => handleDeleteCourse(course.id)}
+                        type="button"
+                        style={{ backgroundColor: '#ef4444' }}
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="instructor-course-builder-card">
+            <h2 className="instructor-course-builder-card-title">Chương trình học</h2>
+
+            <div className="instructor-course-builder-form-group">
+              <label className="instructor-course-builder-form-label" htmlFor="course-select">Chọn khóa học</label>
+              <select
+                className="instructor-course-builder-form-control"
+                id="course-select"
+                value={selectedCourseId || ''}
+                onChange={(event) => handleSelectCourse(Number(event.target.value))}
+              >
+                <option value="">-- Chọn khóa học --</option>
+                {myCoursesOnly.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="instructor-course-builder-form-group">
+              <label className="instructor-course-builder-form-label" htmlFor="chapter-title">Tên chương mới</label>
+              <input
+                className="instructor-course-builder-form-control"
+                id="chapter-title"
+                value={chapterTitle}
+                onChange={(event) => setChapterTitle(event.target.value)}
+                placeholder="Ví dụ: Chương 1 - Nhập môn"
+              />
+            </div>
+
+            <div className="instructor-course-builder-form-group">
+              <label className="instructor-course-builder-form-label" htmlFor="chapter-desc">Mô tả chương</label>
+              <textarea
+                className="instructor-course-builder-form-control"
+                id="chapter-desc"
+                value={chapterDescription}
+                onChange={(event) => setChapterDescription(event.target.value)}
+                placeholder="Mô tả ngắn cho chương"
+              />
+            </div>
+
+            <button className="instructor-course-builder-btn instructor-course-builder-btn-primary full" onClick={handleCreateChapter} type="button">
+              Thêm chương
+            </button>
+
+            {isLoadingChapters ? <p style={{ marginTop: '12px' }}>Đang tải chương...</p> : null}
+
+            <div style={{ marginTop: '16px', display: 'grid', gap: '12px' }}>
+              {chapters.map((chapter) => (
+                <article key={chapter.id} className="instructor-course-builder-section-block">
+                  {editingChapter?.id === chapter.id ? (
+                    <div style={{ display: 'grid', gap: '10px', padding: '16px' }}>
+                      <input
+                        className="instructor-course-builder-form-control"
+                        value={editingChapter.title}
+                        onChange={(event) => setEditingChapter((previous) => ({ ...previous, title: event.target.value }))}
+                      />
+                      <textarea
+                        className="instructor-course-builder-form-control"
+                        value={editingChapter.description}
+                        onChange={(event) => setEditingChapter((previous) => ({ ...previous, description: event.target.value }))}
+                      />
+                      <input
+                        className="instructor-course-builder-form-control"
+                        type="number"
+                        value={editingChapter.orderIndex}
+                        onChange={(event) => setEditingChapter((previous) => ({ ...previous, orderIndex: Number(event.target.value) }))}
+                      />
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="instructor-course-builder-btn instructor-course-builder-btn-primary" onClick={handleSaveChapter} type="button">
+                          Lưu
+                        </button>
+                        <button className="instructor-course-builder-btn instructor-course-builder-btn-draft" onClick={() => setEditingChapter(null)} type="button">
+                          Hủy
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: '16px', backgroundColor: selectedChapterId === chapter.id ? '#f0f4ff' : 'transparent', borderLeft: selectedChapterId === chapter.id ? '4px solid #3b82f6' : 'none', paddingLeft: selectedChapterId === chapter.id ? '12px' : '16px' }}>
+                      <div style={{ fontWeight: 700 }}>{chapter.title}</div>
+                      <div style={{ marginTop: '6px', color: '#666' }}>{chapter.description || 'Không có mô tả'}</div>
+                      <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                        <button className="instructor-course-builder-btn instructor-course-builder-btn-primary tiny" onClick={() => handleSelectChapter(chapter.id)} type="button">
+                          Chọn chương
+                        </button>
+                        <button className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny" onClick={() => handleStartEditChapter(chapter)} type="button">
+                          Sửa
+                        </button>
+                        <button className="instructor-course-builder-btn instructor-course-builder-btn-danger tiny" onClick={() => handleDeleteChapter(chapter.id)} type="button" style={{ backgroundColor: '#ef4444' }}>
+                          Xóa
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </article>
+              ))}
+
+              {!chapters.length && !isLoadingChapters ? <p>Chưa có chương nào cho khóa học đã chọn.</p> : null}
+            </div>
+          </section>
+        </div>
+
+        <section className="instructor-course-builder-card" style={{ marginTop: '24px' }}>
+          <h2 className="instructor-course-builder-card-title">Bài học và video YouTube</h2>
+
+          <div className="instructor-course-builder-grid" style={{ gridTemplateColumns: '1fr 1.1fr', gap: '24px' }}>
+            <div>
+              <div className="instructor-course-builder-form-group">
+                <label className="instructor-course-builder-form-label" htmlFor="lesson-chapter">Chọn chương</label>
+                <select
+                  className="instructor-course-builder-form-control"
+                  id="lesson-chapter"
+                  value={lessonDraft.chapterId}
+                  onChange={(event) => setLessonDraft((previous) => ({ ...previous, chapterId: event.target.value }))}
+                >
+                  <option value="">-- Chọn chương --</option>
+                  {chapters.map((chapter) => (
+                    <option key={chapter.id} value={chapter.id}>
+                      {chapter.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="instructor-course-builder-form-group">
+                <label className="instructor-course-builder-form-label" htmlFor="lesson-title">Tên bài học</label>
+                <input
+                  className="instructor-course-builder-form-control"
+                  id="lesson-title"
+                  value={lessonDraft.title}
+                  onChange={(event) => setLessonDraft((previous) => ({ ...previous, title: event.target.value }))}
+                  placeholder="Ví dụ: Bài 1 - Giới thiệu"
                 />
               </div>
 
               <div className="instructor-course-builder-form-group">
-                <label className="instructor-course-builder-form-label" htmlFor="specialization">
-                  Chuyên ngành
-                </label>
-                <select
+                <label className="instructor-course-builder-form-label" htmlFor="lesson-video">Link YouTube</label>
+                <input
                   className="instructor-course-builder-form-control"
-                  id="specialization"
-                  onChange={(event) => setSpecialization(event.target.value)}
-                  value={specialization}
-                >
-                  <option>Software Engineering</option>
-                  <option>Trí tuệ nhân tạo (AI)</option>
-                  <option>Hệ thống mạng</option>
-                </select>
+                  id="lesson-video"
+                  value={lessonDraft.videoUrl}
+                  onChange={(event) => setLessonDraft((previous) => ({ ...previous, videoUrl: event.target.value }))}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                />
+              </div>
+
+              <div className="instructor-course-builder-form-group">
+                <label className="instructor-course-builder-form-label" htmlFor="lesson-content">Mô tả nội dung</label>
+                <textarea
+                  className="instructor-course-builder-form-control"
+                  id="lesson-content"
+                  value={lessonDraft.content}
+                  onChange={(event) => setLessonDraft((previous) => ({ ...previous, content: event.target.value }))}
+                  placeholder="Mô tả ngắn cho bài học"
+                />
+              </div>
+
+              <div className="instructor-course-builder-form-group">
+                <label className="instructor-course-builder-form-label" htmlFor="lesson-order">Thứ tự bài học</label>
+                <input
+                  className="instructor-course-builder-form-control"
+                  id="lesson-order"
+                  type="number"
+                  value={lessonDraft.orderIndex}
+                  onChange={(event) => setLessonDraft((previous) => ({ ...previous, orderIndex: event.target.value }))}
+                  placeholder={String(lessons.length + 1)}
+                />
+              </div>
+
+              <button className="instructor-course-builder-btn instructor-course-builder-btn-primary full" onClick={handleCreateLesson} type="button">
+                Thêm bài học
+              </button>
+            </div>
+
+            <div>
+              <h3 style={{ marginBottom: '12px' }}>Danh sách bài học{selectedChapterId ? ` (Chương: ${getChapterTitle(selectedChapterId)})` : ' (Tất cả)'}</h3>
+              {isLoadingLessons ? <p>Đang tải bài học...</p> : null}
+              <div style={{ display: 'grid', gap: '12px' }}>
+                {filteredLessons.map((lesson) => (
+                  <article key={lesson.id} className="instructor-course-builder-section-block">
+                    <div style={{ padding: '14px 16px' }}>
+                      <div style={{ fontWeight: 700 }}>{lesson.title}</div>
+                      <div style={{ marginTop: '6px', color: '#666' }}>
+                        Chương: {lesson.chapterId ? getChapterTitle(lesson.chapterId) : 'Chưa gắn chương'}
+                      </div>
+                      <div style={{ marginTop: '6px', color: '#666', wordBreak: 'break-all' }}>
+                        YouTube: {lesson.videoUrl || 'Chưa có link'}
+                      </div>
+                      <div style={{ marginTop: '10px' }}>
+                        <button
+                          className="instructor-course-builder-btn instructor-course-builder-btn-primary tiny"
+                          onClick={() => handleStartEditLesson(lesson)}
+                          type="button"
+                          style={{ marginRight: '8px' }}
+                        >
+                          Sửa
+                        </button>
+                        <button
+                          className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
+                          onClick={() => handleSelectLesson(lesson.id)}
+                          type="button"
+                          style={{ marginRight: '8px' }}
+                        >
+                          Quản lý đoạn video
+                        </button>
+                        <button
+                          className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
+                          onClick={() => handleDeleteLesson(lesson.id)}
+                          type="button"
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+                {!filteredLessons.length && !isLoadingLessons ? <p>Chưa có bài học nào{selectedChapterId ? ` cho chương đã chọn` : ` cho khóa học đã chọn`}.</p> : null}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '24px', borderTop: '1px solid #e5e7eb', paddingTop: '20px' }}>
+            <h3 style={{ marginBottom: '12px' }}>
+              Quản lý đoạn video cho bài học {selectedLessonId ? `#${selectedLessonId}` : ''}
+            </h3>
+
+            <div className="instructor-course-builder-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <div>
+                <div className="instructor-course-builder-form-group">
+                  <label className="instructor-course-builder-form-label" htmlFor="segment-start">Thời gian bắt đầu (giây)</label>
+                  <input
+                    className="instructor-course-builder-form-control"
+                    id="segment-start"
+                    type="number"
+                    value={segmentDraft.startTime}
+                    onChange={(event) => setSegmentDraft((previous) => ({ ...previous, startTime: event.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+
+                <div className="instructor-course-builder-form-group">
+                  <label className="instructor-course-builder-form-label" htmlFor="segment-end">Thời gian kết thúc (giây)</label>
+                  <input
+                    className="instructor-course-builder-form-control"
+                    id="segment-end"
+                    type="number"
+                    value={segmentDraft.endTime}
+                    onChange={(event) => setSegmentDraft((previous) => ({ ...previous, endTime: event.target.value }))}
+                    placeholder="300"
+                  />
+                </div>
+
+                <div className="instructor-course-builder-form-group">
+                  <label className="instructor-course-builder-form-label" htmlFor="segment-title">Tiêu đề đoạn</label>
+                  <input
+                    className="instructor-course-builder-form-control"
+                    id="segment-title"
+                    value={segmentDraft.title}
+                    onChange={(event) => setSegmentDraft((previous) => ({ ...previous, title: event.target.value }))}
+                    placeholder="Ví dụ: Phần giới thiệu"
+                  />
+                </div>
+
+                <button className="instructor-course-builder-btn instructor-course-builder-btn-primary full" onClick={handleCreateSegment} type="button">
+                  Thêm đoạn video
+                </button>
+
+                <div style={{ marginTop: '18px', padding: '14px', border: '1px dashed #cbd5e1', borderRadius: '12px', background: '#f8fafc' }}>
+                  <h4 style={{ marginBottom: '8px' }}>Tách nhanh theo nhiều mốc</h4>
+                  <p style={{ marginBottom: '10px', color: '#64748b' }}>
+                    Nhập các mốc theo giây hoặc mm:ss, ngăn cách bằng dấu phẩy hoặc xuống dòng. Hệ thống sẽ tự tạo các đoạn liên tiếp.
+                  </p>
+                  <textarea
+                    className="instructor-course-builder-form-control"
+                    style={{ minHeight: '120px' }}
+                    value={quickSplitMarkers}
+                    onChange={(event) => setQuickSplitMarkers(event.target.value)}
+                    placeholder="00:00, 03:15, 07:40, 12:00"
+                  />
+                  <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      className="instructor-course-builder-btn instructor-course-builder-btn-primary tiny"
+                      onClick={handleBulkSplitSegments}
+                      type="button"
+                    >
+                      Tách nhanh nhiều đoạn
+                    </button>
+                    <button
+                      className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
+                      onClick={() => setQuickSplitMarkers('')}
+                      type="button"
+                    >
+                      Xóa mốc
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 style={{ marginBottom: '12px' }}>Các đoạn đã tách</h4>
+                {isLoadingSegments ? <p>Đang tải đoạn video...</p> : null}
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  {segments.map((segment) => (
+                    <article key={segment.id} className="instructor-course-builder-section-block">
+                      {editingSegment?.id === segment.id ? (
+                        <div style={{ padding: '14px 16px', display: 'grid', gap: '10px' }}>
+                          <input
+                            className="instructor-course-builder-form-control"
+                            type="number"
+                            value={editingSegment.startTime}
+                            onChange={(event) => setEditingSegment((previous) => ({ ...previous, startTime: event.target.value }))}
+                            placeholder="0"
+                          />
+                          <input
+                            className="instructor-course-builder-form-control"
+                            type="number"
+                            value={editingSegment.endTime}
+                            onChange={(event) => setEditingSegment((previous) => ({ ...previous, endTime: event.target.value }))}
+                            placeholder="300"
+                          />
+                          <input
+                            className="instructor-course-builder-form-control"
+                            value={editingSegment.title}
+                            onChange={(event) => setEditingSegment((previous) => ({ ...previous, title: event.target.value }))}
+                            placeholder="Tiêu đề đoạn"
+                          />
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button
+                              className="instructor-course-builder-btn instructor-course-builder-btn-primary tiny"
+                              onClick={handleSaveSegment}
+                              type="button"
+                            >
+                              Lưu
+                            </button>
+                            <button
+                              className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
+                              onClick={handleCancelEditSegment}
+                              type="button"
+                            >
+                              Hủy
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                          <div>
+                            <div style={{ fontWeight: 700 }}>{segment.title || `Đoạn ${segment.id}`}</div>
+                            <div style={{ marginTop: '6px', color: '#666' }}>
+                              {formatTime(segment.startTime)} - {formatTime(segment.endTime)} ({formatTime(segment.duration)})
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button
+                              className="instructor-course-builder-btn instructor-course-builder-btn-primary tiny"
+                              onClick={() => handleStartEditSegment(segment)}
+                              type="button"
+                            >
+                              Sửa
+                            </button>
+                            <button
+                              className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
+                              onClick={() => {
+                                setPreviewStartSeconds(Number(segment.startTime || 0));
+                                setPreviewNonce((prev) => prev + 1);
+                              }}
+                              type="button"
+                            >
+                              Xem từ đoạn này
+                            </button>
+                            <button
+                              className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
+                              onClick={() => handleDeleteSegment(segment.id)}
+                              type="button"
+                            >
+                              Xóa
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                  {!segments.length && !isLoadingSegments ? <p>Chưa có đoạn video nào.</p> : null}
+                </div>
               </div>
             </div>
 
-            <div className="instructor-course-builder-form-group">
-              <label className="instructor-course-builder-form-label">Ảnh bìa khóa học (Thumbnail)</label>
-              <button className="instructor-course-builder-upload-placeholder" onClick={() => coverInputRef.current?.click()} type="button">
-                <div className="instructor-course-builder-upload-icon">IMG</div>
-                <div className="instructor-course-builder-upload-text">
-                  Kéo thả ảnh bìa hoặc <b>Click tải lên</b>
-                  <br />
-                  <span>(Kích thước khuyên nghi: 1280x720px)</span>
+            {selectedLessonEmbedUrl ? (
+              <div style={{ marginTop: '24px' }}>
+                <h4 style={{ marginBottom: '12px' }}>Preview YouTube</h4>
+                <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: '16px', overflow: 'hidden', background: '#000' }}>
+                  <iframe
+                    key={`${selectedLessonId}-${previewNonce}-${previewStartSeconds}`}
+                    title={selectedLesson?.title || 'Lesson preview'}
+                    src={selectedLessonEmbedUrl}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
+                  />
                 </div>
-              </button>
-              <input accept="image/*" hidden onChange={handleCoverUpload} ref={coverInputRef} type="file" />
-              {coverImageName ? <p>Đã tải: {coverImageName}</p> : null}
-              {coverImageUrl ? <img alt="Ảnh bìa khóa học" src={coverImageUrl} style={{ width: '100%', borderRadius: '8px', marginTop: '10px' }} /> : null}
-            </div>
-          </section>
+              </div>
+            ) : null}
+          </div>
+        </section>
 
-          <section className="instructor-course-builder-curriculum-wrap">
-            <h2 className="instructor-course-builder-card-title">Chương trình học (Curriculum)</h2>
+        <section className="instructor-course-builder-card" style={{ marginTop: '24px' }}>
+          <h2 className="instructor-course-builder-card-title">Sửa / xóa bài học</h2>
 
-            {sections.map((section) => (
-              <article className="instructor-course-builder-section-block" key={section.id}>
-                <header className="instructor-course-builder-section-header">
-                  {editingSectionId === section.id ? (
-                    <div style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center' }}>
-                      <input
-                        ref={editInputRef}
-                        type="text"
-                        value={editingText}
-                        onChange={(e) => setEditingText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveRename();
-                          } else if (e.key === 'Escape') {
-                            cancelRename();
-                          }
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: '6px 8px',
-                          fontSize: '14px',
-                          border: '1px solid #ddd',
-                          borderRadius: '4px',
-                          fontWeight: 'bold',
-                        }}
-                      />
-                      <button
-                        className="instructor-course-builder-btn instructor-course-builder-btn-primary tiny"
-                        onClick={saveRename}
-                        type="button"
-                      >
-                        Luu
-                      </button>
-                      <button
-                        className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
-                        onClick={cancelRename}
-                        type="button"
-                      >
-                        Huy
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <span>{section.title}</span>
-                      <button
-                        className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          renameSection(section.id);
-                        }}
-                        type="button"
-                      >
-                        Sua ten
-                      </button>
-                    </>
-                  )}
-                </header>
+          {editingLesson ? (
+            <div className="instructor-course-builder-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+              <div>
+                <div className="instructor-course-builder-form-group">
+                  <label className="instructor-course-builder-form-label" htmlFor="edit-lesson-title">Tên bài học</label>
+                  <input
+                    className="instructor-course-builder-form-control"
+                    id="edit-lesson-title"
+                    value={editingLesson.title}
+                    onChange={(event) => setEditingLesson((previous) => ({ ...previous, title: event.target.value }))}
+                  />
+                </div>
 
-                <div className="instructor-course-builder-section-body">
-                  {section.lessons.map((lesson) => (
-                    <div className={`instructor-course-builder-lesson-item ${lesson.expanded ? 'expanded' : ''}`} key={lesson.id}>
-                      {editingLessonId === lesson.id && editingLessonSectionId === section.id ? (
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid #eee', backgroundColor: '#f9f9f9' }}>
-                          <div className="instructor-course-builder-drag-handle" />
-                          <input
-                            ref={editLessonInputRef}
-                            type="text"
-                            value={editingLessonText}
-                            onChange={(e) => setEditingLessonText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                saveRenameLeson();
-                              } else if (e.key === 'Escape') {
-                                cancelRenameLeson();
-                              }
-                            }}
-                            style={{
-                              flex: 1,
-                              padding: '6px 8px',
-                              fontSize: '14px',
-                              border: '1px solid #ddd',
-                              borderRadius: '4px',
-                              fontWeight: 'bold',
-                            }}
-                          />
-                          <button
-                            className="instructor-course-builder-btn instructor-course-builder-btn-primary tiny"
-                            onClick={saveRenameLeson}
-                            type="button"
-                          >
-                            Luu
-                          </button>
-                          <button
-                            className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
-                            onClick={cancelRenameLeson}
-                            type="button"
-                          >
-                            Huy
-                          </button>
-                        </div>
-                      ) : (
-                        <div
-                          className="instructor-course-builder-lesson-header"
-                          onClick={() => toggleLessonExpanded(section.id, lesson.id)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              toggleLessonExpanded(section.id, lesson.id);
-                            }
-                          }}
-                          role="button"
-                          tabIndex={0}
-                        >
-                          <div className="instructor-course-builder-drag-handle" />
-                          <div className="instructor-course-builder-lesson-title">{lesson.title}</div>
-                          <button
-                            className="instructor-course-builder-btn instructor-course-builder-btn-draft tiny"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              renameLesson(section.id, lesson.id, lesson.title);
-                            }}
-                            type="button"
-                            style={{ marginLeft: 'auto' }}
-                          >
-                            Sua ten
-                          </button>
-                          <div className="instructor-course-builder-lesson-toggle">{lesson.expanded ? '▲' : '▼'}</div>
-                        </div>
-                      )}
+                <div className="instructor-course-builder-form-group">
+                  <label className="instructor-course-builder-form-label" htmlFor="edit-lesson-video">Link YouTube</label>
+                  <input
+                    className="instructor-course-builder-form-control"
+                    id="edit-lesson-video"
+                    value={editingLesson.videoUrl}
+                    onChange={(event) => setEditingLesson((previous) => ({ ...previous, videoUrl: event.target.value }))}
+                  />
+                </div>
 
-                      {lesson.expanded ? (
-                        <div className="instructor-course-builder-lesson-expanded-body">
-                          <div className="instructor-course-builder-upload-actions">
-                            <button
-                              className="instructor-course-builder-btn instructor-course-builder-btn-outline-primary"
-                              onClick={() => triggerFilePicker(`video-${section.id}-${lesson.id}`)}
-                              type="button"
-                            >
-                              Tải lên Video (MP4)
-                            </button>
-                            <button
-                              className="instructor-course-builder-btn instructor-course-builder-btn-outline-danger"
-                              onClick={() => triggerFilePicker(`pdf-${section.id}-${lesson.id}`)}
-                              type="button"
-                            >
-                              Tải lên Tài liệu (PDF)
-                            </button>
-                            <input
-                              accept="video/mp4"
-                              hidden
-                              id={`video-${section.id}-${lesson.id}`}
-                              onChange={(event) => handleLessonUpload(event, section.id, lesson.id, 'video')}
-                              type="file"
-                            />
-                            <input
-                              accept="application/pdf"
-                              hidden
-                              id={`pdf-${section.id}-${lesson.id}`}
-                              onChange={(event) => handleLessonUpload(event, section.id, lesson.id, 'pdf')}
-                              type="file"
-                            />
-                          </div>
+                <div className="instructor-course-builder-form-group">
+                  <label className="instructor-course-builder-form-label" htmlFor="edit-lesson-content">Mô tả</label>
+                  <textarea
+                    className="instructor-course-builder-form-control"
+                    id="edit-lesson-content"
+                    value={editingLesson.content}
+                    onChange={(event) => setEditingLesson((previous) => ({ ...previous, content: event.target.value }))}
+                  />
+                </div>
 
-                          {lesson.videoUrl ? (
-                            <p>
-                              Video: <a href={lesson.videoUrl} rel="noreferrer" target="_blank">{lesson.videoName || 'Xem video'}</a>
-                            </p>
-                          ) : null}
+                <div className="instructor-course-builder-form-group">
+                  <label className="instructor-course-builder-form-label" htmlFor="edit-lesson-chapter">Chương</label>
+                  <select
+                    className="instructor-course-builder-form-control"
+                    id="edit-lesson-chapter"
+                    value={editingLesson.chapterId}
+                    onChange={(event) => setEditingLesson((previous) => ({ ...previous, chapterId: event.target.value }))}
+                  >
+                    <option value="">-- Chọn chương --</option>
+                    {chapters.map((chapter) => (
+                      <option key={chapter.id} value={chapter.id}>
+                        {chapter.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                          {lesson.pdfUrl ? (
-                            <p>
-                              Tài liệu: <a href={lesson.pdfUrl} rel="noreferrer" target="_blank">{lesson.pdfName || 'Xem PDF'}</a>
-                            </p>
-                          ) : null}
+                <div className="instructor-course-builder-form-group">
+                  <label className="instructor-course-builder-form-label" htmlFor="edit-lesson-order">Thứ tự</label>
+                  <input
+                    className="instructor-course-builder-form-control"
+                    id="edit-lesson-order"
+                    type="number"
+                    value={editingLesson.orderIndex}
+                    onChange={(event) => setEditingLesson((previous) => ({ ...previous, orderIndex: event.target.value }))}
+                  />
+                </div>
 
-                          <div className="instructor-course-builder-form-group no-bottom">
-                            <label className="instructor-course-builder-form-label">Văn bản bài học (Mô tả, ghi chú cho học viên)</label>
-                            <textarea
-                              className="instructor-course-builder-form-control instructor-course-builder-text-content"
-                              placeholder="Nhập nội dung văn bản bài học..."
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-
-                  <button className="instructor-course-builder-btn instructor-course-builder-btn-draft dashed full" onClick={() => addLesson(section.id)} type="button">
-                    + Thêm Bài giảng mới
+                <div className="instructor-course-builder-header-actions" style={{ justifyContent: 'flex-start', gap: '12px' }}>
+                  <button className="instructor-course-builder-btn instructor-course-builder-btn-primary" type="button" onClick={handleSaveLesson}>
+                    Lưu bài học
+                  </button>
+                  <button className="instructor-course-builder-btn instructor-course-builder-btn-draft" type="button" onClick={() => setEditingLesson(null)}>
+                    Hủy
+                  </button>
+                  <button className="instructor-course-builder-btn instructor-course-builder-btn-draft" type="button" onClick={() => handleDeleteLesson(editingLesson.id)}>
+                    Xóa bài học
                   </button>
                 </div>
-              </article>
-            ))}
-
-            <button className="instructor-course-builder-btn instructor-course-builder-btn-primary full mt" onClick={addSection} type="button">
-              + Thêm Chương mới (Section)
-            </button>
-          </section>
-        </div>
+              </div>
+            </div>
+          ) : (
+            <p>Chọn một bài học bên trên và bấm Sửa để cập nhật hoặc Xóa bài học.</p>
+          )}
+        </section>
       </main>
     </div>
   );

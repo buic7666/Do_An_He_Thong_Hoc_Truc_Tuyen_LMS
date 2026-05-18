@@ -1,7 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { fetchTeacherInteractionsApi, replyTeacherInteractionApi } from '../../api/teacherApi';
-import { logout } from '../../utils/authSession';
+import TeacherSidebar from '../../components/TeacherSidebar';
 
 import './ManHInhChatGV.css';
 
@@ -18,10 +17,6 @@ const getStars = (rating) => {
 };
 
 function ManHInhChatGV() {
-  const navigate = useNavigate();
-    const handleLogout = () => {
-      logout({ navigate });
-    };
   const [activeTab, setActiveTab] = useState('qa');
   const [replies, setReplies] = useState({});
   const [qaThreads, setQaThreads] = useState([]);
@@ -83,54 +78,7 @@ function ManHInhChatGV() {
 
   return (
     <div className="instructor-chat-page">
-      <aside className="instructor-chat-sidebar">
-        <div className="instructor-chat-brand">
-          <div className="instructor-chat-brand-icon">L</div>
-          <span>LMS Admin</span>
-        </div>
-
-        <ul className="instructor-chat-nav-menu">
-          <li>
-            <button className="instructor-chat-nav-link" onClick={() => navigate('/teacher/dashboard')} type="button">
-              Tổng quan
-            </button>
-          </li>
-          <li>
-            <button className="instructor-chat-nav-link" onClick={() => navigate('/teacher/courses')} type="button">
-              Quản lý khóa học
-            </button>
-          </li>
-          <li>
-            <button className="instructor-chat-nav-link" onClick={() => navigate('/teacher/questions')} type="button">
-              Ngân hàng câu hỏi
-            </button>
-          </li>
-          <li>
-            <button className="instructor-chat-nav-link" onClick={() => navigate('/teacher/students')} type="button">
-              Quản lý học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-chat-nav-link active" onClick={() => navigate('/teacher/interaction')} type="button">
-              Tương tác học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-chat-nav-link" onClick={() => navigate('/teacher/profile')} type="button">
-              Hồ sơ giảng viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-chat-nav-link" onClick={() => navigate('/teacher/revenue')} type="button">
-              Doanh thu
-            </button>
-          </li>
-        </ul>
-
-              <button className="instructor-chat-logout-btn" type="button" onClick={handleLogout}>
-                Đăng xuất
-              </button>
-      </aside>
+      <TeacherSidebar />
 
       <main className="instructor-chat-main-content">
         <h1 className="instructor-chat-page-title">Hoi dap & Danh gia</h1>

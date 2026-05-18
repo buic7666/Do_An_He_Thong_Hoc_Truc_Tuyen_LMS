@@ -1,15 +1,39 @@
 ﻿import './ManHinhDangNhap.css';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { loginApi } from '../../api/authApi';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useGoogleLogin } from '@react-oauth/google';
+import { facebookSocialLoginApi, googleSocialLoginApi, loginApi } from '../../api/authApi';
+import { startFacebookLogin } from '../../utils/facebookAuth';
 import { getRoleHomePath } from '../../utils/authRedirect';
 
 function ManHinhDangNhap() {
+  const hasGoogleClientId =
+    Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID) &&
+    !String(import.meta.env.VITE_GOOGLE_CLIENT_ID).startsWith('YOUR_');
+  const hasFacebookAppId =
+    Boolean(import.meta.env.VITE_FACEBOOK_APP_ID) &&
+    !String(import.meta.env.VITE_FACEBOOK_APP_ID).startsWith('YOUR_');
+
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSocialSubmitting, setIsSocialSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const completeLogin = (user) => {
+    if (user?.token) {
+      sessionStorage.setItem('accessToken', user.token);
+    }
+
+    sessionStorage.setItem('currentUser', JSON.stringify(user));
+
+    const redirectPath = searchParams.get('redirect');
+    const isSafeRedirect = redirectPath && redirectPath.startsWith('/');
+
+    navigate(isSafeRedirect ? redirectPath : getRoleHomePath(user?.role));
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -19,17 +43,51 @@ function ManHinhDangNhap() {
 
     try {
       const user = await loginApi({ email, password });
-
-      if (user?.token) {
-        sessionStorage.setItem('accessToken', user.token);
-      }
-
-      sessionStorage.setItem('currentUser', JSON.stringify(user));
-      navigate(getRoleHomePath(user?.role));
+      completeLogin(user);
     } catch (error) {
       setErrorMessage(error?.response?.data?.message || 'Đăng nhập thất bại. Vui lòng thử lại.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleLoginSuccess = async (tokenResponse) => {
+    setIsSocialSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      const user = await googleSocialLoginApi(tokenResponse.access_token);
+      completeLogin(user);
+    } catch (error) {
+      setErrorMessage(error?.response?.data?.message || 'Đăng nhập Google thất bại.');
+    } finally {
+      setIsSocialSubmitting(false);
+    }
+  };
+
+  const loginWithGoogle = useGoogleLogin({
+    scope: 'openid email profile',
+    onSuccess: handleGoogleLoginSuccess,
+    onError: () => setErrorMessage('Không thể đăng nhập Google. Vui lòng thử lại.'),
+  });
+
+  const handleFacebookLogin = async () => {
+    if (!hasFacebookAppId) {
+      setErrorMessage('Thiếu VITE_FACEBOOK_APP_ID trong frontend/.env.');
+      return;
+    }
+
+    setIsSocialSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      const accessToken = await startFacebookLogin();
+      const user = await facebookSocialLoginApi(accessToken);
+      completeLogin(user);
+    } catch (error) {
+      setErrorMessage(error?.response?.data?.message || error?.message || 'Đăng nhập Facebook thất bại.');
+    } finally {
+      setIsSocialSubmitting(false);
     }
   };
 
@@ -80,7 +138,7 @@ function ManHinhDangNhap() {
 
             {errorMessage && <p className='login-input-label'>{errorMessage}</p>}
 
-            <button type='submit' className='login-btn-primary' disabled={isSubmitting}>
+            <button type='submit' className='login-btn-primary' disabled={isSubmitting || isSocialSubmitting}>
               {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
             </button>
           </form>
@@ -90,7 +148,19 @@ function ManHinhDangNhap() {
           </div>
 
           <div className='login-social-buttons'>
-            <button type='button' className='login-btn-social'>
+            <button
+              type='button'
+              className='login-btn-social'
+              onClick={() => {
+                if (!hasGoogleClientId) {
+                  setErrorMessage('Thiếu VITE_GOOGLE_CLIENT_ID trong frontend/.env.');
+                  return;
+                }
+
+                loginWithGoogle();
+              }}
+              disabled={isSubmitting || isSocialSubmitting}
+            >
               <svg viewBox='0 0 24 24' aria-hidden='true'>
                 <path
                   d='M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z'
@@ -112,7 +182,12 @@ function ManHinhDangNhap() {
               Google
             </button>
 
-            <button type='button' className='login-btn-social'>
+            <button
+              type='button'
+              className='login-btn-social'
+              onClick={handleFacebookLogin}
+              disabled={isSubmitting || isSocialSubmitting}
+            >
               <svg viewBox='0 0 24 24' aria-hidden='true'>
                 <path
                   d='M22.675 0h-21.35c-.732 0-1.325.593-1.325 1.325v21.351c0 .731.593 1.324 1.325 1.324h11.495v-9.294h-3.128v-3.622h3.128v-2.671c0-3.1 1.893-4.788 4.659-4.788 1.325 0 2.463.099 2.795.143v3.24l-1.918.001c-1.504 0-1.795.715-1.795 1.763v2.313h3.587l-.467 3.622h-3.12v9.293h6.116c.73 0 1.323-.593 1.323-1.325v-21.35c0-.732-.593-1.325-1.325-1.325z'

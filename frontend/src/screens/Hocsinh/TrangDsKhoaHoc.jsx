@@ -1,11 +1,16 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import './TrangDsKhoaHoc.css';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchCoursesApi } from '../../api/courseApi';
+import { createEnrollmentApi, fetchMyEnrollmentsApi } from '../../api/enrollmentApi';
+import { getCurrentUserSafely } from '../../utils/authRedirect';
+import { isAccessTokenValid } from '../../utils/authSession';
 import { getCourseImageDataUrl } from '../../utils/courseImage';
+import { getCourseDurationLabel } from '../../utils/courseDurationLabel';
+import StudentSidebar from '../../components/StudentSidebar';
 
 const categoryOptions = ['Công nghệ thông tin', 'Kinh tế & Kinh doanh', 'Ngoại ngữ'];
-const levelOptions = ['Cơ bản', 'Trung bình', 'Nâng cao'];
+const durationOptions = ['Ngắn', 'Trung bình', 'Dài'];
 
 function inferCourseCategory(course) {
   const title = String(course?.title || '').toLowerCase();
@@ -31,12 +36,19 @@ function formatPrice(price) {
 }
 
 function TrangDsKhoaHoc() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const currentUser = getCurrentUserSafely();
+  const token = sessionStorage.getItem('accessToken');
+  const isStudentAuthenticated = currentUser?.role === 'student' && isAccessTokenValid(token);
   const [courses, setCourses] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedLevels, setSelectedLevels] = useState([]);
   const [priceType, setPriceType] = useState('Tất cả');
+  const [enrolledCourseIds, setEnrolledCourseIds] = useState([]);
+  const [enrollingCourseId, setEnrollingCourseId] = useState(null);
+  const [actionMessage, setActionMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -44,13 +56,17 @@ function TrangDsKhoaHoc() {
     const loadCourses = async () => {
       setIsLoading(true);
       setErrorMessage('');
+      setActionMessage('');
 
       try {
-        const data = await fetchCoursesApi();
+        const [coursesData, enrollmentsData] = await Promise.all([
+          fetchCoursesApi(),
+          isStudentAuthenticated ? fetchMyEnrollmentsApi().catch(() => []) : Promise.resolve([]),
+        ]);
 
-        const normalizedCourses = (Array.isArray(data) ? data : []).map((item) => {
+        const normalizedCourses = (Array.isArray(coursesData) ? coursesData : []).map((item) => {
           const mappedCategory = inferCourseCategory(item);
-          const mappedLevel = item.lessonsCount > 8 ? 'Nâng cao' : item.lessonsCount > 4 ? 'Trung bình' : 'Cơ bản';
+          const mappedDuration = getCourseDurationLabel(item);
 
           return {
             id: item.id,
@@ -58,7 +74,7 @@ function TrangDsKhoaHoc() {
             alt: item.title,
             category: mappedCategory,
             categoryFilter: mappedCategory,
-            level: mappedLevel,
+            level: mappedDuration,
             title: item.title,
             rating: `${item.totalStudents || 0} học viên`,
             price: Number(item.price || 0),
@@ -66,6 +82,9 @@ function TrangDsKhoaHoc() {
         });
 
         setCourses(normalizedCourses);
+
+        const enrollmentList = Array.isArray(enrollmentsData) ? enrollmentsData : [];
+        setEnrolledCourseIds(enrollmentList.map((item) => Number(item.courseId)).filter(Number.isFinite));
       } catch (error) {
         setErrorMessage(error?.response?.data?.message || 'Không tải được danh sách khóa học.');
       } finally {
@@ -74,7 +93,7 @@ function TrangDsKhoaHoc() {
     };
 
     loadCourses();
-  }, []);
+  }, [isStudentAuthenticated]);
 
   useEffect(() => {
     const selectedCategory = searchParams.get('category');
@@ -115,14 +134,41 @@ function TrangDsKhoaHoc() {
     setState(current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
   };
 
-  return (
-    <div className='course-list-page'>
-      <header className='course-list-header'>
-        <div className='course-list-logo'>LMS Platform</div>
-        <Link to='/login' className='course-list-login-link'>
-          Đăng nhập
-        </Link>
-      </header>
+  const handleEnrollQuickly = async (courseId) => {
+    if (!isStudentAuthenticated) {
+      navigate(`/login?redirect=${encodeURIComponent(`/enroll/${courseId}`)}`);
+      return;
+    }
+
+    setActionMessage('');
+    setEnrollingCourseId(courseId);
+
+    try {
+      await createEnrollmentApi(courseId);
+      setEnrolledCourseIds((previous) => (previous.includes(Number(courseId)) ? previous : [...previous, Number(courseId)]));
+      setActionMessage('Đăng ký khóa học thành công. Bạn có thể vào học ngay.');
+    } catch (error) {
+      if (error?.response?.status === 409) {
+        setEnrolledCourseIds((previous) => (previous.includes(Number(courseId)) ? previous : [...previous, Number(courseId)]));
+        setActionMessage('Bạn đã đăng ký khóa học này trước đó.');
+      } else {
+        setActionMessage(error?.response?.data?.message || 'Đăng ký khóa học thất bại.');
+      }
+    } finally {
+      setEnrollingCourseId(null);
+    }
+  };
+
+  const contentBlock = (
+    <>
+      {!isStudentAuthenticated && (
+        <header className='course-list-header'>
+          <div className='course-list-logo'>LMS Platform</div>
+          <Link to='/login' className='course-list-login-link'>
+            Đăng nhập
+          </Link>
+        </header>
+      )}
 
       <section className='course-list-search-section'>
         <h1>Khám phá khóa học</h1>
@@ -157,8 +203,8 @@ function TrangDsKhoaHoc() {
           </div>
 
           <div className='course-list-filter-group'>
-            <h3 className='course-list-filter-title'>Mức độ</h3>
-            {levelOptions.map((option) => (
+            <h3 className='course-list-filter-title'>Thời lượng</h3>
+            {durationOptions.map((option) => (
               <label key={option} className='course-list-filter-label'>
                 <input
                   type='checkbox'
@@ -189,22 +235,55 @@ function TrangDsKhoaHoc() {
         <main className='course-list-content'>
           {isLoading && <p className='course-list-empty'>Đang tải dữ liệu khóa học...</p>}
           {!isLoading && errorMessage && <p className='course-list-empty'>{errorMessage}</p>}
+          {!isLoading && !errorMessage && actionMessage && <p className='course-list-action-message'>{actionMessage}</p>}
 
           {!isLoading && !errorMessage && (
             <div className='course-list-grid'>
-              {filteredCourses.map((course) => (
-                <Link key={course.id} to={`/courses/${course.id}`} className='course-list-card'>
-                  <img src={course.image} alt={course.alt} className='course-list-thumb' />
-                  <div className='course-list-info'>
-                    <span className='course-list-category'>{course.category}</span>
-                    <h3 className='course-list-title'>{course.title}</h3>
-                    <div className='course-list-meta'>
-                      <span className='course-list-rating'>{course.rating}</span>
-                      <span className='course-list-price'>{formatPrice(course.price)}</span>
+              {filteredCourses.map((course) => {
+                const isEnrolled = enrolledCourseIds.includes(Number(course.id));
+
+                return (
+                  <article key={course.id} className='course-list-card'>
+                    <Link to={`/courses/${course.id}`} className='course-list-card-link'>
+                      <img src={course.image} alt={course.alt} className='course-list-thumb' />
+                      <div className='course-list-info'>
+                        <span className='course-list-category'>{course.category}</span>
+                        <span className='course-list-duration'>{course.level}</span>
+                        <h3 className='course-list-title'>{course.title}</h3>
+                        <div className='course-list-meta'>
+                          <span className='course-list-rating'>{course.rating}</span>
+                          <span className='course-list-price'>{formatPrice(course.price)}</span>
+                        </div>
+                      </div>
+                    </Link>
+
+                    <div className='course-list-actions'>
+                      <Link to={`/courses/${course.id}`} className='course-list-action-btn course-list-action-btn-outline'>
+                        Xem chi tiết
+                      </Link>
+
+                      {isEnrolled ? (
+                        <button
+                          type='button'
+                          className='course-list-action-btn course-list-action-btn-primary'
+                          onClick={() => navigate(`/learn?courseId=${course.id}`)}
+                        >
+                          Vào học
+                        </button>
+                      ) : (
+                        <button
+                          type='button'
+                          className='course-list-action-btn course-list-action-btn-primary'
+                          onClick={() => handleEnrollQuickly(course.id)}
+                          disabled={enrollingCourseId === course.id}
+                        >
+                          {enrollingCourseId === course.id ? 'Đang đăng ký...' : 'Đăng ký nhanh'}
+                        </button>
+                      )}
                     </div>
-                  </div>
-                </Link>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
 
@@ -213,6 +292,19 @@ function TrangDsKhoaHoc() {
           )}
         </main>
       </div>
+    </>
+  );
+
+  return (
+    <div className={`course-list-page ${isStudentAuthenticated ? 'is-student' : ''}`}>
+      {isStudentAuthenticated ? (
+        <div className='course-list-student-shell'>
+          <StudentSidebar />
+          <div className='course-list-student-content'>{contentBlock}</div>
+        </div>
+      ) : (
+        contentBlock
+      )}
     </div>
   );
 }

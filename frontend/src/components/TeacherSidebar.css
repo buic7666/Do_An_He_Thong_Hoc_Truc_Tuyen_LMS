@@ -1,0 +1,112 @@
+.teacher-shared-sidebar {
+  width: 250px;
+  background-color: #1e1e2d;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.teacher-shared-brand {
+  padding: 24px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.teacher-shared-brand-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #1a73e8;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.teacher-shared-nav {
+  list-style: none;
+  padding: 20px 0;
+  flex: 1;
+}
+
+.teacher-shared-nav-button {
+  width: 100%;
+  border: 0;
+  border-left: 4px solid transparent;
+  background: transparent;
+  color: #a2a3b7;
+  text-align: left;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.teacher-shared-nav-button:hover {
+  background-color: #2b2b40;
+  color: #ffffff;
+}
+
+.teacher-shared-nav-button.is-active {
+  background-color: #2b2b40;
+  color: #ffffff;
+  border-left-color: #1a73e8;
+}
+
+.teacher-shared-logout {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #ff6f6f;
+  text-align: left;
+  padding: 20px 24px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.teacher-shared-logout:hover {
+  background-color: #2b2b40;
+}
+
+@media (max-width: 900px) {
+  .teacher-shared-sidebar {
+    width: 70px;
+  }
+
+  .teacher-shared-brand span,
+  .teacher-shared-nav-button,
+  .teacher-shared-logout {
+    font-size: 0;
+  }
+
+  .teacher-shared-brand-icon {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  .teacher-shared-nav-button::before {
+    content: '•';
+    font-size: 20px;
+    line-height: 1;
+    color: #a2a3b7;
+  }
+
+  .teacher-shared-logout::before {
+    content: '!';
+    font-size: 18px;
+    color: #ff6f6f;
+  }
+}

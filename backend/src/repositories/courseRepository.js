@@ -38,7 +38,7 @@ const findByIdWithLessons = async (id) => {
       {
         model: Lesson,
         as: 'lessons',
-        attributes: ['id', 'courseId', 'title', 'videoUrl', 'content', 'orderIndex', 'createdAt'],
+        attributes: ['id', 'courseId', 'chapterId', 'title', 'videoUrl', 'content', 'orderIndex', 'createdAt'],
       },
       {
         model: Enrollment,

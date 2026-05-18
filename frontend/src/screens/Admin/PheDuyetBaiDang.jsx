@@ -1,8 +1,7 @@
 ﻿import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import './PheDuyetBaiDang.css';
-import { logout } from '../../utils/authSession';
+import AdminSidebar from '../../components/AdminSidebar';
 
 const pendingCourses = [
   {
@@ -53,15 +52,8 @@ const pendingCourses = [
 ];
 
 function PheDuyetBaiDang() {
-  const navigate = useNavigate();
   const [selectedCourseId, setSelectedCourseId] = useState(1);
   const [rejectReason, setRejectReason] = useState('');
-
-  const handleLogout = () => {
-    logout({ navigate });
-  };
-
-  const goTo = (path) => () => navigate(path);
 
   const selectedCourse = useMemo(
     () => pendingCourses.find((course) => course.id === selectedCourseId) ?? pendingCourses[0],
@@ -89,37 +81,7 @@ function PheDuyetBaiDang() {
 
   return (
     <div className="admin-approval-page">
-      <aside className="admin-approval-sidebar">
-        <div className="admin-approval-brand">
-          <div className="admin-approval-brand-icon">A</div>
-          <span>Admin Control</span>
-        </div>
-        <ul className="admin-approval-nav-menu">
-          <li>
-            <button className="admin-approval-nav-link" type="button" onClick={goTo('/admin/dashboard')}>
-              Bảng điều khiển
-            </button>
-          </li>
-          <li>
-            <button className="admin-approval-nav-link" type="button" onClick={goTo('/admin/users')}>
-              Quản lý người dùng
-            </button>
-          </li>
-          <li>
-            <button className="admin-approval-nav-link active" type="button">
-              Phê duyệt khóa học
-            </button>
-          </li>
-          <li>
-            <button className="admin-approval-nav-link" type="button" onClick={goTo('/admin/settings')}>
-              Cấu hình hệ thống
-            </button>
-          </li>
-        </ul>
-        <button className="admin-approval-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <AdminSidebar />
 
       <main className="admin-approval-main-content">
         <section className="admin-approval-list">

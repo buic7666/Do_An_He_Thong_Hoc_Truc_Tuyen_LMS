@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchTeacherDashboardApi } from '../../api/teacherApi';
-import { logout } from '../../utils/authSession';
+import TeacherSidebar from '../../components/TeacherSidebar';
 
 const formatCurrency = (value) => `${Number(value || 0).toLocaleString('vi-VN')}d`;
 
@@ -42,10 +42,6 @@ function ManHinhChinhGiaoVien() {
     return Math.max(...values, 1);
   }, [dashboardData]);
 
-  const handleLogout = () => {
-    logout({ navigate });
-  };
-
   const goTo = (path) => () => navigate(path);
 
   const stats = dashboardData?.stats || {};
@@ -54,54 +50,7 @@ function ManHinhChinhGiaoVien() {
 
   return (
     <div className="instructor-dashboard-page">
-      <aside className="instructor-dashboard-sidebar">
-        <div className="instructor-dashboard-brand">
-          <div className="instructor-dashboard-brand-icon">L</div>
-          <span>LMS Admin</span>
-        </div>
-
-        <ul className="instructor-dashboard-nav-menu">
-          <li>
-            <button className="instructor-dashboard-nav-link active" onClick={goTo('/teacher/dashboard')} type="button">
-              Tổng quan
-            </button>
-          </li>
-          <li>
-            <button className="instructor-dashboard-nav-link" onClick={goTo('/teacher/courses')} type="button">
-              Quản lý khóa học
-            </button>
-          </li>
-          <li>
-            <button className="instructor-dashboard-nav-link" onClick={goTo('/teacher/questions')} type="button">
-              Ngân hàng câu hỏi
-            </button>
-          </li>
-          <li>
-            <button className="instructor-dashboard-nav-link" onClick={goTo('/teacher/students')} type="button">
-              Quản lý học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-dashboard-nav-link" onClick={goTo('/teacher/interaction')} type="button">
-              Tương tác học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-dashboard-nav-link" onClick={goTo('/teacher/profile')} type="button">
-              Hồ sơ giảng viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-dashboard-nav-link" onClick={goTo('/teacher/revenue')} type="button">
-              Doanh thu
-            </button>
-          </li>
-        </ul>
-
-        <button className="instructor-dashboard-logout-btn" type="button" onClick={handleLogout}>
-          Đăng xuất
-        </button>
-      </aside>
+      <TeacherSidebar />
 
       <main className="instructor-dashboard-main-content">
         <header className="instructor-dashboard-top-header">

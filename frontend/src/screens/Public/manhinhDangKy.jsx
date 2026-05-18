@@ -1,17 +1,38 @@
 ﻿import './manhinhDangKy.css';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { registerApi } from '../../api/authApi';
+import { useGoogleLogin } from '@react-oauth/google';
+import { facebookSocialLoginApi, googleSocialLoginApi, registerApi } from '../../api/authApi';
+import { startFacebookLogin } from '../../utils/facebookAuth';
 import { getRoleHomePath } from '../../utils/authRedirect';
 
+
 function ManHinhDangKy() {
+  const hasGoogleClientId =
+    Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID) &&
+    !String(import.meta.env.VITE_GOOGLE_CLIENT_ID).startsWith('YOUR_');
+  const hasFacebookAppId =
+    Boolean(import.meta.env.VITE_FACEBOOK_APP_ID) &&
+    !String(import.meta.env.VITE_FACEBOOK_APP_ID).startsWith('YOUR_');
+
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('student');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSocialSubmitting, setIsSocialSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const completeAuth = (user) => {
+    if (user?.token) {
+      sessionStorage.setItem('accessToken', user.token);
+    }
+
+    sessionStorage.setItem('currentUser', JSON.stringify(user));
+    navigate(getRoleHomePath(user?.role));
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -25,18 +46,52 @@ function ManHinhDangKy() {
     setErrorMessage('');
 
     try {
-      const user = await registerApi({ name, email, password, role: 'student' });
-
-      if (user?.token) {
-        sessionStorage.setItem('accessToken', user.token);
-      }
-
-      sessionStorage.setItem('currentUser', JSON.stringify(user));
-      navigate(getRoleHomePath(user?.role));
+      const user = await registerApi({ name, email, password, role });
+      completeAuth(user);
     } catch (error) {
       setErrorMessage(error?.response?.data?.message || 'Đăng ký thất bại. Vui lòng thử lại.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleRegisterSuccess = async (tokenResponse) => {
+    setIsSocialSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      const user = await googleSocialLoginApi(tokenResponse.access_token);
+      completeAuth(user);
+    } catch (error) {
+      setErrorMessage(error?.response?.data?.message || 'Đăng ký bằng Google thất bại.');
+    } finally {
+      setIsSocialSubmitting(false);
+    }
+  };
+
+  const registerWithGoogle = useGoogleLogin({
+    scope: 'openid email profile',
+    onSuccess: handleGoogleRegisterSuccess,
+    onError: () => setErrorMessage('Không thể đăng ký bằng Google. Vui lòng thử lại.'),
+  });
+
+  const handleFacebookRegister = async () => {
+    if (!hasFacebookAppId) {
+      setErrorMessage('Thiếu VITE_FACEBOOK_APP_ID trong frontend/.env.');
+      return;
+    }
+
+    setIsSocialSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      const accessToken = await startFacebookLogin();
+      const user = await facebookSocialLoginApi(accessToken);
+      completeAuth(user);
+    } catch (error) {
+      setErrorMessage(error?.response?.data?.message || error?.message || 'Đăng ký bằng Facebook thất bại.');
+    } finally {
+      setIsSocialSubmitting(false);
     }
   };
 
@@ -50,6 +105,21 @@ function ManHinhDangKy() {
           <p className='register-form-subtitle'>Bắt đầu hành trình chinh phục tri thức ngay hôm nay.</p>
 
           <form onSubmit={handleSubmit}>
+                        <div className='register-input-group'>
+                          <label htmlFor='register-role' className='register-input-label'>
+                            Vai trò
+                          </label>
+                          <select
+                            id='register-role'
+                            className='register-input-field'
+                            value={role}
+                            onChange={(event) => setRole(event.target.value)}
+                            required
+                          >
+                            <option value='student'>Học viên</option>
+                            <option value='teacher'>Giáo viên</option>
+                          </select>
+                        </div>
             <div className='register-input-group'>
               <label htmlFor='register-fullname' className='register-input-label'>
                 Họ và tên
@@ -127,7 +197,7 @@ function ManHinhDangKy() {
 
             {errorMessage && <p className='register-input-label'>{errorMessage}</p>}
 
-            <button type='submit' className='register-btn-primary' disabled={isSubmitting}>
+            <button type='submit' className='register-btn-primary' disabled={isSubmitting || isSocialSubmitting}>
               {isSubmitting ? 'Đang đăng ký...' : 'Đăng ký tài khoản'}
             </button>
           </form>
@@ -137,7 +207,19 @@ function ManHinhDangKy() {
           </div>
 
           <div className='register-social-buttons'>
-            <button type='button' className='register-btn-social'>
+            <button
+              type='button'
+              className='register-btn-social'
+              onClick={() => {
+                if (!hasGoogleClientId) {
+                  setErrorMessage('Thiếu VITE_GOOGLE_CLIENT_ID trong frontend/.env.');
+                  return;
+                }
+
+                registerWithGoogle();
+              }}
+              disabled={isSubmitting || isSocialSubmitting}
+            >
               <svg viewBox='0 0 24 24' aria-hidden='true'>
                 <path
                   d='M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z'
@@ -159,7 +241,12 @@ function ManHinhDangKy() {
               Google
             </button>
 
-            <button type='button' className='register-btn-social'>
+            <button
+              type='button'
+              className='register-btn-social'
+              onClick={handleFacebookRegister}
+              disabled={isSubmitting || isSocialSubmitting}
+            >
               <svg viewBox='0 0 24 24' aria-hidden='true'>
                 <path
                   d='M22.675 0h-21.35c-.732 0-1.325.593-1.325 1.325v21.351c0 .731.593 1.324 1.325 1.324h11.495v-9.294h-3.128v-3.622h3.128v-2.671c0-3.1 1.893-4.788 4.659-4.788 1.325 0 2.463.099 2.795.143v3.24l-1.918.001c-1.504 0-1.795.715-1.795 1.763v2.313h3.587l-.467 3.622h-3.12v9.293h6.116c.73 0 1.323-.593 1.323-1.325v-21.35c0-.732-.593-1.325-1.325-1.325z'

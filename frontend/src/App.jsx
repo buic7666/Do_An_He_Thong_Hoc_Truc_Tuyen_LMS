@@ -15,9 +15,16 @@ import ManHinhLamBaiThi from './screens/Hocsinh/ManHinhLamBaiThi';
 import ManHinhLichSuGiaoDich from './screens/Hocsinh/ManHinhLichSuGiaoDich';
 import ManHinhThanhToan from './screens/Hocsinh/ManHinhThanhToan';
 import ManHinhTrangThaiGiaoDich from './screens/Hocsinh/ManHinhTrangThaiGiaoDich';
+import ManHinhDangKyKhoaHoc from './screens/Hocsinh/ManHinhDangKyKhoaHoc';
 import ManHinhChinhGiaoVien from './screens/GiangVien/ManHinhChinhGiaoVien';
 import ManHinhQuanLyKhoaHoc from './screens/GiangVien/ManHinhQuanLyKhoaHoc';
+import Step1_DanhSachKhoaHoc from './screens/GiangVien/Step1_DanhSachKhoaHoc';
+import Step2_ChiTietKhoaHoc from './screens/GiangVien/Step2_ChiTietKhoaHoc';
+import Step3_ChiTietChapter from './screens/GiangVien/Step3_ChiTietChapter';
+import LessonDetail from './screens/GiangVien/LessonDetail';
+import SegmentDetailView from './screens/GiangVien/SegmentDetailView';
 import ManHinhQuanLyNganHangCauhoi from './screens/GiangVien/ManHinhQuanLyNganHangCauhoi';
+import SurveyActivity from './screens/GiangVien/SurveyActivity';
 import ManHinhTheoDoiDSoHocvien from './screens/GiangVien/ManHinhTheoDoi_DSoHocvien';
 import ManHInhChatGV from './screens/GiangVien/ManHInhChatGV';
 import HoSoGiangVien from './screens/GiangVien/HoSoGiangVien';
@@ -31,6 +38,7 @@ import QuanLyGiaoDich from './screens/Admin/QuanLyGiaoDich';
 import ManHinhchitietKhoaHoc from './screens/KhachVangLai/ManHinhchitietKhoaHoc';
 import ManHinhTinTuc_Sk from './screens/KhachVangLai/ManHinhTinTuc_Sk';
 import ManHinhxemThubaiGiang from './screens/KhachVangLai/ManHinhxemThubaiGiang';
+import FacebookOAuthCallback from './screens/Public/FacebookOAuthCallback';
 import { getAuthenticatedHomePath, getCurrentUserSafely, getRoleHomePath } from './utils/authRedirect';
 import { clearAuthSession, isAccessTokenValid } from './utils/authSession';
 
@@ -148,6 +156,14 @@ function App() {
         }
       />
       <Route
+        path='/enroll/:courseId'
+        element={
+          <ProtectedRoute allowedRoles={['student']}>
+            <ManHinhDangKyKhoaHoc />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path='/payment-status'
         element={
           <ProtectedRoute allowedRoles={['student']}>
@@ -167,15 +183,61 @@ function App() {
         path='/teacher/courses'
         element={
           <ProtectedRoute allowedRoles={['teacher']}>
-            <ManHinhQuanLyKhoaHoc />
+            <Step1_DanhSachKhoaHoc />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/chapters'
+        element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <Step2_ChiTietKhoaHoc />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/question-bank'
+        element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <ManHinhQuanLyNganHangCauhoi />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/chapters/:chapterId/lessons'
+        element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <Step3_ChiTietChapter />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/chapters/:chapterId/lessons/:lessonId'
+        element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <LessonDetail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/chapters/:chapterId/lessons/:lessonId/segments/:segmentId'
+        element={
+          <ProtectedRoute allowedRoles={['teacher']}>
+            <SegmentDetailView />
           </ProtectedRoute>
         }
       />
       <Route
         path='/teacher/questions'
         element={
-          <ProtectedRoute allowedRoles={['teacher']}>
-            <ManHinhQuanLyNganHangCauhoi />
+          <Navigate to='/teacher/courses' replace />
+        }
+      />
+      <Route
+        path='/teacher/courses/:courseId/activity/feedback'
+        element={
+          <ProtectedRoute allowedRoles={['teacher', 'student']}>
+            <SurveyActivity />
           </ProtectedRoute>
         }
       />
@@ -263,6 +325,7 @@ function App() {
       <Route path="/guest/news" element={<ManHinhTinTuc_Sk />} />
       <Route path="/guest/preview" element={<ManHinhxemThubaiGiang />} />
       <Route path='/guest/course/:id/preview' element={<ManHinhxemThubaiGiang />} />
+      <Route path='/oauth/facebook/callback' element={<FacebookOAuthCallback />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

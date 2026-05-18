@@ -291,6 +291,18 @@
   box-shadow: 0 4px 10px rgba(255, 193, 7, 0.3);
 }
 
+.exam-submit-message {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #e8f0fe;
+  border: 1px solid #9fc3ff;
+  color: var(--exam-text-dark);
+  z-index: 20;
+}
+
 @media (max-width: 900px) {
   .exam-page {
     height: auto;

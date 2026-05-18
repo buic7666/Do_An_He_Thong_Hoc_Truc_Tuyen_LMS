@@ -1,8 +1,7 @@
 ﻿import './ManHinhBaoCaoDoanhthu.css';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { fetchTeacherDashboardApi } from '../../api/teacherApi';
-import { logout } from '../../utils/authSession';
+import TeacherSidebar from '../../components/TeacherSidebar';
 
 const formatCurrency = (value) => `${Number(value || 0).toLocaleString('vi-VN')}d`;
 
@@ -39,10 +38,6 @@ const withdrawHistory = [
 ];
 
 function ManHinhBaoCaoDoanhthu() {
-  const navigate = useNavigate();
-    const handleLogout = () => {
-      logout({ navigate });
-    };
   const [dashboardData, setDashboardData] = useState(null);
 
   useEffect(() => {
@@ -85,54 +80,7 @@ function ManHinhBaoCaoDoanhthu() {
 
   return (
     <div className="instructor-finance-page">
-      <aside className="instructor-finance-sidebar">
-        <div className="instructor-finance-brand">
-          <div className="instructor-finance-brand-icon">L</div>
-          <span>LMS Admin</span>
-        </div>
-
-        <ul className="instructor-finance-nav-menu">
-          <li>
-            <button className="instructor-finance-nav-link" onClick={() => navigate('/teacher/dashboard')} type="button">
-              Tổng quan
-            </button>
-          </li>
-          <li>
-            <button className="instructor-finance-nav-link" onClick={() => navigate('/teacher/courses')} type="button">
-              Quản lý khóa học
-            </button>
-          </li>
-          <li>
-            <button className="instructor-finance-nav-link" onClick={() => navigate('/teacher/questions')} type="button">
-              Ngân hàng câu hỏi
-            </button>
-          </li>
-          <li>
-            <button className="instructor-finance-nav-link" onClick={() => navigate('/teacher/students')} type="button">
-              Quản lý học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-finance-nav-link" onClick={() => navigate('/teacher/interaction')} type="button">
-              Tương tác học viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-finance-nav-link" onClick={() => navigate('/teacher/profile')} type="button">
-              Hồ sơ giảng viên
-            </button>
-          </li>
-          <li>
-            <button className="instructor-finance-nav-link active" onClick={() => navigate('/teacher/revenue')} type="button">
-              Doanh thu
-            </button>
-          </li>
-        </ul>
-
-              <button className="instructor-finance-logout-btn" type="button" onClick={handleLogout}>
-                Đăng xuất
-              </button>
-      </aside>
+      <TeacherSidebar />
 
       <main className="instructor-finance-main-content">
         <h1 className="instructor-finance-page-title">Quan ly Tai chinh</h1>

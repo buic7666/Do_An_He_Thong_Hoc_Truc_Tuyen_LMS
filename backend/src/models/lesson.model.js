@@ -32,6 +32,12 @@ const Lesson = sequelize.define(
       allowNull: false,
       field: 'order_index',
     },
+    chapterId: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: true,
+      field: 'chapter_id',
+      comment: 'Chương mà bài giảng này thuộc về',
+    },
   },
   {
     tableName: 'lessons',
