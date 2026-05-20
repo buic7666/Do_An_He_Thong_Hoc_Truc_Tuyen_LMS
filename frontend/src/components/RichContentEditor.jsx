@@ -119,6 +119,37 @@ const RichContentEditor = ({
     replaceSelectedLines((lines) => lines.map((line) => `${prefix}${line}`));
   };
 
+  const replaceSelection = (transform, caretOffset = null) => {
+    const text = String(textBlock.text || '');
+    const { start, end } = getSelectionRange();
+    const s = Math.max(0, Math.min(start, text.length));
+    const e = Math.max(0, Math.min(end, text.length));
+    const before = text.slice(0, s);
+    const selected = text.slice(s, e);
+    const after = text.slice(e);
+    const transformed = transform(selected);
+    const nextText = `${before}${transformed}${after}`;
+    updateTextBlock(nextText);
+    if (typeof caretOffset === 'number') {
+      const pos = s + caretOffset;
+      selectionRef.current = { start: pos, end: pos };
+    } else {
+      selectionRef.current = { start: s, end: s + String(transformed).length };
+    }
+  };
+
+  const wrapSelection = (prefix, suffix = prefix) => {
+    const text = String(textBlock.text || '');
+    const { start, end } = getSelectionRange();
+    const s = Math.max(0, Math.min(start, text.length));
+    const e = Math.max(0, Math.min(end, text.length));
+    const isEmpty = s === e;
+    replaceSelection((sel) => {
+      if (!sel) return `${prefix}${suffix}`;
+      return `${prefix}${sel}${suffix}`;
+    }, isEmpty ? prefix.length : null);
+  };
+
   const transformHeading = (level) => {
     replaceSelectedLines((lines) => lines.map((line) => {
       const cleaned = line.replace(/^#{1,6}\s*/, '');
@@ -227,10 +258,10 @@ const RichContentEditor = ({
           <div style={{ width: '1px', height: '20px', background: '#ccc', margin: '0 4px' }} />
 
           {/* Text formatting */}
-          <button type="button" title="Đậm" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: 'white', fontWeight: 'bold' }} onMouseDown={withToolbarAction(() => wrapSelectedLines('**'))}>B</button>
-          <button type="button" title="Nghiêng" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: 'white', fontStyle: 'italic' }} onMouseDown={withToolbarAction(() => wrapSelectedLines('_'))}>I</button>
-          <button type="button" title="Gạch chân" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: 'white', textDecoration: 'underline' }} onMouseDown={withToolbarAction(() => wrapSelectedLines('__'))}>U</button>
-          <button type="button" title="Gạch ngang" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: 'white', textDecoration: 'line-through', fontSize: 12 }} onMouseDown={withToolbarAction(() => wrapSelectedLines('~~'))}>S</button>
+          <button type="button" title="Đậm" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: 'white', fontWeight: 'bold' }} onMouseDown={withToolbarAction(() => wrapSelection('**'))}>B</button>
+          <button type="button" title="Nghiêng" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: 'white', fontStyle: 'italic' }} onMouseDown={withToolbarAction(() => wrapSelection('_'))}>I</button>
+          <button type="button" title="Gạch chân" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: 'white', textDecoration: 'underline' }} onMouseDown={withToolbarAction(() => wrapSelection('__'))}>U</button>
+          <button type="button" title="Gạch ngang" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: 'white', textDecoration: 'line-through', fontSize: 12 }} onMouseDown={withToolbarAction(() => wrapSelection('~~'))}>S</button>
           
           <div style={{ width: '1px', height: '20px', background: '#ccc', margin: '0 4px' }} />
 
@@ -242,13 +273,13 @@ const RichContentEditor = ({
           <div style={{ width: '1px', height: '20px', background: '#ccc', margin: '0 4px' }} />
 
           {/* Code & Quote */}
-          <button type="button" title="Inline code" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: '#f0f0f0', fontFamily: 'monospace', fontSize: 11 }} onMouseDown={withToolbarAction(() => wrapSelectedLines('`'))}>{'<>'}code</button>
+          <button type="button" title="Inline code" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: '#f0f0f0', fontFamily: 'monospace', fontSize: 11 }} onMouseDown={withToolbarAction(() => wrapSelection('`'))}>{'<>'}code</button>
           <button type="button" title="Block quote" style={{ padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', background: 'white', fontSize: 12 }} onMouseDown={withToolbarAction(() => prefixSelectedLines('> '))}>❝</button>
           
           <div style={{ width: '1px', height: '20px', background: '#ccc', margin: '0 4px' }} />
 
           {/* Link & Media */}
-          <button type="button" title="Chèn link" style={{ padding: '4px 8px', border: '1px solid #3b82f6', borderRadius: 4, cursor: 'pointer', background: '#eff6ff', color: '#1d4ed8', fontWeight: 600, fontSize: 12 }} onMouseDown={withToolbarAction(() => wrapSelectedLines('[', '](https://example.com)'))}>🔗 Link</button>
+          <button type="button" title="Chèn link" style={{ padding: '4px 8px', border: '1px solid #3b82f6', borderRadius: 4, cursor: 'pointer', background: '#eff6ff', color: '#1d4ed8', fontWeight: 600, fontSize: 12 }} onMouseDown={withToolbarAction(() => wrapSelection('[', '](https://example.com)'))}>🔗 Link</button>
           <button
             type="button"
             title="Chèn ảnh"
