@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { fetchQuestionsApi } from '../api/teacherManagementApi';
 
-const SelectQuestionsModal = ({ isOpen, onClose, filters = {}, initial = [], onConfirm }) => {
+const SelectQuestionsModal = ({ isOpen, onClose, filters = {}, initial = [], initialRandomCount = 0, onConfirm }) => {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(initial || []);
-  const [mode, setMode] = useState('select'); // 'select' or 'random'
-  const [randomCount, setRandomCount] = useState(1);
+  const [randomCount, setRandomCount] = useState(0);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 10;
@@ -19,87 +18,108 @@ const SelectQuestionsModal = ({ isOpen, onClose, filters = {}, initial = [], onC
   useEffect(() => {
     if (!isOpen) return;
     setLoading(true);
-    fetchQuestionsApi(filters).then((res) => {
-      setQuestions(res || []);
-    }).catch(() => setQuestions([])).finally(() => setLoading(false));
+    fetchQuestionsApi(filters)
+      .then((res) => {
+        setQuestions(res || []);
+      })
+      .catch(() => setQuestions([]))
+      .finally(() => setLoading(false));
   }, [isOpen, JSON.stringify(filters)]);
 
   useEffect(() => setSelected(initial || []), [initial]);
 
   useEffect(() => {
-    if (mode === 'random') {
-      setSelected([]);
-    }
-  }, [mode]);
+    if (!isOpen) return;
+    setRandomCount(Number(initialRandomCount || 0));
+  }, [isOpen, initialRandomCount]);
 
   useEffect(() => setPage(1), [query]);
 
   if (!isOpen) return null;
 
+  const qlist = (questions || []).filter((q) => {
+    if (!query) return true;
+    const s = `${String(q.content || '')} ${String(q.title || '')} ${String(q.id || '')}`.toLowerCase();
+    return s.indexOf(query.toLowerCase()) !== -1;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(qlist.length / pageSize));
+  const pageIndex = Math.min(Math.max(1, page), totalPages);
+  const pageItems = qlist.slice((pageIndex - 1) * pageSize, pageIndex * pageSize);
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20000 }} onClick={onClose}>
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20000 }}
+      onClick={onClose}
+    >
       <div style={{ width: '90%', maxWidth: 900, background: 'white', borderRadius: 8, padding: 20 }} onClick={(e) => e.stopPropagation()}>
         <h3>Chọn câu hỏi cho bài tập</h3>
+
         <div style={{ marginBottom: 12 }}>
           <label style={{ marginRight: 12 }}>
-            <input type="radio" name="mode" value="select" checked={mode === 'select'} onChange={() => setMode('select')} /> Chọn từng câu
+            <input type="checkbox" checked={randomCount > 0} onChange={(e) => setRandomCount(e.target.checked ? 1 : 0)} /> Thêm câu ngẫu nhiên
           </label>
-          <label>
-            <input type="radio" name="mode" value="random" checked={mode === 'random'} onChange={() => setMode('random')} /> Chọn ngẫu nhiên
-          </label>
+          {randomCount > 0 && (
+            <label style={{ marginLeft: 12 }}>
+              Số câu ngẫu nhiên:
+              <input
+                type="number"
+                min="1"
+                value={randomCount}
+                onChange={(e) => setRandomCount(Math.max(1, Number(e.target.value || 1)))}
+                style={{ width: 100, marginLeft: 8 }}
+              />
+            </label>
+          )}
+          <div style={{ marginTop: 8, color: '#6b7280' }}>
+            Bạn có thể chọn một số câu cụ thể và yêu cầu hệ thống thêm {randomCount || 0} câu ngẫu nhiên bổ sung từ bộ lọc hiện tại.
+          </div>
         </div>
 
-        {mode === 'random' ? (
-          <div style={{ marginBottom: 12 }}>
-            <label>Số câu ngẫu nhiên: </label>
-            <input type="number" min="1" value={randomCount} onChange={(e) => setRandomCount(Math.max(1, Number(e.target.value || 1)))} style={{ width: 100, marginLeft: 8 }} />
-            <div style={{ marginTop: 8, color: '#6b7280' }}>Khi lưu, hệ thống sẽ lấy ngẫu nhiên {randomCount} câu từ bộ lọc hiện tại.</div>
-            <div style={{ marginTop: 8, color: '#9ca3af', fontSize: 13 }}>Khi random được bật, danh sách chọn từng câu sẽ bị khóa để tránh nhầm lẫn.</div>
-          </div>
-        ) : (
-          <div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <input placeholder="Tìm kiếm nội dung hoặc ID" value={query} onChange={(e) => setQuery(e.target.value)} style={{ flex: 1, padding: 8, border: '1px solid #e5e7eb', borderRadius: 6 }} />
-              <div style={{ color: '#6b7280' }}>{questions.length} câu hỏi</div>
-            </div>
-            <div style={{ maxHeight: 340, overflow: 'auto', border: '1px solid #e5e7eb', padding: 8, borderRadius: 6 }}>
-              {loading ? <div>Đang tải...</div> : (() => {
-                const qlist = (questions || []).filter((q) => {
-                  if (!query) return true;
-                  const s = `${String(q.content || '')} ${String(q.title || '')} ${String(q.id || '')}`.toLowerCase();
-                  return s.indexOf(query.toLowerCase()) !== -1;
-                });
-                if (!qlist.length) return <div>Không tìm thấy câu hỏi cho bộ lọc này.</div>;
-                const totalPages = Math.max(1, Math.ceil(qlist.length / pageSize));
-                const pageIndex = Math.min(Math.max(1, page), totalPages);
-                const pageItems = qlist.slice((pageIndex - 1) * pageSize, pageIndex * pageSize);
-                return (
-                  <>
-                    {pageItems.map((q) => (
-                      <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderBottom: '1px solid #f3f4f6' }}>
-                        <input type="checkbox" checked={selected.indexOf(q.id) !== -1} onChange={(e) => {
-                          if (e.target.checked) setSelected((s) => [...s, q.id]);
-                          else setSelected((s) => s.filter((id) => id !== q.id));
-                        }} />
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600 }}>{q.title || q.content || `Câu #${q.id}`}</div>
-                          <div style={{ color: '#6b7280', fontSize: 13 }}>{q.type}</div>
-                        </div>
-                      </div>
-                    ))}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
-                      <div style={{ color: '#6b7280' }}>Hiển thị trang {pageIndex} / {totalPages} — {qlist.length} kết quả</div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button type="button" className="form-button secondary" disabled={pageIndex <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Trước</button>
-                        <button type="button" className="form-button secondary" disabled={pageIndex >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Tiếp</button>
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          <input
+            placeholder="Tìm kiếm nội dung hoặc ID"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ flex: 1, padding: 8, border: '1px solid #e5e7eb', borderRadius: 6 }}
+          />
+          <div style={{ color: '#6b7280' }}>{questions.length} câu hỏi</div>
+        </div>
+
+        <div style={{ maxHeight: 340, overflow: 'auto', border: '1px solid #e5e7eb', padding: 8, borderRadius: 6 }}>
+          {loading ? (
+            <div>Đang tải...</div>
+          ) : qlist.length ? (
+            <>
+              {pageItems.map((q) => (
+                <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderBottom: '1px solid #f3f4f6' }}>
+                  <input
+                    type="checkbox"
+                    checked={selected.indexOf(q.id) !== -1}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelected((s) => [...s, q.id]);
+                      else setSelected((s) => s.filter((id) => id !== q.id));
+                    }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600 }}>{q.title || q.content || `Câu #${q.id}`}</div>
+                    <div style={{ color: '#6b7280', fontSize: 13 }}>{q.type}</div>
+                  </div>
+                </div>
+              ))}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
+                <div style={{ color: '#6b7280' }}>Hiển thị trang {pageIndex} / {totalPages} — {qlist.length} kết quả</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="form-button secondary" disabled={pageIndex <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Trước</button>
+                  <button type="button" className="form-button secondary" disabled={pageIndex >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Tiếp</button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div>Không tìm thấy câu hỏi cho bộ lọc này.</div>
+          )}
+        </div>
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 20, paddingTop: 16, borderTop: '1px solid #e5e7eb' }}>
           <button
@@ -121,16 +141,12 @@ const SelectQuestionsModal = ({ isOpen, onClose, filters = {}, initial = [], onC
           <button
             type="button"
             onClick={() => {
-              if (mode === 'random') {
-                onConfirm({ randomize: true, randomCount: Number(randomCount || 1), questionIds: [], questionTitles: [] });
-              } else {
-                onConfirm({
-                  randomize: false,
-                  randomCount: 0,
-                  questionIds: selected,
-                  questionTitles: selected.map((questionId) => questionTitleById(questionId)),
-                });
-              }
+              onConfirm({
+                randomize: Number(randomCount || 0) > 0,
+                randomCount: Number(randomCount || 0),
+                questionIds: selected,
+                questionTitles: selected.map((questionId) => questionTitleById(questionId)),
+              });
               onClose();
             }}
             style={{

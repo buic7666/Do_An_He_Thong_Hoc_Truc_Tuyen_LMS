@@ -108,13 +108,15 @@ const formatGradingDetails = (item) => {
   return [];
 };
 
-const QuizTaker = ({ quizId, onBack, onSubmit }) => {
+const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
   const [quiz, setQuiz] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [result, setResult] = useState(null);
+  const [gradingMap, setGradingMap] = useState({});
+  const [showResultDetails, setShowResultDetails] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [attemptId, setAttemptId] = useState(null);
@@ -123,8 +125,6 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
 
   const autoSaveIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
-  const autoAdvanceTimeoutRef = useRef(null);
-  const previousAnswerRef = useRef({});
 
   const loadQuiz = useCallback(async () => {
     try {
@@ -142,6 +142,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
           type: item.type || 'MULTIPLE_CHOICE',
           metadata,
           options: Array.isArray(item.options) ? item.options : (Array.isArray(metadata.options) ? metadata.options : []),
+          contentBlocks: Array.isArray(item.contentBlocks) ? item.contentBlocks : (Array.isArray(metadata.contentBlocks) ? metadata.contentBlocks : []),
         };
       });
 
@@ -222,11 +223,26 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
         },
       );
 
+      const payload = response?.data?.data || null;
+
+      // build grading map: { questionId: { score, gradingDetails, aiFeedback } }
+      const map = {};
+      if (Array.isArray(payload?.answers)) {
+        for (const a of payload.answers) {
+          map[a.questionId] = {
+            score: a.score,
+            gradingDetails: a.gradingDetails || null,
+            aiFeedback: a.aiFeedback || null,
+          };
+        }
+      }
+
+      setGradingMap(map);
       setIsSubmitted(true);
-      setResult(response?.data?.data || null);
+      setResult(payload);
 
       if (onSubmit) {
-        onSubmit(response?.data?.data || null);
+        onSubmit(payload);
       }
     } catch (err) {
       setError(err?.response?.data?.message || 'Không thể nộp bài kiểm tra');
@@ -275,45 +291,6 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
     }));
   };
 
-  // Auto-advance to next question after answering
-  useEffect(() => {
-    if (isSubmitted || !quiz?.questions?.length) {
-      return;
-    }
-
-    const currentQuestion = quiz.questions[currentQuestionIndex];
-    if (!currentQuestion) {
-      return;
-    }
-
-    const currentAnswer = answers[currentQuestion.id];
-    const previousAnswer = previousAnswerRef.current[currentQuestion.id];
-
-    // Check if a new answer was just provided
-    if (currentAnswer && !previousAnswer && isAnswered({ type: currentAnswer.type, value: currentAnswer.value })) {
-      previousAnswerRef.current[currentQuestion.id] = currentAnswer;
-
-      // Clear any existing timeout
-      if (autoAdvanceTimeoutRef.current) {
-        clearTimeout(autoAdvanceTimeoutRef.current);
-      }
-
-      // Auto-advance to next question after 1 second
-      autoAdvanceTimeoutRef.current = setTimeout(() => {
-        const nextIndex = Math.min(currentQuestionIndex + 1, quiz.questions.length - 1);
-        if (nextIndex > currentQuestionIndex) {
-          setCurrentQuestionIndex(nextIndex);
-        }
-      }, 1000);
-    }
-
-    return () => {
-      if (autoAdvanceTimeoutRef.current) {
-        clearTimeout(autoAdvanceTimeoutRef.current);
-      }
-    };
-  }, [answers, currentQuestionIndex, isSubmitted, quiz?.questions]);
-
   const toggleMultipleChoiceOption = (questionId, optionIndex) => {
     const current = answers[questionId]?.value?.indices || [];
     const hasIndex = current.includes(optionIndex);
@@ -330,6 +307,32 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const getQuestionBlocks = (question) => {
+    const metadata = parseJson(question?.metadata, {});
+
+    if (Array.isArray(metadata?.contentBlocks) && metadata.contentBlocks.length > 0) {
+      return metadata.contentBlocks;
+    }
+
+    if (Array.isArray(metadata?.blocks) && metadata.blocks.length > 0) {
+      return metadata.blocks;
+    }
+
+    if (Array.isArray(metadata?.richContent?.blocks) && metadata.richContent.blocks.length > 0) {
+      return metadata.richContent.blocks;
+    }
+
+    if (Array.isArray(question?.contentBlocks) && question.contentBlocks.length > 0) {
+      return question.contentBlocks;
+    }
+
+    const textFallback = String(
+      question?.content || question?.questionText || metadata?.questionText || metadata?.title || '',
+    ).trim();
+
+    return textFallback ? [{ type: 'text', text: textFallback }] : [];
+  };
+
   const renderQuestionInput = (question) => {
     const questionType = question.type || 'MULTIPLE_CHOICE';
     const metadata = parseJson(question.metadata, {});
@@ -338,22 +341,38 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
       const selectedIndices = answers[question.id]?.value?.indices || [];
       const options = Array.isArray(question.options) ? question.options : [];
 
+      // grading info when submitted
+      const grading = gradingMap[question.id] || null;
+      const correctIndices = Array.isArray(grading?.gradingDetails?.correctIndices) ? grading.gradingDetails.correctIndices : null;
+
       return (
         <div className="question-options">
-          {options.map((option, index) => (
-            <label key={`${question.id}-opt-${index + 1}`} className="option">
-              <input
-                type="checkbox"
-                checked={selectedIndices.includes(index)}
-                onChange={() => toggleMultipleChoiceOption(question.id, index)}
-                disabled={isSubmitted}
-              />
+          {options.map((option, index) => {
+            const isSelected = selectedIndices.includes(index);
+            let optionClass = 'option';
+
+            if (isSubmitted && correctIndices) {
+              if (correctIndices.includes(index)) {
+                optionClass += ' correct';
+              } else if (isSelected && !correctIndices.includes(index)) {
+                optionClass += ' incorrect';
+              }
+            }
+
+            return (
+              <label key={`${question.id}-opt-${index + 1}`} className={optionClass}>
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleMultipleChoiceOption(question.id, index)}
+                  disabled={isSubmitted}
+                />
                 <span className="option-text">
                   {typeof option === 'string' ? (
                     option
-                  ) : Array.isArray(option?.contentBlocks) ? (
+                  ) : Array.isArray(option?.contentBlocks) && option.contentBlocks.length > 0 ? (
                     <RichContentRenderer blocks={option.contentBlocks} />
-                  ) : option?.blocks ? (
+                  ) : Array.isArray(option?.blocks) && option.blocks.length > 0 ? (
                     <RichContentRenderer blocks={option.blocks} />
                   ) : option?.text ? (
                     option.text
@@ -361,8 +380,9 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
                     String(option || '')
                   )}
                 </span>
-            </label>
-          ))}
+              </label>
+            );
+          })}
         </div>
       );
     }
@@ -415,6 +435,11 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
     const rubric = Array.isArray(metadata.rubric) ? metadata.rubric : [];
     return (
       <div className="question-options">
+        {isSubmitted && gradingMap[question.id] && (
+          <div style={{ marginBottom: 8 }}>
+            <strong>Điểm: </strong>{gradingMap[question.id].score} / 1
+          </div>
+        )}
         {metadata.instructions ? <p style={{ marginBottom: 8 }}>Hướng dẫn: {metadata.instructions}</p> : null}
         {rubric.length ? (
           <details style={{ marginBottom: 10 }}>
@@ -464,8 +489,8 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
     return <div className="quiz-taker">Đang tải...</div>;
   }
 
-  if (isSubmitted && result) {
-    return <QuizResult quiz={quiz} result={result} onBack={onBack} />;
+  if (showResultDetails && result) {
+    return <QuizResult quiz={quiz} result={result} onBack={() => setShowResultDetails(false)} />;
   }
 
   const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
@@ -488,8 +513,32 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
   const isTimeDanger = timeLeft && timeLeft < 10;
   const answeredCount = Object.values(answers).filter((entry) => isAnswered(entry)).length;
 
+  const getTextOnlyQuestionStatement = (question) => {
+    const blocks = getQuestionBlocks(question);
+    const textParts = blocks
+      .map((block) => (block?.type === 'text' ? String(block.text || '').trim() : ''))
+      .filter(Boolean);
+
+    if (textParts.length > 0) {
+      return textParts.join(' ').replace(/\s+/g, ' ').trim();
+    }
+
+    const rawContent = String(question?.content || question?.questionText || '').trim();
+    if (!rawContent) {
+      return '';
+    }
+
+    if (/^https?:\/\/(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)\//i.test(rawContent)) {
+      return '';
+    }
+
+    return rawContent;
+  };
+
+  const currentQuestionText = getTextOnlyQuestionStatement(currentQuestion);
+
   return (
-    <div className="quiz-taker">
+    <div className={`quiz-taker ${compact ? 'quiz-taker--compact' : ''}`}>
       <div className="quiz-taker__header">
         <div className="quiz-taker__title">
           <h2>{quiz.title}</h2>
@@ -499,61 +548,89 @@ const QuizTaker = ({ quizId, onBack, onSubmit }) => {
         </div>
       </div>
 
-      <div className="quiz-taker__progress">
-        <div className="progress-bar">
-          <div className="progress-bar__fill" style={{ width: `${progressPercent}%` }}></div>
-        </div>
-        <p className="progress-text">
-          Câu {safeQuestionIndex + 1}/{questionCount}
-        </p>
-      </div>
-
-      {currentQuestion ? (
-        <div className="quiz-taker__question">
-            <div className="question-text">
-              <RichContentRenderer blocks={currentQuestion?.metadata?.contentBlocks || currentQuestion?.contentBlocks || (currentQuestion?.content ? [{ type: 'text', text: currentQuestion.content }] : [])} />
+      <div className={`quiz-taker__body ${compact ? 'quiz-taker__body--compact' : ''}`}>
+        <div className="quiz-taker__quiz-panel">
+          <div className="quiz-taker__progress">
+            <div className="progress-bar">
+              <div className="progress-bar__fill" style={{ width: `${progressPercent}%` }}></div>
             </div>
-            {renderQuestionInput(currentQuestion)}
+            <p className="progress-text">
+              Câu {safeQuestionIndex + 1}/{questionCount}
+            </p>
           </div>
-      ) : null}
 
-      <div className="quiz-taker__navigation">
-        <button
-          onClick={() => setCurrentQuestionIndex(Math.max(0, safeQuestionIndex - 1))}
-          disabled={safeQuestionIndex === 0 || isSubmitted}
-          className="btn btn--secondary"
-        >
-          Câu trước
-        </button>
+          {currentQuestion ? (
+            <div className="quiz-taker__question">
+              {currentQuestionText ? (
+                <div className="question-statement" style={{ marginBottom: 12, fontSize: 16, fontWeight: 700, color: '#0f172a', lineHeight: 1.5 }}>
+                  {currentQuestionText}
+                </div>
+              ) : null}
+              <div className="question-text">
+                <RichContentRenderer blocks={getQuestionBlocks(currentQuestion)} />
+              </div>
+              {renderQuestionInput(currentQuestion)}
+            </div>
+          ) : null}
 
-        <div className="question-selector">
-          {questions.map((q, index) => (
+          <div className="quiz-taker__navigation">
             <button
-              key={q.id}
-              onClick={() => setCurrentQuestionIndex(index)}
-              className={`question-btn ${index === safeQuestionIndex ? 'active' : ''} ${isAnswered(answers[q.id]) ? 'answered' : ''}`}
-              disabled={isSubmitted}
-              title={`Câu ${index + 1}`}
+              onClick={() => setCurrentQuestionIndex(Math.max(0, safeQuestionIndex - 1))}
+              disabled={safeQuestionIndex === 0 || isSubmitted}
+              className="btn btn--secondary"
             >
-              {index + 1}
+              Câu trước
             </button>
-          ))}
+
+            <div className="question-selector">
+              {questions.map((q, index) => {
+                const grading = gradingMap[q.id] || null;
+                const gradedCorrect = grading && typeof grading.score === 'number' ? Number(grading.score) > 0 : null;
+                const btnClass = [
+                  'question-btn',
+                  index === safeQuestionIndex ? 'active' : '',
+                  isAnswered(answers[q.id]) ? 'answered' : '',
+                  gradedCorrect === true ? 'correct' : gradedCorrect === false ? 'incorrect' : '',
+                ].filter(Boolean).join(' ');
+
+                return (
+                  <button
+                    key={q.id}
+                    onClick={() => setCurrentQuestionIndex(index)}
+                    className={btnClass}
+                    disabled={isSubmitted && false}
+                    title={`Câu ${index + 1}`}
+                  >
+                    {index + 1}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentQuestionIndex(Math.min(questionCount - 1, safeQuestionIndex + 1))}
+              disabled={safeQuestionIndex === questionCount - 1 || isSubmitted}
+              className="btn btn--secondary"
+            >
+              Câu sau
+            </button>
+          </div>
+
+          <div className="quiz-taker__footer">
+            {isSaving ? <span className="saving-status">Đang lưu...</span> : null}
+            {isSubmitted && result ? (
+              <button
+                onClick={() => setShowResultDetails(true)}
+                className="btn btn--secondary btn--large"
+              >
+                Xem chi tiết chấm điểm
+              </button>
+            ) : null}
+            <button onClick={handleSubmit} disabled={isSubmitted || isSubmitting} className="btn btn--primary btn--large">
+              {isSubmitting ? 'Đang nộp bài...' : `Nộp bài (${answeredCount}/${questionCount} câu)`}
+            </button>
+          </div>
         </div>
-
-        <button
-          onClick={() => setCurrentQuestionIndex(Math.min(questionCount - 1, safeQuestionIndex + 1))}
-          disabled={safeQuestionIndex === questionCount - 1 || isSubmitted}
-          className="btn btn--secondary"
-        >
-          Câu sau
-        </button>
-      </div>
-
-      <div className="quiz-taker__footer">
-        {isSaving ? <span className="saving-status">Đang lưu...</span> : null}
-        <button onClick={handleSubmit} disabled={isSubmitted || isSubmitting} className="btn btn--primary btn--large">
-          {isSubmitting ? 'Đang nộp bài...' : `Nộp bài (${answeredCount}/${questionCount} câu)`}
-        </button>
       </div>
     </div>
   );

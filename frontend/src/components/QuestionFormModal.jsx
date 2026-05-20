@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from './RichContentEditor';
+import RichContentRenderer from './RichContentRenderer';
 
 const QUESTION_TYPE_LABELS = {
   MULTIPLE_CHOICE: 'Trắc nghiệm',
@@ -23,6 +24,7 @@ function QuestionFormModal({
   segmentTitle,
 }) {
   const [step, setStep] = useState(1);
+  const contentBlocks = Array.isArray(draft?.contentBlocks) ? draft.contentBlocks : [];
 
   useEffect(() => {
     if (isOpen) {
@@ -48,7 +50,9 @@ function QuestionFormModal({
       const opts = Array.isArray(d.options) ? d.options.map((s) => String(s || '').trim()).filter(Boolean) : [];
       if (opts.length < 2) errors.push('Câu hỏi trắc nghiệm cần ít nhất 2 đáp án.');
       const correct = Array.isArray(d.correctIndices) ? d.correctIndices.filter((n) => Number.isFinite(Number(n))) : [];
+      const allowMulti = Boolean(d.allowMultipleCorrect);
       if (!correct.length) errors.push('Hãy chọn ít nhất 1 đáp án đúng.');
+      if (!allowMulti && correct.length > 1) errors.push('Chỉ được chọn 1 đáp án đúng khi không bật "Cho phép nhiều đáp án đúng".');
     }
 
     if (d.type === 'SHORT_ANSWER') {
@@ -245,7 +249,33 @@ function QuestionFormModal({
                 <p style={{ margin: '0 0 10px 0' }}><strong>Loại:</strong> {QUESTION_TYPE_LABELS[draft.type] || draft.type}</p>
                 <p style={{ margin: '0 0 10px 0' }}><strong>Công khai:</strong> {draft.isPublished ? 'Có' : 'Không'}</p>
                 <p style={{ margin: '0 0 6px 0' }}><strong>Nội dung câu hỏi:</strong></p>
-                <div style={{ whiteSpace: 'pre-wrap', color: '#111827' }}>{draft.content || '(Trống)'}</div>
+                <div style={{ marginBottom: 12 }}>
+                  {contentBlocks.length > 0 ? (
+                    <RichContentRenderer blocks={contentBlocks} />
+                  ) : (
+                    <div style={{ whiteSpace: 'pre-wrap', color: '#111827' }}>{draft.content || '(Trống)'}</div>
+                  )}
+                </div>
+
+                {draft.type === 'MULTIPLE_CHOICE' ? (
+                  <div style={{ marginTop: 12 }}>
+                    <p style={{ margin: '0 0 6px 0' }}><strong>Các đáp án:</strong></p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {Array.isArray(draft.optionsRich) ? draft.optionsRich.map((optionBlocks, index) => (
+                        <div key={`preview-option-${index}`} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fff' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <span style={{ fontWeight: 700 }}>{String.fromCharCode(65 + index)}</span>
+                            <span style={{ fontSize: 13, color: '#6b7280' }}>
+                              {draft.correctIndices?.includes(index) ? 'Đáp án đúng' : 'Đáp án'}
+                            </span>
+                          </div>
+                          <RichContentRenderer blocks={Array.isArray(optionBlocks) && optionBlocks.length ? optionBlocks : [{ type: 'text', text: draft.options?.[index] || '' }]} />
+                        </div>
+                      )) : null}
+                    </div>
+                  </div>
+                ) : null}
+
                 {result.errors && result.errors.length ? (
                   <div style={{ marginTop: 12, color: '#b91c1c' }}>
                     {result.errors.map((err, idx) => (

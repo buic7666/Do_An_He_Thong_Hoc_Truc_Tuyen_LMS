@@ -32,17 +32,73 @@ const getYouTubeEmbedSrc = (url) => {
   }
 };
 
+const isLikelyYouTubeUrl = (value) => {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const u = new URL(String(value).trim());
+    const host = u.hostname.replace('www.', '').toLowerCase();
+    return host === 'youtube.com' || host === 'youtu.be' || host === 'm.youtube.com';
+  } catch (_error) {
+    return false;
+  }
+};
+
 const RichContentRenderer = ({ blocks = [] }) => {
   if (!Array.isArray(blocks) || blocks.length === 0) return null;
+
+  const renderBlockTitle = (block, fallback) => {
+    const title = String(block?.title || '').trim();
+    if (!title && !fallback) {
+      return null;
+    }
+
+    return (
+      <div
+        className="rich-content-renderer__media-title"
+        style={{
+          marginBottom: 8,
+          fontSize: 14,
+          fontWeight: 700,
+          color: '#0f172a',
+          lineHeight: 1.45,
+        }}
+      >
+        {title || fallback}
+      </div>
+    );
+  };
 
   return (
     <div className="rich-content-renderer" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {blocks.map((block, idx) => {
         const t = String(block?.type || 'text');
         if (t === 'text') {
+          const text = String(block.text || '').trim();
+          if (isLikelyYouTubeUrl(text)) {
+            const src = getYouTubeEmbedSrc(text);
+            return (
+              <figure key={idx} className="rich-content-renderer__figure rich-content-renderer__figure--video">
+                {renderBlockTitle(block, '')}
+                <div className="rich-content-renderer__video-frame">
+                  <iframe
+                    title={String(block.title || `video-${idx}`)}
+                    src={src}
+                    className="rich-content-renderer__video-iframe"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              </figure>
+            );
+          }
+
           return (
-            <div key={idx} style={{ whiteSpace: 'pre-wrap', color: '#111' }}>
-              {String(block.text || '')}
+            <div key={idx} className="rich-content-renderer__text" style={{ whiteSpace: 'pre-wrap', color: '#111' }}>
+              {text}
             </div>
           );
         }
@@ -51,9 +107,11 @@ const RichContentRenderer = ({ blocks = [] }) => {
           const url = String(block.url || '').trim();
           if (!url) return null;
           return (
-            <div key={idx} style={{ textAlign: 'center' }}>
+            <figure key={idx} className="rich-content-renderer__figure rich-content-renderer__figure--image" style={{ textAlign: 'center' }}>
+              {renderBlockTitle(block, '')}
               <img src={url} alt={String(block.alt || '')} style={{ maxWidth: '100%', borderRadius: 6 }} />
-            </div>
+              {block.caption ? <figcaption className="rich-content-renderer__caption">{String(block.caption)}</figcaption> : null}
+            </figure>
           );
         }
 
@@ -64,27 +122,32 @@ const RichContentRenderer = ({ blocks = [] }) => {
           if (isYouTubeUrl(url)) {
             const src = getYouTubeEmbedSrc(url);
             return (
-              <div key={idx} style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
-                <iframe
-                  title={String(block.title || `video-${idx}`)}
-                  src={src}
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
+              <figure key={idx} className="rich-content-renderer__figure rich-content-renderer__figure--video">
+                {renderBlockTitle(block, '')}
+                <div className="rich-content-renderer__video-frame">
+                  <iframe
+                    title={String(block.title || `video-${idx}`)}
+                    src={src}
+                    className="rich-content-renderer__video-iframe"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+                {block.caption ? <figcaption className="rich-content-renderer__caption">{String(block.caption)}</figcaption> : null}
+              </figure>
             );
           }
 
           // Fallback: render video tag
           return (
-            <div key={idx}>
+            <figure key={idx} className="rich-content-renderer__figure rich-content-renderer__figure--video">
               <video controls style={{ width: '100%', borderRadius: 6 }}>
                 <source src={url} />
                 Your browser does not support the video tag.
               </video>
-            </div>
+              {block.caption ? <figcaption className="rich-content-renderer__caption">{String(block.caption)}</figcaption> : null}
+            </figure>
           );
         }
 

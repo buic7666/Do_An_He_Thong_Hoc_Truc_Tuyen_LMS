@@ -11,7 +11,6 @@ import ManHinhDangKy from './screens/Public/manhinhDangKy';
 import BangDieuKhienCaNhan from './screens/Hocsinh/BangDieuKhienCaNhan';
 import ManHinhHocTap from './screens/Hocsinh/ManHinhHocTap';
 import ManHinhHoSoCaNhan from './screens/Hocsinh/ManHinhHoSoCaNhan';
-import ManHinhLamBaiThi from './screens/Hocsinh/ManHinhLamBaiThi';
 import ManHinhLichSuGiaoDich from './screens/Hocsinh/ManHinhLichSuGiaoDich';
 import ManHinhThanhToan from './screens/Hocsinh/ManHinhThanhToan';
 import ManHinhTrangThaiGiaoDich from './screens/Hocsinh/ManHinhTrangThaiGiaoDich';
@@ -128,14 +127,6 @@ function App() {
         element={
           <ProtectedRoute allowedRoles={['student']}>
             <ManHinhHoSoCaNhan />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path='/exam'
-        element={
-          <ProtectedRoute allowedRoles={['student']}>
-            <ManHinhLamBaiThi />
           </ProtectedRoute>
         }
       />

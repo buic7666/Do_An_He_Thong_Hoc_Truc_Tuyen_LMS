@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import QuizTaker from '../../components/QuizTaker';
 import './ManHinhLamBaiThi.css';
 
 const TOTAL_QUESTIONS = 40;
@@ -41,6 +42,9 @@ function formatTime(totalSeconds) {
 
 function ManHinhLamBaiThi() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const query = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const queryQuizId = Number(query.get('quizId') || 0);
   const [currentQuestion, setCurrentQuestion] = useState(12);
   const [timeLeft, setTimeLeft] = useState(44 * 60 + 59);
   const [answers, setAnswers] = useState(initialAnswers);
@@ -76,6 +80,16 @@ function ManHinhLamBaiThi() {
 
   return (
     <div className='exam-page'>
+      {queryQuizId ? (
+        <div style={{ padding: 20 }}>
+          <QuizTaker
+            quizId={queryQuizId}
+            onBack={() => navigate(-1)}
+            onSubmit={() => navigate(-1)}
+          />
+        </div>
+      ) : (
+      <>
       <header className='exam-header'>
         <h1 className='exam-title'>Kiểm tra Cuối kỳ - Lập trình Di động (Flutter)</h1>
 
@@ -171,7 +185,9 @@ function ManHinhLamBaiThi() {
         </button>
       </footer>
       {submitMessage ? <div className='exam-submit-message'>{submitMessage}</div> : null}
-    </div>
+      </>
+    )}
+  </div>
   );
 }
 

@@ -12,7 +12,7 @@ import {
 } from '../../api/teacherManagementApi';
 import CommentThread from '../../components/CommentThread';
 import QuestionFormModal from '../../components/QuestionFormModal';
-import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from '../../components/RichContentEditor';
+import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText, richContentTextOnlyToPlainText } from '../../components/RichContentEditor';
 import SelectQuestionsModal from '../../components/SelectQuestionsModal';
 import { createQuestionApi, updateQuestionApi } from '../../api/teacherManagementApi';
 import './LessonDetail.css';
@@ -350,12 +350,15 @@ function LessonDetail() {
     options: ['', '', '', ''],
     optionsRich: [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
     correctIndices: [0],
+    allowMultipleCorrect: false,
     explanation: '',
     correctAnswer: true,
     acceptedAnswersText: '',
+    acceptedAnswersRich: [createEmptyRichBlocks()],
     caseSensitive: false,
     fuzzyMatch: true,
     instructions: '',
+    instructionsRich: createEmptyRichBlocks(),
     rubric: [
       { name: 'Nội dung', weight: 40, description: '' },
       { name: 'Lập luận', weight: 30, description: '' },
@@ -379,7 +382,7 @@ function LessonDetail() {
   };
 
   const buildQuestionPayload = () => {
-    const content = richContentToPlainText(questionDraft.contentBlocks) || questionDraft.content.trim();
+    const content = richContentTextOnlyToPlainText(questionDraft.contentBlocks) || questionDraft.content.trim();
     if (!content) throw new Error('Vui lòng nhập nội dung câu hỏi.');
 
     const base = {
@@ -399,11 +402,19 @@ function LessonDetail() {
         .filter((item) => item.value);
 
       const options = pairs.map((item) => item.value);
-      const selectedCorrectIndex = questionDraft.correctIndices[0];
-      const correctIndices = pairs
-        .map((item, index) => ({ index, isCorrect: item.rawIndex === selectedCorrectIndex }))
-        .filter((item) => item.isCorrect)
-        .map((item) => item.index);
+      let correctIndices = [];
+      if (questionDraft.allowMultipleCorrect) {
+        correctIndices = pairs
+          .map((item, index) => ({ index, isCorrect: (questionDraft.correctIndices || []).includes(item.rawIndex) }))
+          .filter((item) => item.isCorrect)
+          .map((item) => item.index);
+      } else {
+        const selectedCorrectIndex = questionDraft.correctIndices[0];
+        correctIndices = pairs
+          .map((item, index) => ({ index, isCorrect: item.rawIndex === selectedCorrectIndex }))
+          .filter((item) => item.isCorrect)
+          .map((item) => item.index);
+      }
 
       if (options.length < 2) {
         throw new Error('Câu hỏi trắc nghiệm cần ít nhất 2 đáp án.');
@@ -430,10 +441,14 @@ function LessonDetail() {
     }
 
     if (questionDraft.type === 'SHORT_ANSWER') {
-      const acceptedAnswers = questionDraft.acceptedAnswersText
-        .split('\n')
-        .map((item) => item.trim())
-        .filter(Boolean);
+      const acceptedAnswers = Array.isArray(questionDraft.acceptedAnswersRich)
+        ? questionDraft.acceptedAnswersRich
+            .map((blocks) => richContentToPlainText(blocks))
+            .filter(Boolean)
+        : questionDraft.acceptedAnswersText
+            .split('\n')
+            .map((item) => item.trim())
+            .filter(Boolean);
 
       if (!acceptedAnswers.length) {
         throw new Error('Câu trả lời ngắn cần ít nhất 1 đáp án chấp nhận.');
@@ -466,7 +481,9 @@ function LessonDetail() {
 
     return {
       ...base,
-      instructions: questionDraft.instructions.trim(),
+      instructions: Array.isArray(questionDraft.instructionsRich)
+        ? richContentToPlainText(questionDraft.instructionsRich)
+        : questionDraft.instructions.trim(),
       rubric,
       wordLimit: {
         min: Number(questionDraft.wordLimitMin),
@@ -494,196 +511,341 @@ function LessonDetail() {
     }
   };
 
+  const addOption = () => {
+    setQuestionDraft((prev) => ({
+      ...prev,
+      options: [...(prev.options || []), ''],
+      optionsRich: [...(prev.optionsRich || []), createEmptyRichBlocks()],
+    }));
+  };
+
+  const removeOption = (index) => {
+    setQuestionDraft((prev) => {
+      const nextOptions = [...(prev.options || [])];
+      const nextRich = [...(prev.optionsRich || [])];
+      if (nextOptions.length <= 2) return prev;
+      nextOptions.splice(index, 1);
+      nextRich.splice(index, 1);
+
+      const nextCorrect = (prev.correctIndices || []).map((i) => (i > index ? i - 1 : i)).filter((i) => i >= 0 && i < nextOptions.length);
+      if (!nextCorrect.length && nextOptions.length) nextCorrect.push(0);
+
+      return { ...prev, options: nextOptions, optionsRich: nextRich, correctIndices: nextCorrect };
+    });
+  };
+
+  const toggleCorrectIndex = (index) => {
+    setQuestionDraft((prev) => {
+      if (prev.allowMultipleCorrect) {
+        const next = new Set(prev.correctIndices || []);
+        if (next.has(index)) next.delete(index); else next.add(index);
+        const arr = Array.from(next).sort((a, b) => a - b);
+        return { ...prev, correctIndices: arr.length ? arr : [0] };
+      }
+      return { ...prev, correctIndices: [index] };
+    });
+  };
+
   const renderQuestionTypeSpecificForm = () => {
     if (questionDraft.type === 'MULTIPLE_CHOICE') {
       return (
-        <>
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Các lựa chọn đáp án</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <label style={{ display: 'block', fontWeight: 600, fontSize: 15, color: '#111' }}>
+              ✓ Các lựa chọn đáp án *
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={questionDraft.allowMultipleCorrect} onChange={(e) => setQuestionDraft((prev) => ({ ...prev, allowMultipleCorrect: e.target.checked, correctIndices: e.target.checked ? prev.correctIndices : [prev.correctIndices?.[0] ?? 0] }))} />
+              <span style={{ fontSize: 13 }}>Cho phép nhiều đáp án đúng</span>
+            </label>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {questionDraft.optionsRich.map((optionBlocks, index) => (
-              <div key={`question-option-${index}`} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  <input
-                    type="radio"
-                    name="question-correct-answer"
-                    checked={questionDraft.correctIndices.includes(index)}
-                    onChange={() => setQuestionDraft((prev) => ({ ...prev, correctIndices: [index] }))}
+              <div 
+                key={`question-option-${index}`} 
+                style={{ 
+                  position: 'relative',
+                  border: questionDraft.correctIndices.includes(index) ? '2px solid #10b981' : '1px solid #e5e7eb',
+                  borderRadius: 10, 
+                  padding: 14,
+                  background: questionDraft.correctIndices.includes(index) ? '#ecfdf5' : '#fafafa',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <input
+                      type={questionDraft.allowMultipleCorrect ? 'checkbox' : 'radio'}
+                      name="question-correct-answer"
+                      checked={questionDraft.correctIndices.includes(index)}
+                      onChange={() => toggleCorrectIndex(index)}
+                      style={{ width: 18, height: 18, cursor: 'pointer', marginRight: 4 }}
+                    />
+                    <span style={{ minWidth: 28, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, borderRadius: 6, background: '#e5e7eb', color: '#1f2937' }}>
+                      {String.fromCharCode(65 + index)}
+                    </span>
+                    <span style={{ color: '#6b7280', fontSize: 14 }}>
+                      {questionDraft.correctIndices.includes(index) ? '✓ Đáp án đúng' : 'Đáp án'}
+                    </span>
+                  </div>
+                  {questionDraft.optionsRich.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => removeOption(index)}
+                      style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #f3c663', background: '#fff7ed', color: '#92400e', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Xóa
+                    </button>
+                  )}
+                {/* floating delete for better visibility */}
+                {questionDraft.optionsRich.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => removeOption(index)}
+                    title="Xóa lựa chọn"
+                    style={{ position: 'absolute', top: 8, right: 8, zIndex: 40, padding: '6px 8px', borderRadius: 6, border: '1px solid #f3c663', background: '#fff7ed', color: '#92400e', cursor: 'pointer', fontWeight: 700 }}
+                  >
+                    Xóa
+                  </button>
+                )}
+                </div>
+                <div style={{ marginLeft: 46 }}>
+                  <RichContentEditor
+                    title=""
+                    helperText=""
+                    value={optionBlocks}
+                    onChange={(nextBlocks) => {
+                      const next = [...questionDraft.optionsRich];
+                      next[index] = nextBlocks;
+                      const nextPlainOptions = [...questionDraft.options];
+                      nextPlainOptions[index] = richContentToPlainText(nextBlocks);
+                      setQuestionDraft((prev) => ({ ...prev, optionsRich: next, options: nextPlainOptions }));
+                    }}
                   />
-                  <span style={{ width: 22, fontWeight: 700 }}>{String.fromCharCode(65 + index)}</span>
-        <SelectQuestionsModal
-          isOpen={selectQuestionsModal.open}
-          filters={{ courseId: Number(courseId), chapterId: Number(chapterId), lectureId: Number(lessonId), segmentId: editingSegment?.id }}
-          initial={selectQuestionsModal.itemIndex != null ? (formData.contentItems[selectQuestionsModal.itemIndex]?.questionIds || []) : []}
-          onClose={() => setSelectQuestionsModal({ open: false, itemIndex: null })}
-          onConfirm={(data) => {
-            const idx = selectQuestionsModal.itemIndex;
-            if (idx == null) return;
-            if (data.randomize) {
-              handleContentItemChange(idx, 'questionIds', []);
-              handleContentItemChange(idx, 'questionTitles', []);
-              handleContentItemChange(idx, 'randomize', true);
-              handleContentItemChange(idx, 'randomCount', Number(data.randomCount || 1));
-            } else {
-              handleContentItemChange(idx, 'questionIds', Array.isArray(data.questionIds) ? data.questionIds : []);
-              handleContentItemChange(idx, 'questionTitles', Array.isArray(data.questionTitles) ? data.questionTitles : []);
-              handleContentItemChange(idx, 'randomize', false);
-              handleContentItemChange(idx, 'randomCount', 0);
-            }
-          }}
-        />
-                  <span style={{ color: '#6b7280' }}>Đáp án {String.fromCharCode(65 + index)}</span>
-                </label>
-                <RichContentEditor
-                  title=""
-                  helperText="Có thể dùng văn bản, ảnh hoặc video cho đáp án này."
-                  value={optionBlocks}
-                  onChange={(nextBlocks) => {
-                    const next = [...questionDraft.optionsRich];
-                    next[index] = nextBlocks;
-                    const nextPlainOptions = [...questionDraft.options];
-                    nextPlainOptions[index] = richContentToPlainText(nextBlocks);
-                    setQuestionDraft((prev) => ({ ...prev, optionsRich: next, options: nextPlainOptions }));
-                  }}
-                />
+                </div>
               </div>
             ))}
+
+            <div>
+              <button
+                type="button"
+                onClick={addOption}
+                disabled={(questionDraft.options || []).length >= 10}
+                style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #3b82f6', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer', fontWeight: 700 }}
+              >
+                + Thêm lựa chọn
+              </button>
+            </div>
           </div>
-        </>
+        </div>
       );
     }
 
     if (questionDraft.type === 'TRUE_FALSE') {
       return (
-        <div className="form-group">
-          <label>Đáp án đúng</label>
-          <select
-            className="form-input"
-            value={String(questionDraft.correctAnswer)}
-            onChange={(event) => setQuestionDraft((prev) => ({ ...prev, correctAnswer: event.target.value === 'true' }))}
-          >
-            <option value="true">Đúng</option>
-            <option value="false">Sai</option>
-          </select>
+        <div style={{ marginBottom: 20, background: '#f0f9ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: 16 }}>
+          <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, fontSize: 15, color: '#111' }}>
+            ✓ Đáp án đúng *
+          </label>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: questionDraft.correctAnswer === true ? '#dbeafe' : 'white', borderRadius: 8, border: '1px solid #bfdbfe', cursor: 'pointer', fontWeight: questionDraft.correctAnswer === true ? 600 : 500 }}>
+              <input
+                type="radio"
+                name="true-false-answer"
+                checked={questionDraft.correctAnswer === true}
+                onChange={() => setQuestionDraft((prev) => ({ ...prev, correctAnswer: true }))}
+              />
+              <span>Đúng (True)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: questionDraft.correctAnswer === false ? '#fee2e2' : 'white', borderRadius: 8, border: '1px solid #fecaca', cursor: 'pointer', fontWeight: questionDraft.correctAnswer === false ? 600 : 500 }}>
+              <input
+                type="radio"
+                name="true-false-answer"
+                checked={questionDraft.correctAnswer === false}
+                onChange={() => setQuestionDraft((prev) => ({ ...prev, correctAnswer: false }))}
+              />
+              <span>Sai (False)</span>
+            </label>
+          </div>
         </div>
       );
     }
 
     if (questionDraft.type === 'SHORT_ANSWER') {
       return (
-        <>
-          <div className="form-group">
-            <label>Danh sách đáp án chấp nhận (mỗi dòng 1 đáp án)</label>
-            <textarea
-              className="form-textarea"
-              value={questionDraft.acceptedAnswersText}
-              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, acceptedAnswersText: event.target.value }))}
-            />
+        <div style={{ marginBottom: 20, background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: 16 }}>
+          <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, fontSize: 15, color: '#111' }}>
+            ✓ Danh sách đáp án chấp nhận *
+          </label>
+          <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {Array.isArray(questionDraft.acceptedAnswersRich) ? questionDraft.acceptedAnswersRich.map((answerBlocks, answerIndex) => (
+              <div key={`short-answer-${answerIndex}`} style={{ border: '1px solid #fbbf24', borderRadius: 8, padding: 12, background: 'white' }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: '#92400e' }}>Đáp án #{answerIndex + 1}</span>
+                  {questionDraft.acceptedAnswersRich.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = [...questionDraft.acceptedAnswersRich];
+                        next.splice(answerIndex, 1);
+                        setQuestionDraft((prev) => ({ ...prev, acceptedAnswersRich: next }));
+                      }}
+                      style={{ padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #f59e0b', background: '#fef3c7', color: '#92400e', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Xóa
+                    </button>
+                  )}
+                </div>
+                <RichContentEditor
+                  title=""
+                  helperText="Soạn nội dung đáp án với định dạng, ảnh, video..."
+                  value={answerBlocks}
+                  onChange={(nextBlocks) => {
+                    const next = [...questionDraft.acceptedAnswersRich];
+                    next[answerIndex] = nextBlocks;
+                    setQuestionDraft((prev) => ({ ...prev, acceptedAnswersRich: next }));
+                  }}
+                />
+              </div>
+            )) : null}
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={questionDraft.caseSensitive}
-              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, caseSensitive: event.target.checked }))}
-            />
-            <span>Phân biệt chữ hoa/thường</span>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={questionDraft.fuzzyMatch}
-              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, fuzzyMatch: event.target.checked }))}
-            />
-            <span>Khớp mềm (fuzzy match)</span>
-          </label>
-        </>
+          <button
+            type="button"
+            onClick={() => {
+              setQuestionDraft((prev) => ({
+                ...prev,
+                acceptedAnswersRich: [...(prev.acceptedAnswersRich || []), createEmptyRichBlocks()],
+              }));
+            }}
+            style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #fbbf24', background: '#fffbeb', color: '#92400e', fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}
+          >
+            + Thêm đáp án
+          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={questionDraft.caseSensitive}
+                onChange={(event) => setQuestionDraft((prev) => ({ ...prev, caseSensitive: event.target.checked }))}
+                style={{ width: 18, height: 18, cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 14 }}>🔒 Phân biệt chữ hoa/thường (case-sensitive)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={questionDraft.fuzzyMatch}
+                onChange={(event) => setQuestionDraft((prev) => ({ ...prev, fuzzyMatch: event.target.checked }))}
+                style={{ width: 18, height: 18, cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 14 }}>🔄 Khớp mềm - fuzzy match (dung thứ lỗi chính tả nhỏ)</span>
+            </label>
+          </div>
+        </div>
       );
     }
 
     return (
-      <>
-        <div className="form-group">
-          <label>Hướng dẫn bài viết</label>
-          <textarea
-            className="form-textarea"
-            value={questionDraft.instructions}
-            onChange={(event) => setQuestionDraft((prev) => ({ ...prev, instructions: event.target.value }))}
+      <div style={{ marginBottom: 20, background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 10, padding: 16 }}>
+        <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, fontSize: 15, color: '#111' }}>
+          ✓ Hướng dẫn bài tự luận *
+        </label>
+        <div style={{ marginBottom: 16 }}>
+          <RichContentEditor
+            title=""
+            helperText="Soạn hướng dẫn chi tiết với định dạng, ảnh, video, links..."
+            value={Array.isArray(questionDraft.instructionsRich) ? questionDraft.instructionsRich : createEmptyRichBlocks()}
+            onChange={(nextBlocks) => {
+              setQuestionDraft((prev) => ({ ...prev, instructionsRich: nextBlocks }));
+            }}
           />
         </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Số từ tối thiểu</label>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Số từ tối thiểu</label>
             <input
               className="form-input"
               type="number"
               min="0"
               value={questionDraft.wordLimitMin}
               onChange={(event) => setQuestionDraft((prev) => ({ ...prev, wordLimitMin: event.target.value }))}
+              style={{ background: '#f5e6ff' }}
             />
           </div>
-          <div className="form-group">
-            <label>Số từ tối đa</label>
+          <div>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Số từ tối đa</label>
             <input
               className="form-input"
               type="number"
               min="1"
               value={questionDraft.wordLimitMax}
               onChange={(event) => setQuestionDraft((prev) => ({ ...prev, wordLimitMax: event.target.value }))}
+              style={{ background: '#f5e6ff' }}
             />
           </div>
-          <div className="form-group">
-            <label>Mô hình AI</label>
-            <select
-              className="form-input"
-              value={questionDraft.aiModel}
-              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, aiModel: event.target.value }))}
-            >
-              <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-              <option value="gpt-4">gpt-4</option>
-              <option value="gpt-4o">gpt-4o</option>
-            </select>
-          </div>
         </div>
-        <div className="form-group">
-          <label>Rubric</label>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Mô hình AI để chấm</label>
+          <select
+            className="form-input"
+            value={questionDraft.aiModel}
+            onChange={(event) => setQuestionDraft((prev) => ({ ...prev, aiModel: event.target.value }))}
+            style={{ background: '#f5e6ff' }}
+          >
+            <option value="gpt-3.5-turbo">gpt-3.5-turbo (nhanh, tiết kiệm)</option>
+            <option value="gpt-4">gpt-4 (chính xác hơn)</option>
+            <option value="gpt-4o">gpt-4o (toàn năng nhất)</option>
+          </select>
+        </div>
+
+        <div>
+          <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, fontSize: 14 }}>Rubric chấm điểm</label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {questionDraft.rubric.map((item, index) => (
-              <div key={`rubric-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 2fr', gap: 10 }}>
-                <input
-                  className="form-input"
-                  placeholder="Tên tiêu chí"
-                  value={item.name}
-                  onChange={(event) => {
-                    const next = [...questionDraft.rubric];
-                    next[index] = { ...next[index], name: event.target.value };
-                    setQuestionDraft((prev) => ({ ...prev, rubric: next }));
-                  }}
-                />
-                <input
-                  className="form-input"
-                  type="number"
-                  placeholder="Trọng số"
-                  value={item.weight}
-                  onChange={(event) => {
-                    const next = [...questionDraft.rubric];
-                    next[index] = { ...next[index], weight: event.target.value };
-                    setQuestionDraft((prev) => ({ ...prev, rubric: next }));
-                  }}
-                />
+              <div key={`rubric-${index}`} style={{ background: 'white', border: '1px solid #e9d5ff', borderRadius: 8, padding: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: 10, marginBottom: 10 }}>
+                  <input
+                    className="form-input"
+                    placeholder="Tên tiêu chí (ví dụ: Nội dung, Lập luận, Ngôn ngữ)"
+                    value={item.name}
+                    onChange={(event) => {
+                      const next = [...questionDraft.rubric];
+                      next[index] = { ...next[index], name: event.target.value };
+                      setQuestionDraft((prev) => ({ ...prev, rubric: next }));
+                    }}
+                  />
+                  <input
+                    className="form-input"
+                    type="number"
+                    placeholder="Trọng số (%)"
+                    min="0"
+                    max="100"
+                    value={item.weight}
+                    onChange={(event) => {
+                      const next = [...questionDraft.rubric];
+                      next[index] = { ...next[index], weight: event.target.value };
+                      setQuestionDraft((prev) => ({ ...prev, rubric: next }));
+                    }}
+                  />
+                </div>
                 <textarea
                   className="form-textarea"
-                  placeholder="Mô tả tiêu chí"
+                  placeholder="Mô tả tiêu chí này (ví dụ: Câu trả lời cần liên hệ với kiến thức đã học)"
                   value={item.description}
                   onChange={(event) => {
                     const next = [...questionDraft.rubric];
                     next[index] = { ...next[index], description: event.target.value };
                     setQuestionDraft((prev) => ({ ...prev, rubric: next }));
                   }}
+                  style={{ minHeight: 60 }}
                 />
               </div>
             ))}
           </div>
         </div>
-      </>
+      </div>
     );
   };
 

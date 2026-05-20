@@ -83,6 +83,7 @@ const createEmptyDraft = () => ({
   options: ['', '', '', ''],
   optionsRich: [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
   correctIndices: [0],
+  allowMultipleCorrect: false,
   explanation: '',
   correctAnswer: true,
   acceptedAnswersText: '',
@@ -393,10 +394,13 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
 
   const toggleCorrectIndex = (index) => {
     setDraft((prev) => {
-      return {
-        ...prev,
-        correctIndices: [index],
-      };
+      if (prev.allowMultipleCorrect) {
+        const next = new Set(prev.correctIndices || []);
+        if (next.has(index)) next.delete(index); else next.add(index);
+        const arr = Array.from(next).sort((a, b) => a - b);
+        return { ...prev, correctIndices: arr.length ? arr : [0] };
+      }
+      return { ...prev, correctIndices: [index] };
     });
   };
 
@@ -445,11 +449,19 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
         .filter((item) => item.value);
 
       const options = pairs.map((item) => item.value);
-      const selectedCorrectIndex = draft.correctIndices[0];
-      const correctIndices = pairs
-        .map((item, index) => ({ index, isCorrect: item.rawIndex === selectedCorrectIndex }))
-        .filter((item) => item.isCorrect)
-        .map((item) => item.index);
+      let correctIndices = [];
+      if (draft.allowMultipleCorrect) {
+        correctIndices = pairs
+          .map((item, index) => ({ index, isCorrect: (draft.correctIndices || []).includes(item.rawIndex) }))
+          .filter((item) => item.isCorrect)
+          .map((item) => item.index);
+      } else {
+        const selectedCorrectIndex = draft.correctIndices[0];
+        correctIndices = pairs
+          .map((item, index) => ({ index, isCorrect: item.rawIndex === selectedCorrectIndex }))
+          .filter((item) => item.isCorrect)
+          .map((item) => item.index);
+      }
 
       if (options.length < 2) {
         throw new Error('Câu hỏi trắc nghiệm cần ít nhất 2 đáp án.');
@@ -572,6 +584,7 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
       options: metadata.options || question.options || ['', '', '', ''],
       optionsRich: Array.isArray(metadata.optionsRich) && metadata.optionsRich.length ? metadata.optionsRich : createEmptyDraft().optionsRich,
       correctIndices: metadata.correctIndices || (Number.isInteger(question.correctIndex) ? [question.correctIndex] : [0]),
+      allowMultipleCorrect: Boolean(metadata.allowMultipleCorrect),
       explanation: metadata.explanation || question.explanation || '',
       correctAnswer: metadata.correctAnswer === true,
       acceptedAnswersText: Array.isArray(metadata.acceptedAnswers) ? metadata.acceptedAnswers.join('\n') : '',
@@ -729,7 +742,13 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
     if (draft.type === 'MULTIPLE_CHOICE') {
       return (
         <>
-          <label className="instructor-question-bank-form-label">Các lựa chọn đáp án</label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <label className="instructor-question-bank-form-label">Các lựa chọn đáp án</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={draft.allowMultipleCorrect} onChange={(e) => setDraft((prev) => ({ ...prev, allowMultipleCorrect: e.target.checked, correctIndices: e.target.checked ? prev.correctIndices : [prev.correctIndices?.[0] ?? 0] }))} />
+              <span style={{ fontSize: 13 }}>Cho phép nhiều đáp án đúng</span>
+            </label>
+          </div>
           <div className="instructor-question-bank-options-list">
             {draft.optionsRich.map((optionBlocks, index) => (
               <div className="instructor-question-bank-option-row" key={`option-${index + 1}`} style={{ alignItems: 'stretch', flexDirection: 'column', gap: 12 }}>

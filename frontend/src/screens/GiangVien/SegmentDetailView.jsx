@@ -4,6 +4,7 @@ import TeacherSidebar from '../../components/TeacherSidebar';
 import httpClient from '../../api/httpClient';
 import QuestionFormModal from '../../components/QuestionFormModal';
 import SelectQuestionsModal from '../../components/SelectQuestionsModal';
+import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from '../../components/RichContentEditor';
 import {
   fetchQuestionsApi,
   createQuestionApi,
@@ -36,7 +37,9 @@ const createEmptyQuestionDraft = () => ({
   content: '',
   isPublished: false,
   options: ['', '', '', ''],
+  optionsRich: [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
   correctIndices: [0],
+  allowMultipleCorrect: false,
   explanation: '',
   correctAnswer: true,
   acceptedAnswersText: '',
@@ -74,6 +77,7 @@ const createEmptyContentItem = (type = 'text', orderIndex = 1) => ({
   title: '',
   content: '',
   resourceUrl: '',
+  quizId: null,
   questionIds: [],
   questionTitles: [],
   randomize: false,
@@ -88,6 +92,7 @@ const normalizeContentItemForForm = (item, index) => ({
   title: item?.title ?? '',
   content: item?.content ?? '',
   resourceUrl: item?.resourceUrl ?? '',
+  quizId: Number.isInteger(Number(item?.quizId)) && Number(item.quizId) > 0 ? Number(item.quizId) : null,
   questionIds: Array.isArray(item?.questionIds) ? item.questionIds : [],
   questionTitles: Array.isArray(item?.questionTitles) ? item.questionTitles : [],
   randomize: Boolean(item?.randomize),
@@ -104,6 +109,7 @@ const normalizeContentItemForPayload = (item, index) => ({
   title: typeof item?.title === 'string' ? item.title.trim() : String(item?.title ?? '').trim(),
   content: typeof item?.content === 'string' ? item.content.trim() : String(item?.content ?? '').trim(),
   resourceUrl: typeof item?.resourceUrl === 'string' ? item.resourceUrl.trim() : '',
+  ...(Number.isInteger(Number(item?.quizId)) && Number(item.quizId) > 0 ? { quizId: Number(item.quizId) } : {}),
   questionIds: Array.isArray(item?.questionIds) ? item.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)) : [],
   questionTitles: Array.isArray(item?.questionTitles) ? item.questionTitles.map((title) => String(title || '').trim()).filter(Boolean) : [],
   randomize: Boolean(item?.randomize),
@@ -328,7 +334,11 @@ function SegmentDetailView() {
       content: question.content || question.questionText || '',
       isPublished: Boolean(question.isPublished),
       options: metadata.options || question.options || ['', '', '', ''],
+      optionsRich: Array.isArray(metadata.optionsRich) && metadata.optionsRich.length
+        ? metadata.optionsRich
+        : (metadata.options || question.options || ['', '', '', '']).map((item) => ([{ type: 'text', text: String(item || '') }])),
       correctIndices: metadata.correctIndices || (Number.isInteger(question.correctIndex) ? [question.correctIndex] : [0]),
+      allowMultipleCorrect: Boolean(metadata.allowMultipleCorrect),
       explanation: metadata.explanation || question.explanation || '',
       correctAnswer: metadata.correctAnswer === true,
       acceptedAnswersText: Array.isArray(metadata.acceptedAnswers) ? metadata.acceptedAnswers.join('\n') : '',
@@ -361,16 +371,24 @@ function SegmentDetailView() {
     };
 
     if (questionDraft.type === 'MULTIPLE_CHOICE') {
-      const pairs = questionDraft.options
-        .map((item, index) => ({ rawIndex: index, value: item.trim() }))
+      const pairs = (Array.isArray(questionDraft.optionsRich) ? questionDraft.optionsRich : questionDraft.options.map((item) => ([{ type: 'text', text: String(item || '') }])) )
+        .map((blocks, index) => ({ rawIndex: index, value: richContentToPlainText(blocks) || String(questionDraft.options?.[index] || '').trim() }))
         .filter((item) => item.value);
 
       const options = pairs.map((item) => item.value);
-      const selectedCorrectIndex = questionDraft.correctIndices[0];
-      const correctIndices = pairs
-        .map((item, index) => ({ index, isCorrect: item.rawIndex === selectedCorrectIndex }))
-        .filter((item) => item.isCorrect)
-        .map((item) => item.index);
+      let correctIndices = [];
+      if (questionDraft.allowMultipleCorrect) {
+        correctIndices = pairs
+          .map((item, index) => ({ index, isCorrect: (questionDraft.correctIndices || []).includes(item.rawIndex) }))
+          .filter((item) => item.isCorrect)
+          .map((item) => item.index);
+      } else {
+        const selectedCorrectIndex = questionDraft.correctIndices[0];
+        correctIndices = pairs
+          .map((item, index) => ({ index, isCorrect: item.rawIndex === selectedCorrectIndex }))
+          .filter((item) => item.isCorrect)
+          .map((item) => item.index);
+      }
 
       if (options.length < 2) {
         throw new Error('Câu hỏi trắc nghiệm cần ít nhất 2 đáp án.');
@@ -382,6 +400,7 @@ function SegmentDetailView() {
       return {
         ...base,
         options,
+        optionsRich: questionDraft.optionsRich,
         correctIndices,
         explanation: questionDraft.explanation.trim() || undefined,
       };
@@ -461,34 +480,119 @@ function SegmentDetailView() {
     }
   };
 
+  const addOption = () => {
+    setQuestionDraft((prev) => ({
+      ...prev,
+      options: [...(prev.options || []), ''],
+      optionsRich: [...(prev.optionsRich || []), createEmptyRichBlocks()],
+    }));
+  };
+
+  const removeOption = (index) => {
+    setQuestionDraft((prev) => {
+      const nextOptions = [...(prev.options || [])];
+      const nextRich = [...(prev.optionsRich || [])];
+      if (nextOptions.length <= 2) return prev; // keep at least 2
+      nextOptions.splice(index, 1);
+      nextRich.splice(index, 1);
+
+      // adjust correctIndices
+      const nextCorrect = (prev.correctIndices || []).map((i) => (i > index ? i - 1 : i)).filter((i) => i >= 0 && i < nextOptions.length);
+      if (!nextCorrect.length && nextOptions.length) nextCorrect.push(0);
+
+      return { ...prev, options: nextOptions, optionsRich: nextRich, correctIndices: nextCorrect };
+    });
+  };
+
+  const toggleCorrectIndex = (index) => {
+    setQuestionDraft((prev) => {
+      if (prev.allowMultipleCorrect) {
+        const next = new Set(prev.correctIndices || []);
+        if (next.has(index)) next.delete(index); else next.add(index);
+        const arr = Array.from(next).sort((a, b) => a - b);
+        return { ...prev, correctIndices: arr.length ? arr : [0] };
+      }
+      return { ...prev, correctIndices: [index] };
+    });
+  };
+
   const renderQuestionTypeSpecificForm = () => {
     if (questionDraft.type === 'MULTIPLE_CHOICE') {
       return (
         <>
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Các lựa chọn đáp án</label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <label style={{ display: 'block', fontWeight: 600 }}>Các lựa chọn đáp án</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={questionDraft.allowMultipleCorrect} onChange={(e) => setQuestionDraft((prev) => ({ ...prev, allowMultipleCorrect: e.target.checked, correctIndices: e.target.checked ? prev.correctIndices : [prev.correctIndices?.[0] ?? 0] }))} />
+              <span style={{ fontSize: 13 }}>Cho phép nhiều đáp án đúng</span>
+            </label>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {questionDraft.options.map((option, index) => (
-              <label key={`question-option-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input
-                  type="radio"
-                  name="question-correct-answer"
-                  checked={questionDraft.correctIndices.includes(index)}
-                  onChange={() => setQuestionDraft((prev) => ({ ...prev, correctIndices: [index] }))}
-                />
-                <span style={{ width: 22, fontWeight: 700 }}>{String.fromCharCode(65 + index)}</span>
-                <input
-                  className="form-input"
-                  style={{ flex: 1 }}
-                  value={option}
-                  onChange={(event) => {
-                    const next = [...questionDraft.options];
-                    next[index] = event.target.value;
-                    setQuestionDraft((prev) => ({ ...prev, options: next }));
-                  }}
-                  placeholder={`Nhập đáp án ${String.fromCharCode(65 + index)}`}
-                />
-              </label>
+            {questionDraft.optionsRich.map((optionBlocks, index) => (
+              <div
+                key={`question-option-${index}`}
+                style={{
+                  border: questionDraft.correctIndices.includes(index) ? '2px solid #10b981' : '1px solid #e5e7eb',
+                  borderRadius: 10,
+                  padding: 14,
+                  background: questionDraft.correctIndices.includes(index) ? '#ecfdf5' : '#fafafa',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                    <input
+                      type={questionDraft.allowMultipleCorrect ? 'checkbox' : 'radio'}
+                      name="question-correct-answer"
+                      checked={questionDraft.correctIndices.includes(index)}
+                      onChange={() => toggleCorrectIndex(index)}
+                      style={{ width: 18, height: 18, cursor: 'pointer', marginRight: 4 }}
+                    />
+                    <span style={{ minWidth: 28, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15, borderRadius: 6, background: '#e5e7eb', color: '#1f2937' }}>
+                      {String.fromCharCode(65 + index)}
+                    </span>
+                    <span style={{ color: '#6b7280', fontSize: 14 }}>
+                      {questionDraft.correctIndices.includes(index) ? '✓ Đáp án đúng' : 'Đáp án'}
+                    </span>
+                  </div>
+                  {questionDraft.optionsRich.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => removeOption(index)}
+                      style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #f3c663', background: '#fff7ed', color: '#92400e', cursor: 'pointer', fontWeight: 600 }}
+                      title="Xóa lựa chọn"
+                    >
+                      Xóa
+                    </button>
+                  )}
+                </div>
+                <div style={{ marginLeft: 46 }}>
+                  <RichContentEditor
+                    title=""
+                    helperText="Có thể dùng văn bản, ảnh hoặc video cho đáp án này."
+                    value={optionBlocks}
+                    onChange={(nextBlocks) => {
+                      const nextRich = [...questionDraft.optionsRich];
+                      nextRich[index] = nextBlocks;
+                      const nextOptions = [...questionDraft.options];
+                      nextOptions[index] = richContentToPlainText(nextBlocks);
+                      setQuestionDraft((prev) => ({ ...prev, optionsRich: nextRich, options: nextOptions }));
+                    }}
+                  />
+                </div>
+              </div>
             ))}
+
+            <div>
+              <button
+                type="button"
+                onClick={addOption}
+                disabled={(questionDraft.options || []).length >= 10}
+                style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #3b82f6', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer', fontWeight: 700 }}
+              >
+                + Thêm lựa chọn
+              </button>
+            </div>
           </div>
         </>
       );
@@ -702,7 +806,7 @@ function SegmentDetailView() {
     }
 
     if (quizItem.randomize) {
-      if (Number(quizItem.randomCount || 0) < 1) {
+      if (Number(quizItem.randomCount || 0) < 1 && (!Array.isArray(quizItem.questionIds) || quizItem.questionIds.length === 0)) {
         alert('Hãy nhập số câu random hợp lệ trước khi lưu bài tập.');
         return;
       }
@@ -743,9 +847,8 @@ function SegmentDetailView() {
   const currentItem = contentItems[currentItemIndex];
   const meta = SEGMENT_CONTENT_META[currentItem?.type] || SEGMENT_CONTENT_META.text;
   const isCurrentQuizReadyToSave = currentItem?.type === 'quiz' && (
-    currentItem.randomize
-      ? Number(currentItem.randomCount || 0) > 0
-      : Array.isArray(currentItem.questionIds) && currentItem.questionIds.length > 0
+    (Array.isArray(currentItem.questionIds) && currentItem.questionIds.length > 0)
+    || Number(currentItem.randomCount || 0) > 0
   );
 
   return (
@@ -859,19 +962,33 @@ function SegmentDetailView() {
                           Bài tập này sẽ lấy câu hỏi từ ngân hàng của đúng phần học đang mở. Bạn có thể chọn từng câu hoặc random số câu.
                         </p>
 
+                        <div className="form-group" style={{ marginBottom: 12 }}>
+                          <label style={{ fontWeight: 700, color: '#374151' }}>Tên bài tập</label>
+                          <input
+                            type="text"
+                            value={currentItem.title || ''}
+                            onChange={(e) => handleUpdateContentItem(currentItemIndex, 'title', e.target.value)}
+                            placeholder="Ví dụ: Bài tập phần 1"
+                            className="form-input"
+                          />
+                        </div>
+
                         <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                           <div>
                             <div style={{ fontWeight: 700, color: '#4c1d95' }}>Ngân hàng câu hỏi</div>
-                            <div style={{ marginTop: 4, color: '#5b21b6' }}>
-                              {currentItem.randomize ? (
-                                <strong>Random {Number(currentItem.randomCount || 0)} câu</strong>
-                              ) : Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? (
-                                <strong>{currentItem.questionTitles.length} câu đã chọn</strong>
-                              ) : Array.isArray(currentItem.questionIds) && currentItem.questionIds.length ? (
-                                <strong>{currentItem.questionIds.length} câu đã chọn</strong>
-                              ) : (
-                                <span>Chưa chọn câu nào</span>
-                              )}
+                            <div style={{ marginTop: 4, color: '#5b21b6', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <strong>
+                                {Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length
+                                  ? `${currentItem.questionTitles.length} câu đã chọn`
+                                  : Array.isArray(currentItem.questionIds) && currentItem.questionIds.length
+                                    ? `${currentItem.questionIds.length} câu đã chọn`
+                                    : 'Chưa chọn câu nào'}
+                              </strong>
+                              {Number(currentItem.randomCount || 0) > 0 ? (
+                                <span style={{ color: '#7c3aed' }}>
+                                  Random thêm {Number(currentItem.randomCount || 0)} câu
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                           <button
@@ -891,10 +1008,7 @@ function SegmentDetailView() {
                               checked={Boolean(currentItem.randomize)}
                               onChange={(event) => {
                                 handleUpdateContentItem(currentItemIndex, 'randomize', event.target.checked);
-                                if (event.target.checked) {
-                                  handleUpdateContentItem(currentItemIndex, 'questionIds', []);
-                                  handleUpdateContentItem(currentItemIndex, 'questionTitles', []);
-                                } else {
+                                if (!event.target.checked) {
                                   handleUpdateContentItem(currentItemIndex, 'randomCount', 0);
                                 }
                               }}
@@ -913,9 +1027,14 @@ function SegmentDetailView() {
                               style={{ width: 120 }}
                             />
                           </div>
+                          {Number(currentItem.randomCount || 0) > ((Array.isArray(currentItem.questionIds) && currentItem.questionIds.length) || (Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length) || 0) ? (
+                            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, background: '#fff7ed', border: '1px solid #fdba74', color: '#9a3412', fontSize: 13, fontWeight: 600 }}>
+                              Số câu random đang lớn hơn số câu đã chọn. Hãy cân nhắc giảm số random hoặc thêm thêm câu đã chọn để bài tập cân bằng hơn.
+                            </div>
+                          ) : null}
                         </div>
 
-                        {((Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length) || (Array.isArray(currentItem.questionIds) && currentItem.questionIds.length)) && !currentItem.randomize ? (
+                        {(Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length) || (Array.isArray(currentItem.questionIds) && currentItem.questionIds.length) ? (
                           <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: '#f8fafc', border: '1px solid #e5e7eb' }}>
                             <div style={{ fontWeight: 700, marginBottom: 8, color: '#111827' }}>Câu hỏi đã chọn</div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -924,6 +1043,15 @@ function SegmentDetailView() {
                                   {Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? questionValue : `Câu #${questionValue}`}
                                 </span>
                               ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {Number(currentItem.randomCount || 0) > 0 ? (
+                          <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: '#faf5ff', border: '1px solid #e9d5ff' }}>
+                            <div style={{ fontWeight: 700, marginBottom: 8, color: '#6b21a8' }}>Câu hỏi random thêm</div>
+                            <div style={{ color: '#7c3aed', fontWeight: 700 }}>
+                              Sẽ lấy ngẫu nhiên {Number(currentItem.randomCount || 0)} câu từ bộ lọc hiện tại.
                             </div>
                           </div>
                         ) : null}
@@ -1138,33 +1266,27 @@ function SegmentDetailView() {
                       segmentId: Number(segmentId),
                     }}
                     initial={selectQuestionsModal.itemIndex != null ? (contentItems[selectQuestionsModal.itemIndex]?.questionIds || []) : []}
+                    initialRandomCount={selectQuestionsModal.itemIndex != null ? Number(contentItems[selectQuestionsModal.itemIndex]?.randomCount || 0) : 0}
                     onClose={() => setSelectQuestionsModal({ open: false, itemIndex: null })}
                     onConfirm={(data) => {
                       const idx = selectQuestionsModal.itemIndex;
                       if (idx == null) return;
-                      
-                      // Update all quiz fields in a single state update
+
                       setContentItems((prev) =>
                         prev.map((item, i) => {
                           if (i !== idx) return item;
-                          
-                          if (data.randomize) {
-                            return {
-                              ...item,
-                              questionIds: [],
-                              questionTitles: [],
-                              randomize: true,
-                              randomCount: Number(data.randomCount || 1),
-                            };
-                          } else {
-                            return {
-                              ...item,
-                              questionIds: Array.isArray(data.questionIds) ? data.questionIds : [],
-                              questionTitles: Array.isArray(data.questionTitles) ? data.questionTitles : [],
-                              randomize: false,
-                              randomCount: 0,
-                            };
-                          }
+
+                          const selectedIds = Array.isArray(data.questionIds) ? data.questionIds : [];
+                          const randCount = Number(data.randomCount || 0);
+                          const hasRandom = randCount > 0;
+
+                          return {
+                            ...item,
+                            questionIds: selectedIds,
+                            questionTitles: Array.isArray(data.questionTitles) ? data.questionTitles : selectedIds.map((id) => `Câu #${id}`),
+                            randomize: hasRandom,
+                            randomCount: hasRandom ? randCount : 0,
+                          };
                         })
                       );
                       setSelectQuestionsModal({ open: false, itemIndex: null });
