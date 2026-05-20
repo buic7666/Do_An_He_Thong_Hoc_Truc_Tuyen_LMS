@@ -17,6 +17,43 @@ const ALLOWED_TYPES = [
 
 const ALLOWED_RICH_BLOCK_TYPES = ['text', 'image', 'video'];
 
+const getYouTubeEmbedUrl = (rawUrl) => {
+  if (!rawUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(String(rawUrl).trim());
+    const host = url.hostname.replace('www.', '').toLowerCase();
+
+    if (host === 'youtu.be') {
+      const id = url.pathname.slice(1).split(/[?&#]/)[0];
+      return id ? `https://www.youtube.com/watch?v=${id}` : null;
+    }
+
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      if (url.pathname === '/watch') {
+        const id = url.searchParams.get('v');
+        return id ? `https://www.youtube.com/watch?v=${id}` : null;
+      }
+
+      if (url.pathname.startsWith('/embed/')) {
+        const id = url.pathname.split('/embed/')[1]?.split(/[?&#]/)[0];
+        return id ? `https://www.youtube.com/watch?v=${id}` : null;
+      }
+
+      if (url.pathname.startsWith('/shorts/')) {
+        const id = url.pathname.split('/shorts/')[1]?.split(/[?&#]/)[0];
+        return id ? `https://www.youtube.com/watch?v=${id}` : null;
+      }
+    }
+  } catch (_error) {
+    return null;
+  }
+
+  return null;
+};
+
 const mapDifficultyToDb = (value) => {
   if (!value) {
     return 'MEDIUM';
@@ -63,6 +100,14 @@ const normalizeRichBlock = (block) => {
   if (type === 'text') {
     const text = String(block.text ?? '').trim();
     if (!text) return null;
+    const youtubeUrl = getYouTubeEmbedUrl(text);
+    if (youtubeUrl) {
+      return {
+        type: 'video',
+        url: youtubeUrl,
+        title: String(block.title ?? '').trim(),
+      };
+    }
     return { type, text };
   }
 
@@ -114,7 +159,14 @@ const richBlocksToPlainText = (blocks = []) => blocks.map((block) => {
 
 const buildMetadataForType = (type, payload = {}, current = {}) => {
   const questionType = String(type || 'MULTIPLE_CHOICE').toUpperCase();
-  const contentBlocks = normalizeRichBlocks(payload.contentBlocks ?? current.contentBlocks);
+  const incomingContentBlocks = normalizeRichBlocks(payload.contentBlocks ?? current.contentBlocks);
+  const contentFromPayload = String(payload.content || current.content || '').trim();
+  const contentUrl = getYouTubeEmbedUrl(contentFromPayload);
+  const contentBlocks = incomingContentBlocks.length > 0
+    ? incomingContentBlocks
+    : (contentUrl
+      ? [{ type: 'video', url: contentUrl, title: String(payload.title ?? current.title ?? '').trim() }]
+      : []);
 
   switch (questionType) {
     case 'MULTIPLE_CHOICE': {

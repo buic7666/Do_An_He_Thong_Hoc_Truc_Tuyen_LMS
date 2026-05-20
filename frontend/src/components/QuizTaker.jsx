@@ -17,6 +17,128 @@ const parseJson = (value, fallback = {}) => {
   return value;
 };
 
+/**
+ * QuestionDetailModal Component
+ * Displays detailed view of a question
+ */
+const QuestionDetailModal = ({ question, onClose }) => {
+  if (!question) {
+    return null;
+  }
+
+  const questionType = question.type || 'MULTIPLE_CHOICE';
+  const metadata = parseJson(question.metadata, {});
+  const options = Array.isArray(question.options) ? question.options : [];
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Chi Tiết Câu Hỏi</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+
+        <div className="modal-body">
+          {/* Nội dung câu hỏi */}
+          <div className="detail-section">
+            <h3>📝 Câu Hỏi</h3>
+            <div className="question-content">
+              {question.questionText || question.content ? (
+                <p>{question.questionText || question.content}</p>
+              ) : null}
+              {Array.isArray(question.contentBlocks) && question.contentBlocks.length > 0 ? (
+                <RichContentRenderer blocks={question.contentBlocks} />
+              ) : null}
+            </div>
+          </div>
+
+          {/* Loại câu hỏi */}
+          <div className="detail-section">
+            <h3>📌 Loại Câu Hỏi</h3>
+            <p className="detail-badge">{questionType}</p>
+          </div>
+
+          {/* Độ khó */}
+          {question.difficulty ? (
+            <div className="detail-section">
+              <h3>⚡ Độ Khó</h3>
+              <p className="detail-badge">{question.difficulty}</p>
+            </div>
+          ) : null}
+
+          {/* Đáp án */}
+          {questionType === 'MULTIPLE_CHOICE' && options.length > 0 ? (
+            <div className="detail-section">
+              <h3>✅ Các Lựa Chọn</h3>
+              <div className="options-list">
+                {options.map((option, index) => (
+                  <div key={`option-${index}`} className="option-item">
+                    <span className="option-index">{String.fromCharCode(65 + index)}</span>
+                    <div className="option-text-wrapper">
+                      {typeof option === 'string' ? (
+                        <p>{option}</p>
+                      ) : Array.isArray(option?.contentBlocks) && option.contentBlocks.length > 0 ? (
+                        <RichContentRenderer blocks={option.contentBlocks} />
+                      ) : option?.text ? (
+                        <p>{option.text}</p>
+                      ) : (
+                        <p>{String(option || '')}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Giải thích */}
+          {question.explanation ? (
+            <div className="detail-section">
+              <h3>💡 Giải Thích</h3>
+              <div className="explanation-box">
+                {question.explanation}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Metadata bổ sung */}
+          {Object.keys(metadata).length > 0 && (
+            <div className="detail-section">
+              <h3>📊 Thông Tin Bổ Sung</h3>
+              <div className="metadata-info">
+                {metadata.points && (
+                  <div className="info-item">
+                    <span className="label">Điểm:</span>
+                    <span className="value">{metadata.points}</span>
+                  </div>
+                )}
+                {metadata.topic && (
+                  <div className="info-item">
+                    <span className="label">Chủ đề:</span>
+                    <span className="value">{metadata.topic}</span>
+                  </div>
+                )}
+                {metadata.tags && Array.isArray(metadata.tags) && (
+                  <div className="info-item">
+                    <span className="label">Tags:</span>
+                    <span className="value">{metadata.tags.join(', ')}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn--primary" onClick={onClose}>
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const isAnswered = (entry) => {
   if (!entry) {
     return false;
@@ -122,6 +244,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
   const [attemptId, setAttemptId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedQuestionDetail, setSelectedQuestionDetail] = useState(null);
 
   const autoSaveIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
@@ -569,6 +692,13 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
               <div className="question-text">
                 <RichContentRenderer blocks={getQuestionBlocks(currentQuestion)} />
               </div>
+              <button 
+                onClick={() => setSelectedQuestionDetail(currentQuestion)}
+                className="btn btn--secondary btn--view-detail"
+                style={{ marginBottom: 12 }}
+              >
+                📋 Xem thêm
+              </button>
               {renderQuestionInput(currentQuestion)}
             </div>
           ) : null}
@@ -632,6 +762,14 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
           </div>
         </div>
       </div>
+
+      {/* Modal overlay */}
+      {selectedQuestionDetail ? (
+        <QuestionDetailModal 
+          question={selectedQuestionDetail} 
+          onClose={() => setSelectedQuestionDetail(null)} 
+        />
+      ) : null}
     </div>
   );
 };

@@ -476,18 +476,33 @@ const normalizeQuiz = (quiz, includeQuestions = false) => {
  */
 const normalizeQuizWithQuestions = (quiz) => {
   const plain = quiz.toJSON();
-  const questions = (plain.questions || []).map((q) => ({
-    metadata: parseJsonField(q.metadata, {}),
-    id: q.id,
-    content: q.content,
-    type: q.type || 'MULTIPLE_CHOICE',
-    questionText: q.content,
-    options: (parseJsonField(q.metadata, {})?.options) || [],
-    QuizQuestion: {
-      order: q.QuizQuestion?.order,
-      points: q.QuizQuestion?.points,
-    },
-  }));
+  const questions = (plain.questions || []).map((q) => {
+    const metadata = parseJsonField(q.metadata, {});
+    const resolvedContentBlocks = Array.isArray(metadata?.contentBlocks)
+      ? metadata.contentBlocks
+      : Array.isArray(metadata?.blocks)
+        ? metadata.blocks
+        : Array.isArray(metadata?.richContent?.blocks)
+          ? metadata.richContent.blocks
+          : [];
+    const resolvedQuestionText = String(
+      q.content || metadata?.questionText || metadata?.title || '',
+    ).trim();
+
+    return {
+      metadata: metadata,
+      id: q.id,
+      content: resolvedQuestionText,
+      type: q.type || 'MULTIPLE_CHOICE',
+      questionText: resolvedQuestionText,
+      options: metadata?.options || [],
+      contentBlocks: resolvedContentBlocks,
+      QuizQuestion: {
+        order: q.QuizQuestion?.order,
+        points: q.QuizQuestion?.points,
+      },
+    };
+  });
 
   return {
     id: plain.id,

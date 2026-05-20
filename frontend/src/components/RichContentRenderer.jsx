@@ -96,10 +96,9 @@ const RichContentRenderer = ({ blocks = [] }) => {
             );
           }
 
+          // Render HTML content if present (WYSIWYG editor stores HTML)
           return (
-            <div key={idx} className="rich-content-renderer__text" style={{ whiteSpace: 'pre-wrap', color: '#111' }}>
-              {text}
-            </div>
+            <div key={idx} className="rich-content-renderer__text" style={{ whiteSpace: 'pre-wrap', color: '#111' }} dangerouslySetInnerHTML={{ __html: text }} />
           );
         }
 

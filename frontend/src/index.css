@@ -25,3 +25,86 @@ body {
   width: 100%;
   height: 100%;
 }
+
+/* Rich content editor / renderer heading styles to make H1/H2/H3 visually distinct */
+.rich-content-editor [contenteditable] h1,
+.rich-content-renderer h1 {
+  font-size: 1.5rem; /* ~24px */
+  font-weight: 700;
+  margin: 0.6rem 0;
+  color: #0f172a;
+}
+.rich-content-editor [contenteditable] h2,
+.rich-content-renderer h2 {
+  font-size: 1.25rem; /* ~20px */
+  font-weight: 700;
+  margin: 0.5rem 0;
+  color: #0f172a;
+}
+.rich-content-editor [contenteditable] h3,
+.rich-content-renderer h3 {
+  font-size: 1.05rem; /* ~17px */
+  font-weight: 700;
+  margin: 0.4rem 0;
+  color: #0f172a;
+}
+
+.rich-content-editor [contenteditable] p,
+.rich-content-renderer p {
+  margin: 0.25rem 0;
+}
+
+.rich-content-editor [contenteditable] code,
+.rich-content-renderer code,
+.rich-content-editor [contenteditable] pre,
+.rich-content-renderer pre {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.rich-content-editor [contenteditable] code,
+.rich-content-renderer code {
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.35rem;
+}
+
+.rich-content-editor [contenteditable] pre,
+.rich-content-renderer pre {
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  margin: 0.4rem 0;
+}
+
+/* Inline-styled heading spans used when user applies H1/H2/H3 to a selection */
+.rich-content-editor [contenteditable] .rich-heading.h1,
+.rich-content-renderer .rich-heading.h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: inline-block;
+  margin: 0.4rem 0;
+}
+.rich-content-editor [contenteditable] .rich-heading.h2,
+.rich-content-renderer .rich-heading.h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: inline-block;
+  margin: 0.35rem 0;
+}
+.rich-content-editor [contenteditable] .rich-heading.h3,
+.rich-content-renderer .rich-heading.h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: inline-block;
+  margin: 0.3rem 0;
+}
+
+/* Editor-only controls should never be visible in rendered content */
+.rich-content-renderer [data-editor-remove-only='1'] {
+  display: none !important;
+}

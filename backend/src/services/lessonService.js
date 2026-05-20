@@ -2,7 +2,7 @@ const lessonRepository = require('../repositories/lessonRepository');
 const enrollmentRepository = require('../repositories/enrollmentRepository');
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
-const { Lesson, LessonSegment, LessonLabel } = require('../models');
+const { Lesson, LessonSegment, LessonLabel, Question, Quiz, QuizQuestion } = require('../models');
 const { HttpError } = require('../utils/httpError');
 
 const SEGMENT_ITEM_TYPES = new Set(['text', 'document', 'question', 'quiz', 'videoClip']);
@@ -128,6 +128,9 @@ const normalizeSegmentContentItems = (items = []) => {
       }
 
       if (type === 'quiz') {
+        payload.quizId = Number.isInteger(Number(item?.quizId)) && Number(item.quizId) > 0
+          ? Number(item.quizId)
+          : null;
         payload.questionIds = Array.isArray(item?.questionIds)
           ? item.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
           : [];
@@ -145,6 +148,151 @@ const normalizeSegmentContentItems = (items = []) => {
       ...item,
       orderIndex: index + 1,
     }));
+};
+
+const parseQuestionMetadata = (value) => {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch (_error) {
+      return {};
+    }
+  }
+  return value;
+};
+
+const shuffleArray = (items = []) => {
+  const copied = [...items];
+  for (let index = copied.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copied[index], copied[swapIndex]] = [copied[swapIndex], copied[index]];
+  }
+  return copied;
+};
+
+const syncQuizContentItems = async (segment, normalizedItems, currentUser) => {
+  if (!segment?.lessonId || !Array.isArray(normalizedItems) || normalizedItems.length === 0) {
+    return normalizedItems;
+  }
+
+  const lesson = segment.lesson || await Lesson.findByPk(segment.lessonId);
+  if (!lesson) {
+    return normalizedItems;
+  }
+
+  const questionPool = await Question.findAll({
+    where: {
+      courseId: lesson.courseId,
+      lectureId: lesson.id,
+    },
+    attributes: ['id', 'metadata'],
+  });
+
+  let bySegmentQuestionIds = questionPool
+    .filter((question) => {
+      const metadata = parseQuestionMetadata(question.metadata);
+      return Number(metadata.segmentId || 0) === Number(segment.id);
+    })
+    .map((question) => Number(question.id));
+
+  try {
+    console.debug('[lessonService] questionPool sizes', {
+      totalQuestionsInPool: questionPool.length,
+      bySegmentQuestionIdsLength: bySegmentQuestionIds.length,
+      bySegmentSample: bySegmentQuestionIds.slice(0, 10),
+    });
+  } catch (_e) {
+    // ignore
+  }
+
+  // Fallback: if no questions are explicitly tagged to this segment, use all questions from lesson
+  if (!bySegmentQuestionIds.length) {
+    try {
+      console.warn(`[lessonService] No questions found for segment ${segment.id}. Falling back to lesson-level question pool (${questionPool.length} items).`);
+    } catch (_e) {
+      // ignore
+    }
+    bySegmentQuestionIds = questionPool.map((q) => Number(q.id));
+  }
+
+  return Promise.all(normalizedItems.map(async (item) => {
+    if (item.type !== 'quiz') {
+      return item;
+    }
+
+    const explicitQuestionIds = Array.isArray(item.questionIds)
+      ? item.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+      : [];
+
+    const selectedQuestionIds = item.randomize
+      ? shuffleArray(bySegmentQuestionIds).slice(0, Math.max(0, Number(item.randomCount || 0)))
+      : explicitQuestionIds;
+
+    let quiz = null;
+    if (Number.isInteger(Number(item.quizId)) && Number(item.quizId) > 0) {
+      quiz = await Quiz.findOne({
+        where: {
+          id: Number(item.quizId),
+          lessonId: lesson.id,
+          courseId: lesson.courseId,
+        },
+      });
+    }
+
+    if (!quiz) {
+      quiz = await Quiz.create({
+        courseId: lesson.courseId,
+        chapterId: lesson.chapterId || null,
+        lessonId: lesson.id,
+        title: item.title || `Bài kiểm tra - Phần ${segment.orderIndex || segment.id}`,
+        description: item.content || null,
+        duration: 30,
+        passScore: 70,
+        maxAttempts: 0,
+        isPublished: true,
+        createdBy: currentUser.id,
+      });
+    } else {
+      quiz.title = item.title || quiz.title;
+      quiz.description = item.content || quiz.description;
+      quiz.isPublished = true;
+      await quiz.save();
+    }
+
+    // Log debug info to help diagnose random-selection issues
+    try {
+      console.debug('[lessonService] syncQuizContentItems', {
+        segmentId: segment.id,
+        quizItemTitle: item.title,
+        randomize: item.randomize,
+        randomCount: item.randomCount,
+        explicitQuestionIdsLength: explicitQuestionIds.length,
+        selectedQuestionIdsLength: selectedQuestionIds.length,
+        quizId: quiz?.id,
+      });
+    } catch (_e) {
+      // ignore logging errors
+    }
+
+    await QuizQuestion.destroy({ where: { quizId: quiz.id } });
+    if (selectedQuestionIds.length > 0) {
+      await QuizQuestion.bulkCreate(
+        selectedQuestionIds.map((questionId, index) => ({
+          quizId: quiz.id,
+          questionId,
+          order: index + 1,
+          points: 1,
+        })),
+      );
+    }
+
+    return {
+      ...item,
+      quizId: quiz.id,
+      questionIds: selectedQuestionIds,
+    };
+  }));
 };
 
 const ensureSegmentOwnership = async (segmentId, currentUser) => {
@@ -412,13 +560,18 @@ const createLessonSegment = async (lessonId, payload, currentUser) => {
       );
     }
 
-    return LessonSegment.create({
+    const segment = await LessonSegment.create({
       lessonId: parsedLessonId,
       title: payload.title?.trim() || null,
       orderIndex,
       contentItems: normalizedItems,
       // startTime, endTime, duration are now managed at content item level (videoClip)
     }, { transaction });
+
+    segment.contentItems = await syncQuizContentItems(segment, normalizedItems, currentUser);
+    await segment.save({ transaction });
+
+    return segment;
   });
 
   return mapLessonSegment(created);
@@ -432,7 +585,8 @@ const updateLessonSegment = async (segmentId, payload, currentUser) => {
   const segment = await ensureSegmentOwnership(segmentId, currentUser);
 
   if (Object.prototype.hasOwnProperty.call(payload, 'contentItems')) {
-    segment.contentItems = normalizeSegmentContentItems(payload.contentItems || []);
+    const normalizedContentItems = normalizeSegmentContentItems(payload.contentItems || []);
+    segment.contentItems = await syncQuizContentItems(segment, normalizedContentItems, currentUser);
   }
 
   if (Object.prototype.hasOwnProperty.call(payload, 'title')) {
@@ -540,7 +694,16 @@ const createLessonSegmentsBulk = async (lessonId, payload, currentUser) => {
     });
 
   const createdSegments = await sequelize.transaction(async (transaction) => {
-    return LessonSegment.bulkCreate(normalizedSegments, { transaction });
+    const segments = await LessonSegment.bulkCreate(normalizedSegments, { transaction });
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const normalizedContentItems = normalizedSegments[index]?.contentItems || [];
+      segment.contentItems = await syncQuizContentItems(segment, normalizedContentItems, currentUser);
+      await segment.save({ transaction });
+    }
+
+    return segments;
   });
 
   return createdSegments.map((segment) => mapLessonSegment(segment));
