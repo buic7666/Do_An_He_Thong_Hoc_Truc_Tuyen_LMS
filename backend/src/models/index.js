@@ -178,6 +178,16 @@ Question.belongsTo(Lesson, {
   foreignKey: 'lectureId',
 });
 
+Question.hasMany(Question, {
+  as: 'childQuestions',
+  foreignKey: 'parentQuestionId',
+});
+
+Question.belongsTo(Question, {
+  as: 'parentQuestion',
+  foreignKey: 'parentQuestionId',
+});
+
 User.hasOne(TeacherProfile, {
   as: 'teacherProfile',
   foreignKey: 'teacherId',

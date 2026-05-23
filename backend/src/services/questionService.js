@@ -13,6 +13,7 @@ const ALLOWED_TYPES = [
   'TRUE_FALSE',
   'SHORT_ANSWER',
   'ESSAY',
+  'CLOZE',
 ];
 
 const ALLOWED_RICH_BLOCK_TYPES = ['text', 'image', 'video'];
@@ -217,6 +218,13 @@ const buildMetadataForType = (type, payload = {}, current = {}) => {
         aiModel: payload.aiModel ?? current.aiModel ?? null,
       };
 
+    case 'CLOZE':
+      return {
+        contentBlocks,
+        text_template: payload.metadata?.text_template ?? current.text_template ?? payload.content ?? '',
+        inner_questions: payload.metadata?.inner_questions ?? current.inner_questions ?? {},
+      };
+
     default:
       throw new HttpError(400, `Invalid question type: ${questionType}`);
   }
@@ -239,6 +247,8 @@ const normalizeQuestion = (question) => {
     isPublished: plain.isPublished || false,
     chapterId: metadata.chapterId != null ? Number(metadata.chapterId) : null,
     lectureId: plain.lectureId,
+    parentQuestionId: plain.parentQuestionId,
+    orderIndex: plain.orderIndex,
     segmentId: metadata.segmentId != null ? Number(metadata.segmentId) : null,
     courseId: plain.courseId,
     creator: plain.creator
@@ -277,7 +287,7 @@ const getQuestionsByCreator = async (creatorId) => {
   const questions = await Question.findAll({
     where: { createdBy: creatorId },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   return questions.map(normalizeQuestion);
@@ -293,7 +303,7 @@ const getQuestionsByDifficulty = async (creatorId, difficulty) => {
       difficulty: mapDifficultyToDb(difficulty),
     },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   return questions.map(normalizeQuestion);
@@ -311,7 +321,7 @@ const searchQuestions = async (creatorId, searchText) => {
       },
     },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   return questions.map(normalizeQuestion);
@@ -324,7 +334,7 @@ const getQuestionsByLecture = async (lectureId) => {
   const questions = await Question.findAll({
     where: { lectureId },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   return questions.map(normalizeQuestion);
@@ -351,7 +361,7 @@ const getQuestionsByCourse = async (courseId, filters = {}) => {
   const questions = await Question.findAll({
     where,
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   const normalizedQuestions = questions.map(normalizeQuestion);
@@ -432,6 +442,8 @@ const createQuestion = async (payload, creatorId) => {
     createdBy: creatorId,
     lectureId: payload.lectureId || null,
     courseId: payload.courseId || null,
+    parentQuestionId: payload.parentQuestionId || null,
+    orderIndex: payload.orderIndex || null,
     isPublished: payload.isPublished === true,
   });
 
@@ -487,6 +499,14 @@ const updateQuestion = async (questionId, payload, creatorId) => {
 
   if (payload.lectureId !== undefined) {
     question.lectureId = payload.lectureId;
+  }
+
+  if (payload.parentQuestionId !== undefined) {
+    question.parentQuestionId = payload.parentQuestionId;
+  }
+
+  if (payload.orderIndex !== undefined) {
+    question.orderIndex = payload.orderIndex;
   }
 
   if (payload.courseId !== undefined) {

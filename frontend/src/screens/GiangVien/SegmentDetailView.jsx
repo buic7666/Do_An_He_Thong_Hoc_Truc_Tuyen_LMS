@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import TeacherSidebar from '../../components/TeacherSidebar';
 import httpClient from '../../api/httpClient';
 import QuestionFormModal from '../../components/QuestionFormModal';
+import ClozeQuestionForm from '../../components/ClozeQuestionForm';
 import SelectQuestionsModal from '../../components/SelectQuestionsModal';
 import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from '../../components/RichContentEditor';
 import RichContentRenderer from '../../components/RichContentRenderer';
@@ -27,17 +28,19 @@ const SEGMENT_CONTENT_META = {
   videoClip: { icon: '🎬', title: 'Video Clip', color: '#1abc9c' },
 };
 
-const QUESTION_TYPES = ['MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY'];
+const QUESTION_TYPES = ['MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY', 'CLOZE'];
 
 const QUESTION_TYPE_LABELS = {
   MULTIPLE_CHOICE: 'Trắc nghiệm',
   TRUE_FALSE: 'Đúng/Sai',
   SHORT_ANSWER: 'Trả lời ngắn',
   ESSAY: 'Tự luận',
+  CLOZE: 'Câu hỏi bài đọc',
 };
 
 const createEmptyQuestionDraft = () => ({
   type: 'MULTIPLE_CHOICE',
+  metadata: { text_template: '', inner_questions: {} },
   content: '',
   isPublished: false,
   options: ['', '', '', ''],
@@ -578,6 +581,22 @@ function SegmentDetailView() {
       };
     }
 
+    if (questionDraft.type === 'CLOZE') {
+      const metadata = questionDraft.metadata && typeof questionDraft.metadata === 'object'
+        ? questionDraft.metadata
+        : { text_template: questionDraft.content, inner_questions: {} };
+
+      if (!String(metadata.text_template || '').trim()) {
+        throw new Error('Câu hỏi bài đọc cần có text_template hợp lệ.');
+      }
+
+      return {
+        ...base,
+        metadata,
+        content: String(metadata.text_template || questionDraft.content),
+      };
+    }
+
     const rubric = questionDraft.rubric
       .map((item) => ({
         name: item.name.trim(),
@@ -606,6 +625,94 @@ function SegmentDetailView() {
     };
   };
 
+  const buildNormalQuestionPayloadFromInner = (innerQuestion, parentQuestionId, orderIndex) => {
+    const base = {
+      type: innerQuestion.type,
+      content: String(innerQuestion.content || '').trim() || String(questionDraft.content || '').trim(),
+      contentBlocks: Array.isArray(innerQuestion.contentBlocks) ? innerQuestion.contentBlocks : createEmptyRichBlocks(),
+      courseId: Number(courseId),
+      chapterId: Number(chapterId),
+      lectureId: Number(lessonId),
+      segmentId: Number(segmentId),
+      parentQuestionId,
+      orderIndex,
+      isPublished: Boolean(innerQuestion.isPublished),
+    };
+
+    if (innerQuestion.type === 'MULTIPLE_CHOICE') {
+      const optionsRich = Array.isArray(innerQuestion.optionsRich) ? innerQuestion.optionsRich : [];
+      const options = optionsRich.length
+        ? optionsRich.map((blocks, index) => richContentToPlainText(blocks) || String(innerQuestion.options?.[index] || '').trim()).filter(Boolean)
+        : (Array.isArray(innerQuestion.options) ? innerQuestion.options.map((item) => String(item || '').trim()).filter(Boolean) : []);
+
+      return {
+        ...base,
+        options,
+        optionsRich,
+        correctIndices: Array.isArray(innerQuestion.correctIndices) ? innerQuestion.correctIndices : [0],
+        allowMultipleCorrect: Boolean(innerQuestion.allowMultipleCorrect),
+        explanation: String(innerQuestion.explanation || '').trim() || undefined,
+      };
+    }
+
+    if (innerQuestion.type === 'TRUE_FALSE') {
+      return {
+        ...base,
+        correctAnswer: Boolean(innerQuestion.correctAnswer),
+        explanation: String(innerQuestion.explanation || '').trim() || undefined,
+      };
+    }
+
+    if (innerQuestion.type === 'SHORT_ANSWER') {
+      const acceptedAnswers = String(innerQuestion.acceptedAnswersText || '')
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      return {
+        ...base,
+        acceptedAnswers,
+        caseSensitive: Boolean(innerQuestion.caseSensitive),
+        fuzzyMatch: innerQuestion.fuzzyMatch !== false,
+        explanation: String(innerQuestion.explanation || '').trim() || undefined,
+      };
+    }
+
+    if (innerQuestion.type === 'NUMERICAL') {
+      return {
+        ...base,
+        correct: Number(innerQuestion.correct),
+        tolerance: Number.isFinite(Number(innerQuestion.tolerance)) ? Number(innerQuestion.tolerance) : 0,
+        explanation: String(innerQuestion.explanation || '').trim() || undefined,
+      };
+    }
+
+    if (innerQuestion.type === 'ESSAY') {
+      const rubric = Array.isArray(innerQuestion.rubric)
+        ? innerQuestion.rubric
+            .map((item) => ({
+              name: String(item.name || '').trim(),
+              weight: Number(item.weight),
+              description: String(item.description || '').trim(),
+            }))
+            .filter((item) => item.name && item.description && Number.isFinite(item.weight))
+        : [];
+
+      return {
+        ...base,
+        instructions: String(innerQuestion.instructions || '').trim(),
+        rubric,
+        wordLimit: {
+          min: Number(innerQuestion.wordLimitMin || 0),
+          max: Number(innerQuestion.wordLimitMax || 0) || 5000,
+        },
+        aiModel: innerQuestion.aiModel || 'gpt-3.5-turbo',
+      };
+    }
+
+    return base;
+  };
+
   const handleSaveQuestion = async () => {
     try {
       const payload = buildQuestionPayload();
@@ -613,7 +720,17 @@ function SegmentDetailView() {
       if (questionEditingId) {
         await updateQuestionApi(questionEditingId, payload);
       } else {
-        await createQuestionApi(payload);
+        const createdQuestion = await createQuestionApi(payload);
+
+        if (questionDraft.type === 'CLOZE') {
+          const innerQuestions = questionDraft.metadata?.inner_questions || {};
+          const innerEntries = Object.entries(innerQuestions);
+
+          for (let index = 0; index < innerEntries.length; index += 1) {
+            const [, innerQuestion] = innerEntries[index];
+            await createQuestionApi(buildNormalQuestionPayloadFromInner(innerQuestion, createdQuestion.id, index + 1));
+          }
+        }
       }
 
       setQuestionModalOpen(false);
@@ -789,6 +906,24 @@ function SegmentDetailView() {
         </>
       );
     }
+
+      if (questionDraft.type === 'CLOZE') {
+        return (
+          <div style={{ marginTop: 8 }}>
+            <ClozeQuestionForm
+              compact
+              initialValue={{ text_template: questionDraft.content, inner_questions: questionDraft.metadata?.inner_questions || {} }}
+              templateText={questionDraft.content}
+              onChange={(nextMetadata) => {
+                setQuestionDraft((prev) => ({
+                  ...prev,
+                  metadata: nextMetadata,
+                }));
+              }}
+            />
+          </div>
+        );
+      }
 
     return (
       <>

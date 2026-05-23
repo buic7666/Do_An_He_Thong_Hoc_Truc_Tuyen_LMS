@@ -7,6 +7,7 @@ const QUESTION_TYPE_LABELS = {
   TRUE_FALSE: 'Đúng/Sai',
   SHORT_ANSWER: 'Trả lời ngắn',
   ESSAY: 'Tự luận',
+  CLOZE: 'Câu hỏi bài đọc',
 };
 
 function QuestionFormModal({
@@ -199,6 +200,8 @@ function QuestionFormModal({
                   next = { ...next, acceptedAnswersText: next.acceptedAnswersText || '' };
                 } else if (newType === 'ESSAY') {
                   next = { ...next, rubric: next.rubric && next.rubric.length ? next.rubric : [{ name: 'Nội dung', weight: 100, description: '' }], instructions: next.instructions || '' };
+                } else if (newType === 'CLOZE') {
+                  next = { ...next, metadata: next.metadata || { text_template: '', inner_questions: {} } };
                 }
                 onDraftChange(next);
               }}
@@ -208,6 +211,7 @@ function QuestionFormModal({
               <option value="TRUE_FALSE">Đúng/Sai</option>
               <option value="SHORT_ANSWER">Trả lời ngắn</option>
               <option value="ESSAY">Tự luận</option>
+              <option value="CLOZE">Câu hỏi bài đọc</option>
             </select>
           </div>
         </div>

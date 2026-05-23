@@ -126,8 +126,8 @@ const migrate = async () => {
     });
     console.log('✅ lesson_segments table ready\n');
 
-    // 4. Add lecture_id to questions table
-    console.log('4️⃣  Adding lecture_id to questions table...');
+    // 4. Add lecture_id, parent_question_id and order_index to questions table
+    console.log('4️⃣  Adding hierarchy columns to questions table...');
     try {
       await queryInterface.addColumn('questions', 'lecture_id', {
         type: DataTypes.BIGINT.UNSIGNED,
@@ -142,6 +142,47 @@ const migrate = async () => {
       } else {
         throw err;
       }
+    }
+
+    try {
+      await queryInterface.addColumn('questions', 'parent_question_id', {
+        type: DataTypes.BIGINT.UNSIGNED,
+        allowNull: true,
+        references: { model: 'questions', key: 'id' },
+        onDelete: 'CASCADE',
+      });
+      console.log('✅ column parent_question_id added\n');
+    } catch (err) {
+      if (err.message.includes('Duplicate column')) {
+        console.log('  ℹ️  parent_question_id column already exists\n');
+      } else {
+        throw err;
+      }
+    }
+
+    try {
+      await queryInterface.addColumn('questions', 'order_index', {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: true,
+      });
+      console.log('✅ column order_index added\n');
+    } catch (err) {
+      if (err.message.includes('Duplicate column')) {
+        console.log('  ℹ️  order_index column already exists\n');
+      } else {
+        throw err;
+      }
+    }
+
+    try {
+      await queryInterface.changeColumn('questions', 'type', {
+        type: DataTypes.ENUM('MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY', 'CLOZE'),
+        allowNull: false,
+        defaultValue: 'MULTIPLE_CHOICE',
+      });
+      console.log('✅ question type enum updated\n');
+    } catch (err) {
+      console.log('  ⚠️  Could not update question type enum automatically:', err.message);
     }
 
     // 5. Add chapter_id to quizzes table

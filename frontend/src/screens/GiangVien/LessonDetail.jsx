@@ -16,6 +16,7 @@ import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText, richC
 import SelectQuestionsModal from '../../components/SelectQuestionsModal';
 import { createQuestionApi, updateQuestionApi } from '../../api/teacherManagementApi';
 import './LessonDetail.css';
+import ClozeQuestionForm from '../../components/ClozeQuestionForm';
 
 // Hàm lấy video ID từ URL YouTube
 const getYouTubeVideoId = (rawUrl) => {
@@ -344,6 +345,7 @@ function LessonDetail() {
   // Question modal state (used when adding from Lesson modal)
   const createEmptyQuestionDraft = () => ({
     type: 'MULTIPLE_CHOICE',
+    metadata: { text_template: '', inner_questions: {} },
     content: '',
     contentBlocks: createEmptyRichBlocks(),
     isPublished: false,
@@ -461,6 +463,19 @@ function LessonDetail() {
         fuzzyMatch: questionDraft.fuzzyMatch,
         explanation: questionDraft.explanation.trim() || undefined,
       };
+    }
+
+    if (questionDraft.type === 'CLOZE') {
+      return (
+        <div style={{ marginBottom: 20 }}>
+          <ClozeQuestionForm
+            compact
+            initialValue={{ text_template: questionDraft.content, inner_questions: questionDraft.metadata?.inner_questions || {} }}
+            templateText={questionDraft.content}
+            onChange={(nextMeta) => setQuestionDraft((prev) => ({ ...prev, metadata: nextMeta }))}
+          />
+        </div>
+      );
     }
 
     const rubric = questionDraft.rubric

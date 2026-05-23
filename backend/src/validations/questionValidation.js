@@ -53,6 +53,8 @@ const createMultipleChoiceQuestionSchema = z.object({
   courseId: z.coerce.number().int().positive().optional(),
   chapterId: z.coerce.number().int().positive().optional(),
   lectureId: z.coerce.number().int().positive().optional(),
+  parentQuestionId: z.coerce.number().int().positive().optional().nullable(),
+  orderIndex: z.coerce.number().int().min(1).optional(),
   segmentId: z.coerce.number().int().positive().optional(),
   isPublished: z.boolean().optional().default(false),
 });
@@ -67,6 +69,8 @@ const createTrueFalseQuestionSchema = z.object({
   courseId: z.coerce.number().int().positive().optional(),
   chapterId: z.coerce.number().int().positive().optional(),
   lectureId: z.coerce.number().int().positive().optional(),
+  parentQuestionId: z.coerce.number().int().positive().optional().nullable(),
+  orderIndex: z.coerce.number().int().min(1).optional(),
   segmentId: z.coerce.number().int().positive().optional(),
   isPublished: z.boolean().optional().default(false),
 });
@@ -83,6 +87,8 @@ const createShortAnswerQuestionSchema = z.object({
   courseId: z.coerce.number().int().positive().optional(),
   chapterId: z.coerce.number().int().positive().optional(),
   lectureId: z.coerce.number().int().positive().optional(),
+  parentQuestionId: z.coerce.number().int().positive().optional().nullable(),
+  orderIndex: z.coerce.number().int().min(1).optional(),
   segmentId: z.coerce.number().int().positive().optional(),
   isPublished: z.boolean().optional().default(false),
 });
@@ -109,6 +115,22 @@ const createEssayQuestionSchema = z.object({
   courseId: z.coerce.number().int().positive().optional(),
   chapterId: z.coerce.number().int().positive().optional(),
   lectureId: z.coerce.number().int().positive().optional(),
+  parentQuestionId: z.coerce.number().int().positive().optional().nullable(),
+  orderIndex: z.coerce.number().int().min(1).optional(),
+  segmentId: z.coerce.number().int().positive().optional(),
+  isPublished: z.boolean().optional().default(false),
+});
+
+const createClozeQuestionSchema = z.object({
+  type: z.literal('CLOZE'),
+  content: z.string().trim().min(10).max(10000),
+  contentBlocks: z.array(richContentBlockSchema).min(1).max(50).optional(),
+  metadata: z.record(z.any()).optional(),
+  courseId: z.coerce.number().int().positive().optional(),
+  chapterId: z.coerce.number().int().positive().optional(),
+  lectureId: z.coerce.number().int().positive().optional(),
+  parentQuestionId: z.coerce.number().int().positive().optional().nullable(),
+  orderIndex: z.coerce.number().int().min(1).optional(),
   segmentId: z.coerce.number().int().positive().optional(),
   isPublished: z.boolean().optional().default(false),
 });
@@ -119,6 +141,7 @@ const createQuestionBodySchema = z.discriminatedUnion('type', [
   createTrueFalseQuestionSchema,
   createShortAnswerQuestionSchema,
   createEssayQuestionSchema,
+  createClozeQuestionSchema,
 ]);
 
 const updateQuestionBodySchema = z.union([
@@ -126,13 +149,16 @@ const updateQuestionBodySchema = z.union([
   createTrueFalseQuestionSchema.partial().omit({ type: true }),
   createShortAnswerQuestionSchema.partial().omit({ type: true }),
   createEssayQuestionSchema.partial().omit({ type: true }),
+  createClozeQuestionSchema.partial().omit({ type: true }),
   z.object({
-    type: z.enum(['MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY']).optional(),
+    type: z.enum(['MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY', 'CLOZE']).optional(),
     content: z.string().trim().min(10).max(2000).optional(),
     isPublished: z.boolean().optional(),
     courseId: z.coerce.number().int().positive().optional(),
     chapterId: z.coerce.number().int().positive().optional(),
     lectureId: z.coerce.number().int().positive().optional(),
+    parentQuestionId: z.coerce.number().int().positive().optional().nullable(),
+    orderIndex: z.coerce.number().int().min(1).optional(),
     segmentId: z.coerce.number().int().positive().optional(),
   }),
 ]);
@@ -186,6 +212,7 @@ module.exports = {
   createTrueFalseQuestionSchema,
   createShortAnswerQuestionSchema,
   createEssayQuestionSchema,
+  createClozeQuestionSchema,
   richContentBlockSchema,
   richContentSchema,
 
