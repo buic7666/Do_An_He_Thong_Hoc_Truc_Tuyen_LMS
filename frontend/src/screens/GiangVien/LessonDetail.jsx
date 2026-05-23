@@ -1197,7 +1197,27 @@ function LessonDetail() {
                         </button>
                         <button
                           className="btn-detail-view"
-                          onClick={() => navigate(`/teacher/courses/${courseId}/chapters/${chapterId}/lessons/${lessonId}/segments/${segment.id}`)}
+                          onClick={() => {
+                            // If this segment contains question items, pass the first question id
+                            let url = `/teacher/courses/${courseId}/chapters/${chapterId}/lessons/${lessonId}/segments/${segment.id}`;
+                            try {
+                              if (Array.isArray(segment.contentItems)) {
+                                for (const it of segment.contentItems) {
+                                  if (it && it.type === 'question') {
+                                    const qids = Array.isArray(it.questionIds) ? it.questionIds : (Array.isArray(it.questionTitles) ? [] : []);
+                                    const firstId = (qids && qids.length) ? qids[0] : null;
+                                    if (firstId) {
+                                      url += `?openQuestionId=${Number(firstId)}`;
+                                    }
+                                    break;
+                                  }
+                                }
+                              }
+                            } catch (e) {
+                              // ignore
+                            }
+                            navigate(url);
+                          }}
                           title="Xem chi tiết nội dung"
                         >
                           👁️ Chi Tiết

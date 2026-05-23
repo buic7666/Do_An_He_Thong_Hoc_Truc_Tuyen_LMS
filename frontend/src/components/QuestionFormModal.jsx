@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from './RichContentEditor';
 import RichContentRenderer from './RichContentRenderer';
 
@@ -25,12 +25,38 @@ function QuestionFormModal({
 }) {
   const [step, setStep] = useState(1);
   const contentBlocks = Array.isArray(draft?.contentBlocks) ? draft.contentBlocks : [];
+  const modalInnerRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
       setStep(1);
     }
   }, [isOpen]);
+
+  // When modal opens or step changes, scroll modal content to top and focus first input
+  useEffect(() => {
+    if (!isOpen) return;
+    // allow layout to settle
+    const t = setTimeout(() => {
+      try {
+        const el = modalInnerRef.current;
+        if (el) {
+          el.scrollTop = 0;
+          const first = el.querySelector('textarea, input, [contenteditable="true"]');
+          if (first && typeof first.focus === 'function') {
+            first.focus();
+            if (first.select) {
+              try { first.select(); } catch (e) {}
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }, 50);
+
+    return () => clearTimeout(t);
+  }, [isOpen, step]);
 
   if (!isOpen) {
     return null;
@@ -49,7 +75,7 @@ function QuestionFormModal({
     if (d.type === 'MULTIPLE_CHOICE') {
       const opts = Array.isArray(d.options) ? d.options.map((s) => String(s || '').trim()).filter(Boolean) : [];
       if (opts.length < 2) errors.push('Câu hỏi trắc nghiệm cần ít nhất 2 đáp án.');
-      const correct = Array.isArray(d.correctIndices) ? d.correctIndices.filter((n) => Number.isFinite(Number(n))) : [];
+      const correct = Array.isArray(d.correctIndices) ? d.correctIndices.map((n) => Number(n)).filter((n) => Number.isFinite(n)) : [];
       const allowMulti = Boolean(d.allowMultipleCorrect);
       if (!correct.length) errors.push('Hãy chọn ít nhất 1 đáp án đúng.');
       if (!allowMulti && correct.length > 1) errors.push('Chỉ được chọn 1 đáp án đúng khi không bật "Cho phép nhiều đáp án đúng".');
@@ -98,6 +124,7 @@ function QuestionFormModal({
       onClick={onCancel}
     >
       <div
+        ref={modalInnerRef}
         style={{
           backgroundColor: 'white',
           borderRadius: '8px',
@@ -266,7 +293,7 @@ function QuestionFormModal({
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                             <span style={{ fontWeight: 700 }}>{String.fromCharCode(65 + index)}</span>
                             <span style={{ fontSize: 13, color: '#6b7280' }}>
-                              {draft.correctIndices?.includes(index) ? 'Đáp án đúng' : 'Đáp án'}
+                              {((Array.isArray(draft.correctIndices) ? draft.correctIndices.map(Number) : []).includes(index)) ? 'Đáp án đúng' : 'Đáp án'}
                             </span>
                           </div>
                           <RichContentRenderer blocks={Array.isArray(optionBlocks) && optionBlocks.length ? optionBlocks : [{ type: 'text', text: draft.options?.[index] || '' }]} />

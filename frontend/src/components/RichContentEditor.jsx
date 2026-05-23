@@ -80,6 +80,46 @@ export const richContentTextOnlyToPlainText = (blocks = []) => blocks.map((block
   return '';
 }).filter(Boolean).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 
+const isYouTubeUrl = (url) => {
+  try {
+    const u = new URL(String(url || '').trim());
+    const host = u.hostname.replace('www.', '').toLowerCase();
+    return host === 'youtube.com' || host === 'youtu.be' || host === 'm.youtube.com';
+  } catch (_e) {
+    return false;
+  }
+};
+
+const getYouTubeEmbedSrc = (url) => {
+  try {
+    const u = new URL(String(url || '').trim());
+    const host = u.hostname.replace('www.', '').toLowerCase();
+    if (host === 'youtu.be') {
+      const id = u.pathname.slice(1).split(/[?&#]/)[0];
+      return id ? `https://www.youtube.com/embed/${id}` : String(url || '');
+    }
+    if (u.pathname === '/watch') {
+      const id = u.searchParams.get('v');
+      return id ? `https://www.youtube.com/embed/${id}` : String(url || '');
+    }
+    if (u.pathname.startsWith('/embed/')) {
+      return String(url || '');
+    }
+    if (u.pathname.startsWith('/shorts/')) {
+      const id = u.pathname.split('/shorts/')[1];
+      return id ? `https://www.youtube.com/embed/${id}` : String(url || '');
+    }
+    return String(url || '');
+  } catch (_e) {
+    return String(url || '');
+  }
+};
+
+const buildInlineVideoEmbedHtml = (embedSrc) => {
+  const safeSrc = String(embedSrc || '').replace(/"/g, '%22');
+  return `<span data-video-wrap="1" contenteditable="false" style="position:relative; display:inline-block; vertical-align:middle; width:180px; max-width:100%; margin:0 6px; line-height:0; border-radius:8px; overflow:hidden; background:#000;"><iframe src="${safeSrc}" title="YouTube video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen sandbox="allow-scripts allow-same-origin allow-presentation" frameborder="0" loading="lazy" style="width:180px; height:101px; border:0; display:block;"></iframe><button type="button" data-remove-video="1" data-editor-remove-only="1" contenteditable="false" aria-label="Xóa video" title="Xóa video" style="position:absolute; top:6px; right:6px; width:22px; height:22px; border-radius:999px; border:1px solid rgba(255,255,255,0.92); background:rgba(17,24,39,0.86); color:#fff; font-size:14px; line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; z-index:2;">×</button></span>`;
+};
+
 const normalizeBlocks = (blocks = []) => {
   if (!Array.isArray(blocks) || !blocks.length) {
     return createEmptyRichBlocks();
@@ -182,6 +222,7 @@ const RichContentEditor = ({
       // Just switched to HTML mode
       const textarea = htmlTextareaRef.current;
       if (textarea) {
+        // ensure textarea reflects current editor html
         textarea.value = textValue;
         textarea.focus();
         textarea.select();
@@ -190,6 +231,7 @@ const RichContentEditor = ({
       // Just switched to visual mode
       const editor = textareaRef.current;
       if (editor && editor.isContentEditable) {
+        // set innerHTML to the latest text value and update parent
         editor.innerHTML = textValue;
         editor.focus();
         updateTextBlock(textValue);
@@ -315,39 +357,187 @@ const RichContentEditor = ({
 
   const toggleHtmlMode = () => {
     if (isHtmlMode) {
-      // HTML → Visual: extract content từ textarea rồi setState
+      // HTML -> Visual: read textarea value, update state and editor
       const htmlEditor = htmlTextareaRef.current;
       const rawHtml = htmlEditor?.value || '';
       setTextValue(rawHtml);
+      // leave HTML mode, and push rawHtml into visual editor
       setIsHtmlMode(false);
+      // ensure visual editor is updated after state change
+      setTimeout(() => {
+        const editor = textareaRef.current;
+        if (editor) {
+          // sanitize incoming HTML to remove harmful or page-level tags
+          const safe = sanitizeHtml(rawHtml);
+          if (safe !== rawHtml) {
+            setLastAction('Đã loại bỏ thẻ/thuộc tính không an toàn');
+            setTimeout(() => setLastAction(''), 3000);
+          }
+          editor.innerHTML = safe;
+          updateTextBlock(safe);
+        }
+      }, 10);
     } else {
-      // Visual → HTML: extract content từ contentEditable rồi setState
+      // Visual -> HTML: capture current editor HTML and enter HTML mode
       const editor = textareaRef.current;
       const currentHtml = editor?.innerHTML || '';
       setTextValue(currentHtml);
       setIsHtmlMode(true);
+      setTimeout(() => {
+        const ta = htmlTextareaRef.current;
+        if (ta) {
+          ta.value = currentHtml;
+          ta.focus();
+          ta.select();
+        }
+      }, 20);
     }
   };
 
-  // Handle HTML mode toggle: populate editor after DOM render
-  useEffect(() => {
-    if (isHtmlMode) {
-      // Just switched to HTML mode
-      const textarea = htmlTextareaRef.current;
-      if (textarea) {
-        textarea.value = textValue;
-        textarea.focus();
-        textarea.select();
-      }
-    } else {
-      // Just switched to visual mode
-      const editor = textareaRef.current;
-      if (editor && editor.isContentEditable) {
-        editor.innerHTML = textValue;
-        editor.focus();
-      }
+  // Basic sanitizer: parse HTML and rebuild only allowed tags/attributes.
+  const sanitizeHtml = (raw) => {
+    if (!raw) return '';
+    // decode HTML entities first (handles pasted source with &lt; &gt;)
+    try {
+      const txt = document.createElement('textarea');
+      txt.innerHTML = String(raw);
+      raw = txt.value || String(raw);
+    } catch (_e) {
+      raw = String(raw);
     }
-  }, [isHtmlMode]);
+    // quick detect: if user pasted full page, try to extract body
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(String(raw), 'text/html');
+      const root = doc.body || doc.documentElement || doc;
+
+      const ALLOWED_TAGS = new Set(['p','div','span','br','strong','b','em','i','u','strike','blockquote','ul','ol','li','h1','h2','h3','h4','h5','h6','pre','code','a','img','video','audio','source','table','thead','tbody','tr','td','th','iframe']);
+      const ALLOWED_ATTRS = {
+        a: ['href','title','target','rel'],
+        img: ['src','alt','title','width','height'],
+        video: ['src','controls','width','height'],
+        audio: ['src','controls'],
+        iframe: ['src','title','allow','allowfullscreen','frameborder','loading','referrerpolicy']
+      };
+
+      const BLOCK_AS_TEXT = new Set(['script','style','head','meta','link']);
+      const walk = (node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          return document.createTextNode(node.textContent || '');
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+        const tag = (node.tagName || '').toLowerCase();
+        if (tag === 'iframe') {
+          const src = String(node.getAttribute('src') || '').trim();
+          if (!src || (!isYouTubeUrl(src) && !String(src).includes('youtube.com/embed/'))) {
+            const pre = document.createElement('pre');
+            const code = document.createElement('code');
+            pre.style.whiteSpace = 'pre-wrap';
+            pre.style.wordBreak = 'break-word';
+            pre.style.background = '#f8fafc';
+            pre.style.padding = '8px';
+            pre.style.borderRadius = '6px';
+            code.textContent = node.outerHTML || node.textContent || '';
+            pre.appendChild(code);
+            return pre;
+          }
+
+          const el = document.createElement('iframe');
+          el.setAttribute('src', getYouTubeEmbedSrc(src));
+          el.setAttribute('title', String(node.getAttribute('title') || 'YouTube video'));
+          el.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
+          el.setAttribute('allowfullscreen', '');
+          el.setAttribute('frameborder', '0');
+          el.setAttribute('loading', 'lazy');
+          el.style.width = '280px';
+          el.style.height = '158px';
+          el.style.maxWidth = '100%';
+          el.style.border = '0';
+          return el;
+        }
+
+        if (!ALLOWED_TAGS.has(tag)) {
+          // For certain tags (script/style/head/link/meta/iframe) keep the
+          // full original markup as an escaped code block so user can see
+          // the source without it being executed or stripped.
+          if (BLOCK_AS_TEXT.has(tag)) {
+            const pre = document.createElement('pre');
+            const code = document.createElement('code');
+            // ensure long lines wrap instead of overflowing
+            pre.style.whiteSpace = 'pre-wrap';
+            pre.style.wordBreak = 'break-word';
+            pre.style.background = '#f8fafc';
+            pre.style.padding = '8px';
+            pre.style.borderRadius = '6px';
+            code.textContent = node.outerHTML || node.textContent || '';
+            pre.appendChild(code);
+            return pre;
+          }
+
+          // keep children but skip the tag itself
+          const frag = document.createDocumentFragment();
+          node.childNodes.forEach((c) => {
+            const wn = walk(c);
+            if (wn) frag.appendChild(wn);
+          });
+          return frag;
+        }
+
+        const el = document.createElement(tag);
+        // copy allowed attrs
+        const allowed = ALLOWED_ATTRS[tag] || [];
+        for (let i = 0; i < node.attributes.length; i++) {
+          const a = node.attributes[i];
+          const name = a.name.toLowerCase();
+          const val = a.value;
+          if (name.startsWith('on')) continue; // drop event handlers
+          if (allowed.includes(name)) {
+            // block javascript: URLs
+            if ((name === 'href' || name === 'src') && String(val).trim().toLowerCase().startsWith('javascript:')) continue;
+            el.setAttribute(name, val);
+          }
+        }
+
+        // For external links, ensure they open in new tab safely
+        if (tag === 'a') {
+          try {
+            const href = el.getAttribute('href') || '';
+            const isExternal = /^https?:\/\//i.test(href);
+            if (isExternal) {
+              if (!el.hasAttribute('target')) el.setAttribute('target', '_blank');
+              // ensure noreferrer noopener for safety
+              const rel = (el.getAttribute('rel') || '').split(/\s+/).filter(Boolean);
+              if (!rel.includes('noopener')) rel.push('noopener');
+              if (!rel.includes('noreferrer')) rel.push('noreferrer');
+              el.setAttribute('rel', rel.join(' '));
+            }
+          } catch (_e) { /* ignore */ }
+        }
+
+        // recurse children
+        node.childNodes.forEach((c) => {
+          const wn = walk(c);
+          if (wn) el.appendChild(wn);
+        });
+        return el;
+      };
+
+      const outFrag = document.createDocumentFragment();
+      root.childNodes.forEach((n) => {
+        const w = walk(n);
+        if (w) outFrag.appendChild(w);
+      });
+
+      const container = document.createElement('div');
+      container.appendChild(outFrag);
+      return container.innerHTML;
+    } catch (err) {
+      return '';
+    }
+  };
+
+  
 
   const getLineRange = (text, start, end) => {
     const from = Math.max(0, Math.min(start, text.length));
@@ -684,8 +874,12 @@ const RichContentEditor = ({
       const safeUrl = rawUrl.replace(/"/g, '%22');
       insertInlineHtml(`<span data-image-wrap="1" style="position: relative; display: inline-block; vertical-align: middle; margin: 0 4px;"><img src="${safeUrl}" alt="" style="max-width: 100%; height: auto; display: inline-block; vertical-align: middle;" /><button type="button" data-remove-image="1" data-editor-remove-only="1" contenteditable="false" style="position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.9); background: rgba(17,24,39,0.82); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">×</button></span>`);
     } else {
-      const safeUrl = rawUrl.replace(/"/g, '%22');
-      insertInlineHtml(`<video controls src="${safeUrl}" style="max-width: 100%; display: inline-block; vertical-align: middle; margin: 0 4px;"></video>`);
+      if (isYouTubeUrl(rawUrl)) {
+        insertInlineHtml(buildInlineVideoEmbedHtml(getYouTubeEmbedSrc(rawUrl)));
+      } else {
+        const safeUrl = rawUrl.replace(/"/g, '%22');
+        insertInlineHtml(`<video controls src="${safeUrl}" style="max-width: 100%; display: inline-block; vertical-align: middle; margin: 0 4px;"></video>`);
+      }
     }
     closeMediaDialog();
   };
@@ -712,6 +906,20 @@ const RichContentEditor = ({
       }
       return;
     }
+    const removeVideoButton = target && target.closest ? target.closest('[data-remove-video="1"]') : null;
+    if (removeVideoButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const wrap = removeVideoButton.closest('[data-video-wrap="1"]');
+      if (wrap) {
+        wrap.remove();
+        const editor = textareaRef.current;
+        if (editor) {
+          updateTextBlock(editor.innerHTML);
+        }
+      }
+      return;
+    }
     saveSelectionRange();
   };
 
@@ -726,7 +934,12 @@ const RichContentEditor = ({
           const safeUrl = String(url).replace(/\"/g, '%22');
           insertInlineHtml(`<span data-image-wrap="1" style="position: relative; display: inline-block; vertical-align: middle; margin: 0 4px;"><img src="${safeUrl}" alt="" style="max-width: 100%; height: auto; display: inline-block; vertical-align: middle;" /><button type="button" data-remove-image="1" data-editor-remove-only="1" contenteditable="false" style="position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.9); background: rgba(17,24,39,0.82); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">×</button></span>`);
         } else {
-          insertInlineHtml(`<video controls src="${String(url).replace(/\"/g, '%22')}" style="max-width: 100%; display: inline-block; vertical-align: middle; margin: 0 4px;"></video>`);
+            if (isYouTubeUrl(url)) {
+              insertInlineHtml(buildInlineVideoEmbedHtml(getYouTubeEmbedSrc(url)));
+            } else {
+              const safeUrl = String(url).replace(/\"/g, '%22');
+              insertInlineHtml(`<video controls src="${safeUrl}" style="max-width: 100%; display: inline-block; vertical-align: middle; margin: 0 4px;"></video>`);
+            }
         }
       }
     } catch (err) {
@@ -834,27 +1047,35 @@ const RichContentEditor = ({
         {/* Text editor */}
         {isHtmlMode ? (
           <textarea
-            ref={htmlTextareaRef}
-            placeholder="Chỉnh sửa HTML source..."
-            spellCheck="false"
-            style={{
-              border: '1px solid #f97316',
-              borderRadius: 4,
-              padding: 12,
-              minHeight: 300,
-              fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace',
-              fontSize: 12,
-              lineHeight: 1.6,
-              width: '100%',
-              boxSizing: 'border-box',
-              display: 'block',
-              background: '#fffbf0',
-              outline: 'none',
-              color: '#111827',
-              tabSize: 2,
-            }}
-            defaultValue={textValue}
-          />
+              ref={htmlTextareaRef}
+              placeholder="Chỉnh sửa HTML source..."
+              spellCheck="false"
+              style={{
+                border: '1px solid #f97316',
+                borderRadius: 4,
+                padding: 12,
+                minHeight: 300,
+                fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace',
+                fontSize: 12,
+                lineHeight: 1.6,
+                width: '100%',
+                boxSizing: 'border-box',
+                display: 'block',
+                background: '#fffbf0',
+                outline: 'none',
+                color: '#111827',
+                tabSize: 2,
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'break-word',
+                wordBreak: 'break-word',
+                overflow: 'auto',
+              }}
+              value={textValue}
+              onChange={(e) => {
+                const v = String(e.target.value || '');
+                setTextValue(v);
+              }}
+            />
         ) : (
           <div
             ref={textareaRef}

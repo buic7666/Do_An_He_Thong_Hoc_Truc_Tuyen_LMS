@@ -277,14 +277,34 @@ const syncQuizContentItems = async (segment, normalizedItems, currentUser) => {
 
     await QuizQuestion.destroy({ where: { quizId: quiz.id } });
     if (selectedQuestionIds.length > 0) {
-      await QuizQuestion.bulkCreate(
-        selectedQuestionIds.map((questionId, index) => ({
-          quizId: quiz.id,
-          questionId,
-          order: index + 1,
-          points: 1,
-        })),
-      );
+      // Validate that referenced question IDs actually exist to avoid FK violations
+      const existingQuestions = await Question.findAll({ where: { id: selectedQuestionIds }, attributes: ['id'] });
+      const existingIds = existingQuestions.map((q) => Number(q.id));
+      const validQuestionIds = selectedQuestionIds.filter((id) => existingIds.includes(Number(id)));
+
+      if (validQuestionIds.length !== selectedQuestionIds.length) {
+        try {
+          console.warn('[lessonService] syncQuizContentItems: Some questionIds do not exist', {
+            segmentId: segment.id,
+            quizId: quiz.id,
+            requested: selectedQuestionIds,
+            existing: existingIds,
+          });
+        } catch (_e) {
+          // ignore logging errors
+        }
+      }
+
+      if (validQuestionIds.length > 0) {
+        await QuizQuestion.bulkCreate(
+          validQuestionIds.map((questionId, index) => ({
+            quizId: quiz.id,
+            questionId,
+            order: index + 1,
+            points: 1,
+          })),
+        );
+      }
     }
 
     return {

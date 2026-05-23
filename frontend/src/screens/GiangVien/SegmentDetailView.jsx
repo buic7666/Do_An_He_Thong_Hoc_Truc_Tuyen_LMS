@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import TeacherSidebar from '../../components/TeacherSidebar';
 import httpClient from '../../api/httpClient';
 import QuestionFormModal from '../../components/QuestionFormModal';
 import SelectQuestionsModal from '../../components/SelectQuestionsModal';
 import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from '../../components/RichContentEditor';
+import RichContentRenderer from '../../components/RichContentRenderer';
 import {
   fetchQuestionsApi,
   createQuestionApi,
@@ -12,8 +14,10 @@ import {
   deleteQuestionApi,
   updateLessonSegmentApi,
 } from '../../api/teacherManagementApi';
+import { useLocation } from 'react-router-dom';
 import { uploadTeacherFileApi } from '../../api/teacherApi';
 import './SegmentDetailView.css';
+import '../../components/QuizTaker.css';
 
 const SEGMENT_CONTENT_META = {
   text: { icon: '📝', title: 'Text', color: '#3498db' },
@@ -70,6 +74,117 @@ const parseJson = (value, fallback = {}) => {
   }
 
   return value;
+};
+
+const QuestionDetailModal = ({ question, onClose }) => {
+  if (!question) {
+    return null;
+  }
+
+  const metadata = parseJson(question.metadata, {});
+  const questionType = question.type || metadata?.type || 'MULTIPLE_CHOICE';
+  const options = Array.isArray(metadata.options)
+    ? metadata.options
+    : Array.isArray(question.options)
+      ? question.options
+      : [];
+  const contentBlocks = Array.isArray(metadata.contentBlocks)
+    ? metadata.contentBlocks
+    : Array.isArray(question.contentBlocks)
+      ? question.contentBlocks
+      : [];
+  const correctIndices = Array.isArray(metadata.correctIndices)
+    ? metadata.correctIndices.map((index) => Number(index)).filter((index) => Number.isFinite(index))
+    : Array.isArray(question.correctIndices)
+      ? question.correctIndices.map((index) => Number(index)).filter((index) => Number.isFinite(index))
+      : typeof metadata.correctIndex === 'number'
+        ? [metadata.correctIndex]
+        : typeof question.correctIndex === 'number'
+          ? [question.correctIndex]
+          : [];
+
+  return ReactDOM.createPortal(
+    (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+          <div className="modal-header">
+            <h2>Chi Tiết Câu Hỏi</h2>
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
+
+          <div className="modal-body">
+            <div className="detail-section">
+              <h3>📝 Câu Hỏi</h3>
+              <div className="question-content">
+                {question.content || question.questionText || metadata.questionText || metadata.title ? (
+                  <p>{question.content || question.questionText || metadata.questionText || metadata.title}</p>
+                ) : null}
+                {contentBlocks.length > 0 ? (
+                  <RichContentRenderer blocks={contentBlocks} />
+                ) : null}
+              </div>
+            </div>
+
+            <div className="detail-section">
+              <h3>📌 Loại Câu Hỏi</h3>
+              <p className="detail-badge">{questionType}</p>
+            </div>
+
+            {question.difficulty ? (
+              <div className="detail-section">
+                <h3>⚡ Độ Khó</h3>
+                <p className="detail-badge">{question.difficulty}</p>
+              </div>
+            ) : null}
+
+            {questionType === 'MULTIPLE_CHOICE' && options.length > 0 ? (
+              <div className="detail-section">
+                <h3>✅ Các Lựa Chọn</h3>
+                {correctIndices.length ? (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong>Đáp án đúng: </strong>
+                    <span>{correctIndices.map((index) => String.fromCharCode(65 + index)).join(', ')}</span>
+                  </div>
+                ) : null}
+                <div className="options-list">
+                  {options.map((option, index) => (
+                    <div key={`option-${index}`} className={`option-item ${correctIndices.includes(index) ? 'correct' : ''}`}>
+                      <span className="option-index">{String.fromCharCode(65 + index)}</span>
+                      <div className="option-text-wrapper">
+                        {typeof option === 'string' ? (
+                          <p>{option}</p>
+                        ) : Array.isArray(option?.contentBlocks) && option.contentBlocks.length > 0 ? (
+                          <RichContentRenderer blocks={option.contentBlocks} />
+                        ) : option?.text ? (
+                          <p>{option.text}</p>
+                        ) : (
+                          <p>{String(option || '')}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {metadata.explanation ? (
+              <div className="detail-section">
+                <h3>💡 Giải Thích</h3>
+                <div className="explanation-box">{metadata.explanation}</div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="modal-footer">
+            <button className="btn btn--primary" onClick={onClose}>
+              Đóng
+            </button>
+          </div>
+        </div>
+      </div>
+    ),
+    document.body,
+  );
 };
 
 const createEmptyContentItem = (type = 'text', orderIndex = 1) => ({
@@ -150,7 +265,9 @@ function SegmentDetailView() {
   const [questionDraft, setQuestionDraft] = useState(createEmptyQuestionDraft());
   const [questionEditingId, setQuestionEditingId] = useState(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState(null);
+  const [viewQuestion, setViewQuestion] = useState(null);
   const [selectQuestionsModal, setSelectQuestionsModal] = useState({ open: false, itemIndex: null });
+  const location = useLocation();
 
   const loadQuestions = async () => {
     if (!courseId || !chapterId || !lessonId || !segmentId) {
@@ -208,6 +325,34 @@ function SegmentDetailView() {
         setCurrentItemIndex(0);
         shouldSkipFirstAutoSaveRef.current = true;
         await loadQuestions();
+
+        // If the URL requested to open a specific question, try to open it
+        try {
+          const params = new URLSearchParams(location.search || '');
+          const openQ = params.get('openQuestionId');
+          if (openQ) {
+            const qid = Number(openQ);
+            if (qid && Number.isFinite(qid)) {
+              // wait until questions are set, then find or fetch
+              // find in loaded questions
+              const found = (Array.isArray(items) ? items : []).find((q) => Number(q.id) === qid);
+              if (found) {
+                setViewQuestion(found);
+              } else {
+                // fetch single question from API
+                try {
+                  const res = await httpClient.get(`/questions/${qid}`);
+                  const qdata = res?.data?.data || res?.data || null;
+                  if (qdata) setViewQuestion(qdata);
+                } catch (e) {
+                  // ignore fetch error
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
       } catch (err) {
         console.error('Error loading data:', err);
         setError(err?.response?.data?.message || 'Lỗi khi tải dữ liệu');
@@ -1206,9 +1351,19 @@ function SegmentDetailView() {
                                       <p className="question-bank-card-preview">{answerPreview}</p>
                                     </div>
                                     <div className="question-bank-card-actions">
-                                      <button type="button" className="btn-prev-item" onClick={() => setExpandedQuestionId(isExpanded ? null : question.id)}>
-                                        {isExpanded ? 'Thu gọn' : 'Xem thêm'}
-                                      </button>
+                                            <button
+                                              type="button"
+                                              className="btn-prev-item"
+                                              onClick={() => {
+                                                // open modal to view question details instead of inline expand
+                                                console.debug('open view modal', { id: question.id });
+                                                setViewQuestion(question);
+                                                // also set a global attribute for quick DOM check
+                                                try { window.__lastViewedQuestionId = question.id; } catch (e) {}
+                                              }}
+                                            >
+                                              Xem chi tiết
+                                            </button>
                                       <button type="button" className="btn-next-item" onClick={() => startEditQuestion(question.id)}>
                                         Sửa
                                       </button>
@@ -1292,6 +1447,13 @@ function SegmentDetailView() {
                       setSelectQuestionsModal({ open: false, itemIndex: null });
                     }}
                   />
+
+                  {viewQuestion ? (
+                    <QuestionDetailModal
+                      question={viewQuestion}
+                      onClose={() => setViewQuestion(null)}
+                    />
+                  ) : null}
 
                   {/* Navigation giữa items */}
                   <div className="editor-navigation">

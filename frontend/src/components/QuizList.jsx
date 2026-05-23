@@ -209,7 +209,7 @@ const formatAnswerValue = (answerValue, questionType) => {
 
   if (questionType === 'MULTIPLE_CHOICE') {
     const indices = Array.isArray(answerValue?.indices) ? answerValue.indices : [];
-    return indices.length > 0 ? `Đã chọn đáp án ${indices.map((index) => index + 1).join(', ')}` : 'Chưa trả lời';
+    return indices.length > 0 ? `Đã chọn đáp án ${indices.map((index) => String.fromCharCode(65 + Number(index))).join(', ')}` : 'Chưa trả lời';
   }
 
   if (questionType === 'TRUE_FALSE') {
@@ -306,7 +306,7 @@ const QuizCard = ({
 
         <div className="info-item">
           <span className="info-label">📊 Câu hỏi:</span>
-          <span className="info-value">{quiz.questions}</span>
+          <span className="info-value">{Array.isArray(quiz.questions) ? quiz.questions.length : (typeof quiz.questions === 'number' ? quiz.questions : 0)}</span>
         </div>
 
         <div className="info-item">

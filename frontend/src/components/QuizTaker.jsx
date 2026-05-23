@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import httpClient from '../api/httpClient';
 import RichContentRenderer from './RichContentRenderer';
 import './QuizTaker.css';
@@ -28,26 +29,45 @@ const QuestionDetailModal = ({ question, onClose }) => {
 
   const questionType = question.type || 'MULTIPLE_CHOICE';
   const metadata = parseJson(question.metadata, {});
-  const options = Array.isArray(question.options) ? question.options : [];
+  const options = Array.isArray(metadata.options)
+    ? metadata.options
+    : Array.isArray(question.options)
+    ? question.options
+    : [];
+  const detailBlocks = Array.isArray(metadata.contentBlocks)
+    ? metadata.contentBlocks
+    : Array.isArray(question.contentBlocks)
+    ? question.contentBlocks
+    : [];
+  const correctIndices = Array.isArray(metadata.correctIndices)
+    ? metadata.correctIndices
+    : Array.isArray(question.correctIndices)
+    ? question.correctIndices
+    : typeof question.correctIndex === 'number'
+    ? [question.correctIndex]
+    : typeof metadata.correctIndex === 'number'
+    ? [metadata.correctIndex]
+    : [];
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>Chi Tiết Câu Hỏi</h2>
-          <button className="modal-close" onClick={onClose}>×</button>
-        </div>
+  return ReactDOM.createPortal(
+    (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>Chi Tiết Câu Hỏi</h2>
+            <button className="modal-close" onClick={onClose}>×</button>
+          </div>
 
-        <div className="modal-body">
+          <div className="modal-body">
           {/* Nội dung câu hỏi */}
           <div className="detail-section">
             <h3>📝 Câu Hỏi</h3>
             <div className="question-content">
-              {question.questionText || question.content ? (
-                <p>{question.questionText || question.content}</p>
+              {question.questionText || question.content || metadata.questionText || metadata.title ? (
+                <p>{question.questionText || question.content || metadata.questionText || metadata.title}</p>
               ) : null}
-              {Array.isArray(question.contentBlocks) && question.contentBlocks.length > 0 ? (
-                <RichContentRenderer blocks={question.contentBlocks} />
+              {detailBlocks.length > 0 ? (
+                <RichContentRenderer blocks={detailBlocks} />
               ) : null}
             </div>
           </div>
@@ -70,9 +90,15 @@ const QuestionDetailModal = ({ question, onClose }) => {
           {questionType === 'MULTIPLE_CHOICE' && options.length > 0 ? (
             <div className="detail-section">
               <h3>✅ Các Lựa Chọn</h3>
+              {correctIndices && correctIndices.length ? (
+                <div style={{ marginBottom: 12 }}>
+                  <strong>Đáp án đúng: </strong>
+                  <span>{correctIndices.map((i) => String.fromCharCode(65 + i)).join(', ')}</span>
+                </div>
+              ) : null}
               <div className="options-list">
                 {options.map((option, index) => (
-                  <div key={`option-${index}`} className="option-item">
+                  <div key={`option-${index}`} className={`option-item ${correctIndices.includes(index) ? 'correct' : ''}`}>
                     <span className="option-index">{String.fromCharCode(65 + index)}</span>
                     <div className="option-text-wrapper">
                       {typeof option === 'string' ? (
@@ -92,11 +118,11 @@ const QuestionDetailModal = ({ question, onClose }) => {
           ) : null}
 
           {/* Giải thích */}
-          {question.explanation ? (
+          {(question.explanation || metadata.explanation) ? (
             <div className="detail-section">
               <h3>💡 Giải Thích</h3>
               <div className="explanation-box">
-                {question.explanation}
+                {question.explanation || metadata.explanation}
               </div>
             </div>
           ) : null}
@@ -127,15 +153,17 @@ const QuestionDetailModal = ({ question, onClose }) => {
               </div>
             </div>
           )}
-        </div>
+          </div>
 
-        <div className="modal-footer">
-          <button className="btn btn--primary" onClick={onClose}>
-            Đóng
-          </button>
+          <div className="modal-footer">
+            <button className="btn btn--primary" onClick={onClose}>
+              Đóng
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    ),
+    document.body,
   );
 };
 
@@ -161,7 +189,7 @@ const formatAnswerValue = (answerValue, questionType) => {
 
   if (questionType === 'MULTIPLE_CHOICE') {
     const indices = Array.isArray(answerValue?.indices) ? answerValue.indices : [];
-    return indices.length > 0 ? `Đã chọn ${indices.map((index) => index + 1).join(', ')}` : 'Chưa trả lời';
+    return indices.length > 0 ? `Đã chọn ${indices.map((index) => String.fromCharCode(65 + Number(index))).join(', ')}` : 'Chưa trả lời';
   }
 
   if (questionType === 'TRUE_FALSE') {
@@ -394,7 +422,9 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
         clearInterval(timerIntervalRef.current);
       }
     };
-  }, [timeLeft, isSubmitted, handleSubmit]);
+    // NOTE: intentionally not depending on `timeLeft` to avoid recreating the
+    // interval every second. Depend on `isSubmitted` and `handleSubmit` only.
+  }, [isSubmitted, handleSubmit]);
 
   useEffect(() => {
     return () => {
@@ -728,7 +758,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
                     key={q.id}
                     onClick={() => setCurrentQuestionIndex(index)}
                     className={btnClass}
-                    disabled={isSubmitted && false}
+                    disabled={isSubmitted}
                     title={`Câu ${index + 1}`}
                   >
                     {index + 1}
@@ -916,7 +946,7 @@ const QuizResult = ({ quiz, result, onBack }) => {
                     </div>
                     <div className="result-question-card__score" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {Number(item.score || 0) >= Number(item.maxScore || 1) * 0.5 ? '✅' : '❌'}
-                      <span>{Number(item.score || 0).toFixed(1)}/{Number(item.maxScore || 10).toFixed(1)} điểm</span>
+                      <span>{Number(item.score || 0).toFixed(1)}/{Number(item.maxScore || 1).toFixed(1)} điểm</span>
                     </div>
                   </div>
 

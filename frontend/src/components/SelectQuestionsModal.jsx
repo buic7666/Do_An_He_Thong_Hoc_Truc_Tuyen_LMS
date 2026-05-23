@@ -4,7 +4,7 @@ import { fetchQuestionsApi } from '../api/teacherManagementApi';
 const SelectQuestionsModal = ({ isOpen, onClose, filters = {}, initial = [], initialRandomCount = 0, onConfirm }) => {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState(initial || []);
+  const [selected, setSelected] = useState((initial || []).map((v) => Number(v)));
   const [randomCount, setRandomCount] = useState(0);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -26,7 +26,7 @@ const SelectQuestionsModal = ({ isOpen, onClose, filters = {}, initial = [], ini
       .finally(() => setLoading(false));
   }, [isOpen, JSON.stringify(filters)]);
 
-  useEffect(() => setSelected(initial || []), [initial]);
+  useEffect(() => setSelected((initial || []).map((v) => Number(v))), [initial]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -95,10 +95,11 @@ const SelectQuestionsModal = ({ isOpen, onClose, filters = {}, initial = [], ini
                 <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, borderBottom: '1px solid #f3f4f6' }}>
                   <input
                     type="checkbox"
-                    checked={selected.indexOf(q.id) !== -1}
+                    checked={selected.indexOf(Number(q.id)) !== -1}
                     onChange={(e) => {
-                      if (e.target.checked) setSelected((s) => [...s, q.id]);
-                      else setSelected((s) => s.filter((id) => id !== q.id));
+                      const qid = Number(q.id);
+                      if (e.target.checked) setSelected((s) => [...s, qid]);
+                      else setSelected((s) => s.filter((id) => id !== qid));
                     }}
                   />
                   <div style={{ flex: 1 }}>
