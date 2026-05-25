@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from './RichContentEditor';
 import RichContentRenderer from './RichContentRenderer';
+import QuestionTypeFields from './QuestionTypeFields';
 
 const QUESTION_TYPE_LABELS = {
   MULTIPLE_CHOICE: 'Trắc nghiệm',
@@ -69,6 +70,24 @@ function QuestionFormModal({
   const validateDraft = (d) => {
     const errors = [];
     const contentLength = (richContentToPlainText(d.contentBlocks) || String(d.content || '').trim()).length;
+
+    if (d.type === 'CLOZE') {
+      const clozeText = String(d.metadata?.text_template || d.content || '').trim();
+      const innerQuestions = d.metadata?.inner_questions && typeof d.metadata.inner_questions === 'object'
+        ? Object.values(d.metadata.inner_questions)
+        : [];
+
+      if (clozeText.length < 10) {
+        errors.push('Nội dung câu hỏi bài đọc cần ít nhất 10 ký tự.');
+      }
+
+      if (!innerQuestions.length) {
+        errors.push('Câu hỏi bài đọc cần ít nhất 1 câu hỏi nhỏ.');
+      }
+
+      return { ok: errors.length === 0, errors };
+    }
+
     if (contentLength < 10) {
       errors.push('Nội dung câu hỏi cần ít nhất 10 ký tự.');
     }
@@ -118,8 +137,10 @@ function QuestionFormModal({
         height: '100%',
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         justifyContent: 'center',
+        overflowY: 'auto',
+        padding: '20px 0',
         zIndex: 9999,
       }}
       onClick={onCancel}
@@ -135,6 +156,7 @@ function QuestionFormModal({
           maxHeight: '90vh',
           overflow: 'auto',
           padding: '32px',
+          marginTop: '0',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -238,7 +260,7 @@ function QuestionFormModal({
             ) : null}
 
             <div style={{ marginBottom: '20px' }}>
-              {renderTypeSpecificForm()}
+              <QuestionTypeFields draft={draft} setDraft={onDraftChange} />
             </div>
 
             <div style={{ marginBottom: '20px' }}>

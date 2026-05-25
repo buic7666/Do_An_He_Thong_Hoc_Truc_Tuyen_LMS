@@ -125,7 +125,7 @@ const createClozeQuestionSchema = z.object({
   type: z.literal('CLOZE'),
   content: z.string().trim().min(10).max(10000),
   contentBlocks: z.array(richContentBlockSchema).min(1).max(50).optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.any().optional(),
   courseId: z.coerce.number().int().positive().optional(),
   chapterId: z.coerce.number().int().positive().optional(),
   lectureId: z.coerce.number().int().positive().optional(),

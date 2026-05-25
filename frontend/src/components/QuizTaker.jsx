@@ -255,6 +255,14 @@ const formatGradingDetails = (item) => {
     ].filter(Boolean);
   }
 
+  if (questionType === 'CLOZE') {
+    const blanks = Array.isArray(details.blanks) ? details.blanks : [];
+    return [
+      typeof details.totalWeight === 'number' ? `Tổng trọng số: ${details.totalWeight}` : null,
+      blanks.length ? `Các câu hỏi nhỏ: ${blanks.map((blank) => `${blank.key}=${Number(blank.score || 0) > 0 ? 'đúng' : 'sai'}`).join(' | ')}` : null,
+    ].filter(Boolean);
+  }
+
   return [];
 };
 
@@ -489,6 +497,149 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
   const renderQuestionInput = (question) => {
     const questionType = question.type || 'MULTIPLE_CHOICE';
     const metadata = parseJson(question.metadata, {});
+
+    // CLOZE (fill-in) rendering
+    if (questionType === 'CLOZE') {
+      const template = String(metadata.text_template || '');
+      const inner = metadata.inner_questions && typeof metadata.inner_questions === 'object' ? metadata.inner_questions : {};
+      const contentBlocks = Array.isArray(metadata.contentBlocks)
+        ? metadata.contentBlocks
+        : Array.isArray(question.contentBlocks)
+          ? question.contentBlocks
+          : [];
+      const innerEntries = Object.entries(inner).sort((left, right) => {
+        const leftIndex = Number(String(left[0] || '').replace(/\D/g, '')) || 0;
+        const rightIndex = Number(String(right[0] || '').replace(/\D/g, '')) || 0;
+        if (leftIndex !== rightIndex) {
+          return leftIndex - rightIndex;
+        }
+        return String(left[0] || '').localeCompare(String(right[0] || ''));
+      });
+
+      const answerMap = answers[question.id]?.value || {};
+
+      const blankGrading = (gradingMap[question.id]?.gradingDetails?.blanks || []).reduce((acc, b) => {
+        if (b && b.key) acc[b.key] = b; return acc;
+      }, {});
+
+      const onChangeBlank = (key, value) => {
+        setAnswers((prev) => ({
+          ...prev,
+          [question.id]: { type: 'CLOZE', value: { ...(prev[question.id]?.value || {}), [key]: value } },
+        }));
+      };
+
+      const renderInnerQuestionInput = (key, innerMeta, isSubmittedState, gradedItem) => {
+        const innerType = String(innerMeta.type || 'SHORT_ANSWER').toUpperCase();
+        const isCorrect = gradedItem ? Number(gradedItem.score || 0) > 0 : null;
+
+        if (innerType === 'MULTIPLE_CHOICE') {
+          const options = Array.isArray(innerMeta.options) ? innerMeta.options : [];
+          const selected = answerMap[key] || '';
+          return (
+            <select
+              value={selected}
+              onChange={(e) => onChangeBlank(key, e.target.value)}
+              disabled={isSubmittedState}
+              className={`cloze-blank ${isSubmittedState ? (isCorrect ? 'correct' : 'incorrect') : ''}`}
+            >
+              <option value="">-- Chọn --</option>
+              {options.map((opt, i) => (
+                <option key={`opt-${key}-${i}`} value={typeof opt === 'string' ? opt : (opt?.text || String(opt || ''))}>{typeof opt === 'string' ? opt : (opt?.text || String(opt || ''))}</option>
+              ))}
+            </select>
+          );
+        }
+
+        if (innerType === 'TRUE_FALSE') {
+          const val = answerMap[key];
+          return (
+            <select
+              value={typeof val === 'boolean' ? (val ? 'true' : 'false') : (val == null ? '' : String(val))}
+              onChange={(e) => {
+                const nextValue = e.target.value === 'true' ? true : e.target.value === 'false' ? false : null;
+                onChangeBlank(key, nextValue);
+              }}
+              disabled={isSubmittedState}
+              className={`cloze-blank ${isSubmittedState ? (isCorrect ? 'correct' : 'incorrect') : ''}`}
+            >
+              <option value="">-- Chọn --</option>
+              <option value="true">Đúng</option>
+              <option value="false">Sai</option>
+            </select>
+          );
+        }
+
+        if (innerType === 'ESSAY') {
+          const val = answerMap[key] || '';
+          return (
+            <textarea
+              value={val}
+              onChange={(e) => onChangeBlank(key, e.target.value)}
+              disabled={isSubmittedState}
+              className={`cloze-blank cloze-essay ${isSubmittedState ? (isCorrect ? 'correct' : 'incorrect') : ''}`}
+            />
+          );
+        }
+
+        const val = answerMap[key] || '';
+        return (
+          <input
+            type="text"
+            value={val}
+            onChange={(e) => onChangeBlank(key, e.target.value)}
+            disabled={isSubmittedState}
+            className={`cloze-blank ${isSubmittedState ? (isCorrect ? 'correct' : 'incorrect') : ''}`}
+          />
+        );
+      };
+
+      return (
+        <div className="question-options question-cloze">
+          {contentBlocks.length > 0 ? (
+            <div className="cloze-passage">
+              <RichContentRenderer blocks={contentBlocks} />
+            </div>
+          ) : template ? (
+            <div className="cloze-passage">
+              <p className="question-text">{template}</p>
+            </div>
+          ) : null}
+
+          <div className="cloze-questions">
+            {innerEntries.map(([key, innerMeta], index) => {
+              const graded = blankGrading[key];
+              const innerType = String(innerMeta.type || 'SHORT_ANSWER').toUpperCase();
+
+              return (
+                <div key={`cloze-${key}-${index}`} className="cloze-question-card">
+                  <div className="cloze-question-card__header">
+                    <div>
+                      <p className="cloze-question-card__eyebrow">Câu hỏi {index + 1}</p>
+                      <h4 className="cloze-question-card__title">{innerMeta.content || 'Câu hỏi nhỏ'}</h4>
+                    </div>
+                    <span className="cloze-question-card__type">{innerType}</span>
+                  </div>
+                  {Array.isArray(innerMeta.contentBlocks) && innerMeta.contentBlocks.length > 0 ? (
+                    <div className="cloze-question-card__content">
+                      <RichContentRenderer blocks={innerMeta.contentBlocks} />
+                    </div>
+                  ) : null}
+                  <div className="cloze-question-card__answer">
+                    {renderInnerQuestionInput(key, innerMeta, isSubmitted, graded)}
+                  </div>
+                  {isSubmitted && graded ? (
+                    <div className={`cloze-question-card__result ${Number(graded.score || 0) > 0 ? 'correct' : 'incorrect'}`}>
+                      {Number(graded.score || 0) > 0 ? 'Đúng' : 'Sai'}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
 
     if (questionType === 'MULTIPLE_CHOICE') {
       const selectedIndices = answers[question.id]?.value?.indices || [];

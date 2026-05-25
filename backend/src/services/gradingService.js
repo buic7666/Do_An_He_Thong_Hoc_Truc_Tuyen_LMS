@@ -48,6 +48,13 @@ const normalizeText = (text, caseSensitive = false) => {
   return normalized;
 };
 
+const normalizeComparableText = (text, caseSensitive = false) => {
+  const normalized = normalizeText(text, caseSensitive);
+  return normalized
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+};
+
 /**
  * Tính độ tương đồng giữa 2 chuỗi (Levenshtein distance)
  * Trả về % tương đồng (0-1)
@@ -357,6 +364,114 @@ Vui lòng chấm điểm bài viết này dựa theo rubric.`;
   }
 };
 
+const gradeCloze = (studentAnswer, metadata) => {
+  try {
+    const innerQuestions = metadata?.inner_questions && typeof metadata.inner_questions === 'object'
+      ? metadata.inner_questions
+      : {};
+    const entries = Object.entries(innerQuestions);
+
+    if (!entries.length) {
+      return {
+        score: 0,
+        details: {
+          type: 'CLOZE',
+          message: 'Không có câu hỏi nhỏ để chấm.',
+          blanks: [],
+        },
+      };
+    }
+
+    const answerMap = studentAnswer && typeof studentAnswer === 'object' ? studentAnswer : {};
+    let weightedTotal = 0;
+    let totalWeight = 0;
+    const blanks = [];
+
+    for (const [key, inner] of entries) {
+      const innerType = String(inner?.type || 'SHORT_ANSWER').toUpperCase() === 'MULTICHOICE'
+        ? 'MULTIPLE_CHOICE'
+        : String(inner?.type || 'SHORT_ANSWER').toUpperCase();
+      const weight = Number(inner?.points || 1);
+      const rawAnswer = answerMap[key];
+      let result = { score: 0, details: {} };
+
+      if (innerType === 'MULTIPLE_CHOICE') {
+        const options = Array.isArray(inner?.options) ? inner.options : [];
+        const normalizedRaw = normalizeComparableText(rawAnswer ?? '', false);
+        const selectedIndex = options.findIndex(
+          (option) => normalizeComparableText(option ?? '', false) === normalizedRaw,
+        );
+
+        result = gradeMultipleChoice(
+          { indices: selectedIndex >= 0 ? [selectedIndex] : [] },
+          {
+            correctIndices: Array.isArray(inner?.correctIndices)
+              ? inner.correctIndices
+              : (typeof inner?.correctIndex === 'number' ? [Number(inner.correctIndex)] : []),
+            explanation: inner?.explanation || null,
+          },
+        );
+      } else if (innerType === 'TRUE_FALSE') {
+        let boolValue = rawAnswer;
+        if (typeof rawAnswer === 'string') {
+          const lowered = rawAnswer.trim().toLowerCase();
+          if (lowered === 'true' || lowered === 'đúng') {
+            boolValue = true;
+          } else if (lowered === 'false' || lowered === 'sai') {
+            boolValue = false;
+          }
+        }
+
+        result = gradeTrueFalse(
+          { value: Boolean(boolValue) === boolValue ? boolValue : null },
+          { correctAnswer: inner?.correctAnswer === true, explanation: inner?.explanation || null },
+        );
+      } else {
+        const acceptedAnswers = Array.isArray(inner?.acceptedAnswers) && inner.acceptedAnswers.length
+          ? inner.acceptedAnswers
+          : (inner?.correct != null ? [String(inner.correct)] : []);
+
+        result = gradeShortAnswer(
+          { text: String(rawAnswer ?? '') },
+          {
+            acceptedAnswers,
+            caseSensitive: Boolean(inner?.caseSensitive),
+            fuzzyMatch: inner?.fuzzyMatch !== false,
+            explanation: inner?.explanation || null,
+          },
+        );
+      }
+
+      const score = Number(result?.score || 0);
+      weightedTotal += score * weight;
+      totalWeight += weight;
+
+      blanks.push({
+        key,
+        type: innerType,
+        score,
+        maxScore: 100,
+        weight,
+        details: result?.details || null,
+      });
+    }
+
+    const finalScore = totalWeight > 0 ? Math.round(weightedTotal / totalWeight) : 0;
+
+    return {
+      score: finalScore,
+      details: {
+        type: 'CLOZE',
+        totalWeight,
+        blanks,
+      },
+    };
+  } catch (error) {
+    console.error('[GradingService] Error grading CLOZE:', error);
+    throw new HttpError(500, 'Error grading cloze question');
+  }
+};
+
 /**
  * Chấm một câu trả lời (auto-detect loại)
  *
@@ -385,6 +500,9 @@ const gradeAnswer = async (
     case 'ESSAY':
       return gradeEssay(studentAnswer, metadata, questionContent);
 
+    case 'CLOZE':
+      return gradeCloze(studentAnswer, metadata);
+
     default:
       throw new HttpError(400, `Unknown question type: ${questionType}`);
   }
@@ -395,6 +513,7 @@ module.exports = {
   gradeTrueFalse,
   gradeShortAnswer,
   gradeEssay,
+  gradeCloze,
   gradeAnswer,
   normalizeText,
   stringSimilarity,

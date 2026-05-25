@@ -11,7 +11,18 @@ const parseOrThrow = (schema, value, location) => {
     const error = new Error('Validation failed');
     error.name = 'ZodError';
     error.location = location;
-    error.details = z.treeifyError(result.error);
+    // `z.treeifyError` may not exist on some zod builds/environments.
+    // Fall back to the structured `errors` array when it's unavailable to
+    // avoid accessing internal properties (like `_zod`) that can be undefined.
+    if (typeof z.treeifyError === 'function') {
+      try {
+        error.details = z.treeifyError(result.error);
+      } catch (e) {
+        error.details = result.error.issues || result.error.errors || [];
+      }
+    } else {
+      error.details = result.error.issues || result.error.errors || [];
+    }
     throw error;
   }
 };

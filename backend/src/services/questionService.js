@@ -88,6 +88,68 @@ const parseMetadata = (metadata) => {
   return metadata;
 };
 
+const normalizeClozeInnerQuestions = (value) => {
+  const normalizeInnerQuestionItem = (item) => {
+    if (!item || typeof item !== 'object') {
+      return {};
+    }
+
+    const type = String(item.type || 'MULTIPLE_CHOICE').toUpperCase();
+    const normalized = {
+      ...item,
+      type,
+      points: Number(item.points) || 1,
+      content: String(item.content || '').trim(),
+      contentBlocks: Array.isArray(item.contentBlocks) ? item.contentBlocks : [],
+      explanation: String(item.explanation || '').trim(),
+      isPublished: Boolean(item.isPublished),
+    };
+
+    if (type === 'MULTIPLE_CHOICE') {
+      normalized.options = Array.isArray(item.options) ? item.options : [];
+      normalized.correctIndices = Array.isArray(item.correctIndices)
+        ? item.correctIndices.map((indexValue) => Number(indexValue)).filter((indexValue) => Number.isFinite(indexValue))
+        : (item.correct != null && String(item.correct).trim() !== '' ? [String(item.correct).trim()] : []);
+      normalized.allowMultipleCorrect = Boolean(item.allowMultipleCorrect);
+    } else if (type === 'TRUE_FALSE') {
+      if (typeof item.correctAnswer === 'boolean') {
+        normalized.correctAnswer = item.correctAnswer;
+      } else if (item.correct != null) {
+        normalized.correctAnswer = item.correct === true || String(item.correct).toLowerCase() === 'true';
+      }
+    } else if (type === 'SHORT_ANSWER') {
+      normalized.acceptedAnswers = Array.isArray(item.acceptedAnswers) ? item.acceptedAnswers : (item.correct ? [item.correct] : []);
+      normalized.caseSensitive = Boolean(item.caseSensitive);
+      normalized.fuzzyMatch = item.fuzzyMatch != null ? Boolean(item.fuzzyMatch) : true;
+    } else if (type === 'NUMERICAL') {
+      normalized.correct = item.correct != null ? Number(item.correct) : null;
+      normalized.tolerance = Number.isFinite(Number(item.tolerance)) ? Number(item.tolerance) : 0;
+    } else if (type === 'ESSAY') {
+      normalized.instructions = String(item.instructions || '').trim();
+      normalized.rubric = Array.isArray(item.rubric) ? item.rubric : [];
+    }
+
+    return normalized;
+  };
+
+  if (Array.isArray(value)) {
+    return value.reduce((accumulator, item, index) => {
+      accumulator[`q${index + 1}`] = normalizeInnerQuestionItem(item);
+      return accumulator;
+    }, {});
+  }
+
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+
+  return Object.entries(value).reduce((accumulator, [key, item], index) => {
+    const normalizedKey = String(key || '').trim() || `q${index + 1}`;
+    accumulator[normalizedKey] = normalizeInnerQuestionItem(item);
+    return accumulator;
+  }, {});
+};
+
 const normalizeRichBlock = (block) => {
   if (!block || typeof block !== 'object') {
     return null;
@@ -222,7 +284,7 @@ const buildMetadataForType = (type, payload = {}, current = {}) => {
       return {
         contentBlocks,
         text_template: payload.metadata?.text_template ?? current.text_template ?? payload.content ?? '',
-        inner_questions: payload.metadata?.inner_questions ?? current.inner_questions ?? {},
+        inner_questions: normalizeClozeInnerQuestions(payload.metadata?.inner_questions ?? current.inner_questions ?? {}),
       };
 
     default:
@@ -275,6 +337,12 @@ const normalizeQuestion = (question) => {
     normalized.correctIndices = correctIndices;
     normalized.correctIndex = correctIndices[0] ?? 0;
     normalized.explanation = metadata.explanation || null;
+  } else if (questionType === 'CLOZE') {
+    normalized.metadata = {
+      ...metadata,
+      inner_questions: normalizeClozeInnerQuestions(metadata.inner_questions || {}),
+    };
+    normalized.contentBlocks = Array.isArray(normalized.metadata.contentBlocks) ? normalized.metadata.contentBlocks : [];
   }
 
   return normalized;
@@ -285,7 +353,7 @@ const normalizeQuestion = (question) => {
  */
 const getQuestionsByCreator = async (creatorId) => {
   const questions = await Question.findAll({
-    where: { createdBy: creatorId },
+    where: { createdBy: creatorId, parentQuestionId: null },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
     order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
@@ -301,6 +369,7 @@ const getQuestionsByDifficulty = async (creatorId, difficulty) => {
     where: {
       createdBy: creatorId,
       difficulty: mapDifficultyToDb(difficulty),
+      parentQuestionId: null,
     },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
     order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
@@ -316,6 +385,7 @@ const searchQuestions = async (creatorId, searchText) => {
   const questions = await Question.findAll({
     where: {
       createdBy: creatorId,
+      parentQuestionId: null,
       content: {
         [Op.like]: `%${searchText}%`,
       },
@@ -332,7 +402,7 @@ const searchQuestions = async (creatorId, searchText) => {
  */
 const getQuestionsByLecture = async (lectureId) => {
   const questions = await Question.findAll({
-    where: { lectureId },
+    where: { lectureId, parentQuestionId: null },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
     order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
@@ -344,7 +414,7 @@ const getQuestionsByLecture = async (lectureId) => {
  * Get questions by course with filters
  */
 const getQuestionsByCourse = async (courseId, filters = {}) => {
-  const where = { courseId };
+  const where = { courseId, parentQuestionId: null };
 
   if (filters.type) {
     where.type = String(filters.type).toUpperCase();

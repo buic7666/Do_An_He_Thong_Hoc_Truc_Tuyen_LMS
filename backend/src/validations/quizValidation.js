@@ -100,6 +100,11 @@ const courseIdParamSchema = z.object({
   courseId: z.coerce.number().int().positive(),
 });
 
+const clozeAnswerValueSchema = z.record(
+  z.string(),
+  z.union([z.string(), z.number(), z.boolean(), z.null()]),
+);
+
 // ===== QUIZ ATTEMPT VALIDATION =====
 const startQuizAttemptBodySchema = z.object({}).optional();
 
@@ -110,6 +115,7 @@ const saveQuizAnswerBodySchema = z.object({
     z.object({ value: z.boolean() }), // TRUE_FALSE
     z.object({ text: z.string() }), // SHORT_ANSWER
     z.object({ text: z.string() }), // ESSAY
+    clozeAnswerValueSchema, // CLOZE (q1/q2 -> answer)
   ]),
 });
 
@@ -120,7 +126,7 @@ const saveQuizAnswerBodySchema = z.object({
  * {
  *   "answers": {
  *     "questionId": {
- *       "type": "MULTIPLE_CHOICE|TRUE_FALSE|SHORT_ANSWER|ESSAY",
+ *       "type": "MULTIPLE_CHOICE|TRUE_FALSE|SHORT_ANSWER|ESSAY|CLOZE",
  *       "value": {...}
  *     }
  *   }
@@ -130,12 +136,13 @@ const submitQuizBodySchema = z.object({
   answers: z.record(
     z.string().transform(Number), // Convert string keys to numbers
     z.object({
-      type: z.enum(['MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY']),
+      type: z.enum(['MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY', 'CLOZE']),
       value: z.union([
         z.object({ indices: z.array(z.number().int()) }), // MULTIPLE_CHOICE
         z.object({ value: z.boolean() }), // TRUE_FALSE
         z.object({ text: z.string() }), // SHORT_ANSWER
         z.object({ text: z.string() }), // ESSAY
+        clozeAnswerValueSchema, // CLOZE
       ]),
     })
   ),
