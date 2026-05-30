@@ -10,6 +10,7 @@ import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText, richC
 import RichContentRenderer from '../../components/RichContentRenderer';
 import QuestionTypeFields from '../../components/QuestionTypeFields';
 import CommentThread from '../../components/CommentThread';
+import QuizTaker from '../../components/QuizTaker';
 import {
   fetchQuestionsApi,
   createQuestionApi,
@@ -25,6 +26,90 @@ import { fetchLessonDetailApi } from '../../api/lessonApi';
 import { uploadTeacherFileApi } from '../../api/teacherApi';
 import './LessonDetail.css';
 import '../../components/QuizTaker.css';
+
+const isLikelyImageUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (/^(data:image\/[a-zA-Z0-9.+-]+;base64,)/i.test(raw)) return true;
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(raw)) return true;
+  return /\/uploads\/images\//i.test(raw);
+};
+
+const normalizePreviewBlocks = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  if (isLikelyImageUrl(raw)) {
+    return [{ type: 'image', url: raw, alt: '' }];
+  }
+
+      {quizPreview.open && quizPreview.quizId ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 2000,
+            background: 'rgba(15, 23, 42, 0.72)',
+            display: 'flex',
+            alignItems: 'stretch',
+            justifyContent: 'stretch',
+          }}
+        >
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: '100%',
+              background: '#f8fafc',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ position: 'absolute', top: 14, right: 14, zIndex: 2 }}>
+              <button
+                type="button"
+                onClick={handleCloseQuizPreview}
+                style={{
+                  border: 'none',
+                  background: '#111827',
+                  color: 'white',
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+                }}
+              >
+                Đóng
+              </button>
+            </div>
+            <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
+              <QuizTaker
+                quizId={quizPreview.quizId}
+                previewMode
+                onBack={handleCloseQuizPreview}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+  if (raw.includes('<') && raw.includes('>') && typeof DOMParser !== 'undefined') {
+    try {
+      const doc = new DOMParser().parseFromString(raw, 'text/html');
+      const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+      const images = Array.from(doc.querySelectorAll('img[src]'));
+      const blocks = [];
+      if (plainText) blocks.push({ type: 'text', text: plainText });
+      images.forEach((img) => {
+        const src = String(img.getAttribute('src') || '').trim();
+        if (src) blocks.push({ type: 'image', url: src, alt: String(img.getAttribute('alt') || '').trim() });
+      });
+      if (blocks.length) return blocks;
+    } catch (_error) {}
+  }
+
+  return [{ type: 'text', text: raw }];
+};
 
 const SEGMENT_CONTENT_META = {
   text: { icon: '📝', title: 'Text', color: '#3498db' },
@@ -79,6 +164,7 @@ function LessonDetail() {
   const [uploadMessageByIndex, setUploadMessageByIndex] = useState({});
   const [error, setError] = useState(null);
   const [selectQuestionsModal, setSelectQuestionsModal] = useState({ open: false, itemIndex: null });
+  const [quizPreview, setQuizPreview] = useState({ open: false, quizId: null, title: '' });
 
   const loading = segmentsLoading || !lesson;
 
@@ -183,6 +269,19 @@ function LessonDetail() {
     handleContentItemChange(selectQuestionsModal.itemIndex, 'questionIds', questionIds);
     handleContentItemChange(selectQuestionsModal.itemIndex, 'questionTitles', questionTitles);
     setSelectQuestionsModal({ open: false, itemIndex: null });
+  };
+
+  const handleOpenQuizPreview = (item) => {
+    if (!item?.quizId) return;
+    setQuizPreview({
+      open: true,
+      quizId: Number(item.quizId),
+      title: item.title || 'Xem trước bài kiểm tra',
+    });
+  };
+
+  const handleCloseQuizPreview = () => {
+    setQuizPreview({ open: false, quizId: null, title: '' });
   };
 
   const handleFinishModal = () => setQuestionModalOpen(false);
@@ -1046,6 +1145,27 @@ function LessonDetail() {
                               </button>
                             </div>
 
+                            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                              <button
+                                type="button"
+                                className="btn-upload-resource"
+                                onClick={() => handleOpenQuizPreview(item)}
+                                disabled={!item?.quizId}
+                                style={{
+                                  backgroundColor: '#2563eb',
+                                  color: 'white',
+                                  padding: '10px 14px',
+                                  borderRadius: 10,
+                                  border: 'none',
+                                  fontWeight: 700,
+                                  boxShadow: '0 6px 14px rgba(37,99,235,0.18)',
+                                  opacity: item?.quizId ? 1 : 0.6,
+                                }}
+                              >
+                                👁️ Xem trước bài tập
+                              </button>
+                            </div>
+
                             <div style={{ marginTop: 16, padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff' }}>
                               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#374151' }}>
                                 <input
@@ -1083,23 +1203,34 @@ function LessonDetail() {
                               <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: '#f8fafc', border: '1px solid #e5e7eb' }}>
                                 <div style={{ fontWeight: 700, marginBottom: 8, color: '#111827' }}>Câu hỏi đã chọn</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                  {(Array.isArray(item.questionTitles) && item.questionTitles.length ? item.questionTitles : item.questionIds).map((questionValue, questionIndex) => (
-                                    <span
-                                      key={`${questionValue}-${questionIndex}`}
-                                      style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        padding: '6px 10px',
-                                        borderRadius: 999,
-                                        background: '#ede9fe',
-                                        color: '#5b21b6',
-                                        fontWeight: 700,
-                                        fontSize: 13,
-                                      }}
-                                    >
-                                      {Array.isArray(item.questionTitles) && item.questionTitles.length ? questionValue : `Câu #${questionValue}`}
-                                    </span>
-                                  ))}
+                                  {(Array.isArray(item.questionTitles) && item.questionTitles.length ? item.questionTitles : item.questionIds).map((questionValue, questionIndex) => {
+                                    const previewBlocks = Array.isArray(item.questionTitles) && item.questionTitles.length ? normalizePreviewBlocks(questionValue) : [];
+                                    return (
+                                      <span
+                                        key={`${questionValue}-${questionIndex}`}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'flex-start',
+                                          gap: 8,
+                                          padding: '6px 10px',
+                                          borderRadius: 999,
+                                          background: '#ede9fe',
+                                          color: '#5b21b6',
+                                          fontWeight: 700,
+                                          fontSize: 13,
+                                          maxWidth: '100%',
+                                          overflow: 'hidden',
+                                        }}
+                                      >
+                                        {Array.isArray(item.questionTitles) && item.questionTitles.length && previewBlocks.some((block) => block.type === 'image' || block.type === 'video') ? (
+                                          <RichContentRenderer blocks={previewBlocks} />
+                                        ) : (
+                                          Array.isArray(item.questionTitles) && item.questionTitles.length ? questionValue : `Câu #${questionValue}`
+                                        )}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             ) : null}

@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const { Question } = require('../models');
 const { HttpError } = require('../utils/httpError');
+const { normalizeRichBlocks, richBlocksToPlainText } = require('../utils/richContent');
 
 const DIFFICULTY_MAP = {
   easy: 'EASY',
@@ -15,8 +16,6 @@ const ALLOWED_TYPES = [
   'ESSAY',
   'CLOZE',
 ];
-
-const ALLOWED_RICH_BLOCK_TYPES = ['text', 'image', 'video'];
 
 const getYouTubeEmbedUrl = (rawUrl) => {
   if (!rawUrl) {
@@ -78,11 +77,18 @@ const parseMetadata = (metadata) => {
   }
 
   if (typeof metadata === 'string') {
-    try {
-      return JSON.parse(metadata);
-    } catch (_error) {
-      return {};
+    let parsed = metadata;
+    // Attempt to parse up to two times to handle double-encoded JSON strings
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch (_err) {
+        break;
+      }
+      if (parsed == null || typeof parsed !== 'string') break;
     }
+
+    return (parsed && typeof parsed === 'object') ? parsed : (typeof parsed === 'string' ? (() => { try { return JSON.parse(parsed); } catch { return {}; } })() : {});
   }
 
   return metadata;
@@ -100,7 +106,7 @@ const normalizeClozeInnerQuestions = (value) => {
       type,
       points: Number(item.points) || 1,
       content: String(item.content || '').trim(),
-      contentBlocks: Array.isArray(item.contentBlocks) ? item.contentBlocks : [],
+      contentBlocks: normalizeRichBlocks(item.contentBlocks),
       explanation: String(item.explanation || '').trim(),
       isPublished: Boolean(item.isPublished),
     };
@@ -149,76 +155,6 @@ const normalizeClozeInnerQuestions = (value) => {
     return accumulator;
   }, {});
 };
-
-const normalizeRichBlock = (block) => {
-  if (!block || typeof block !== 'object') {
-    return null;
-  }
-
-  const type = String(block.type || 'text').toLowerCase();
-  if (!ALLOWED_RICH_BLOCK_TYPES.includes(type)) {
-    return null;
-  }
-
-  if (type === 'text') {
-    const text = String(block.text ?? '').trim();
-    if (!text) return null;
-    const youtubeUrl = getYouTubeEmbedUrl(text);
-    if (youtubeUrl) {
-      return {
-        type: 'video',
-        url: youtubeUrl,
-        title: String(block.title ?? '').trim(),
-      };
-    }
-    return { type, text };
-  }
-
-  const url = String(block.url ?? '').trim();
-  if (!url) return null;
-
-  if (type === 'image') {
-    return {
-      type,
-      url,
-      alt: String(block.alt ?? '').trim(),
-    };
-  }
-
-  return {
-    type,
-    url,
-    title: String(block.title ?? '').trim(),
-  };
-};
-
-const normalizeRichBlocks = (value) => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.map(normalizeRichBlock).filter(Boolean);
-};
-
-const richBlocksToPlainText = (blocks = []) => blocks.map((block) => {
-  if (!block || typeof block !== 'object') {
-    return '';
-  }
-
-  if (block.type === 'text') {
-    return String(block.text || '').trim();
-  }
-
-  if (block.type === 'image') {
-    return `[Ảnh: ${String(block.alt || block.url || '').trim()}]`;
-  }
-
-  if (block.type === 'video') {
-    return `[Video: ${String(block.title || block.url || '').trim()}]`;
-  }
-
-  return '';
-}).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
 
 const buildMetadataForType = (type, payload = {}, current = {}) => {
   const questionType = String(type || 'MULTIPLE_CHOICE').toUpperCase();
@@ -324,7 +260,15 @@ const normalizeQuestion = (question) => {
     updatedAt: plain.updatedAt,
   };
 
-  normalized.contentBlocks = Array.isArray(metadata.contentBlocks) ? metadata.contentBlocks : [];
+  const resolvedBlocks = Array.isArray(metadata.contentBlocks)
+    ? metadata.contentBlocks
+    : Array.isArray(metadata.blocks)
+      ? metadata.blocks
+      : Array.isArray(metadata.richContent?.blocks)
+        ? metadata.richContent.blocks
+        : [];
+
+  normalized.contentBlocks = normalizeRichBlocks(resolvedBlocks);
 
   if (questionType === 'MULTIPLE_CHOICE') {
     const correctIndices = Array.isArray(metadata.correctIndices)
@@ -482,8 +426,63 @@ const getQuestionById = async (questionId) => {
   if (!question) {
     throw new HttpError(404, 'Question not found', 'QUESTION_NOT_FOUND');
   }
+  // Normalize and defensively enrich contentBlocks from legacy metadata or raw HTML
+  const normalized = normalizeQuestion(question);
 
-  return normalizeQuestion(question);
+  try {
+    const plain = typeof question.toJSON === 'function' ? question.toJSON() : (question || {});
+    const metaRaw = plain.metadata;
+
+    const extractImageFromHtml = (html) => {
+      if (!html || typeof html !== 'string') return null;
+      try {
+        const m = html.match(/<img[^>]+src=["']?([^"' >]+)["']?[^>]*>/i);
+        if (m && m[1]) return m[1];
+      } catch (e) {}
+      return null;
+    };
+
+    const findFirstImageUrl = (text) => {
+      if (!text) return null;
+      const dataMatch = text.match(/(data:image\/[a-zA-Z0-9.+-]+;base64,[^\s"'>]+)/i);
+      if (dataMatch) return dataMatch[1];
+      const urlMatch = text.match(/(https?:\/\/[^\s"'>]+\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?[^\s"'>]*)?)/i);
+      if (urlMatch) return urlMatch[1];
+      const upMatch = text.match(/(\/uploads\/images\/[^\s"'>]+)/i);
+      if (upMatch) return upMatch[1].startsWith('/') ? (`http://localhost:5000${upMatch[1]}`) : upMatch[1];
+      return null;
+    };
+
+    if ((!Array.isArray(normalized.contentBlocks) || normalized.contentBlocks.length === 0)) {
+      let candidate = null;
+
+      const meta = (metaRaw && typeof metaRaw === 'object') ? metaRaw : (typeof metaRaw === 'string' ? (() => { try { return JSON.parse(metaRaw); } catch { return {}; } })() : {});
+
+      if (Array.isArray(meta.contentBlocks) && meta.contentBlocks.length > 0) {
+        normalized.contentBlocks = normalizeRichBlocks(meta.contentBlocks);
+      } else if (Array.isArray(meta.blocks) && meta.blocks.length > 0) {
+        normalized.contentBlocks = normalizeRichBlocks(meta.blocks);
+      } else if (meta.richContent && Array.isArray(meta.richContent.blocks) && meta.richContent.blocks.length > 0) {
+        normalized.contentBlocks = normalizeRichBlocks(meta.richContent.blocks);
+      } else {
+        if (typeof plain.metadata === 'string') {
+          candidate = extractImageFromHtml(plain.metadata) || findFirstImageUrl(plain.metadata);
+        }
+
+        if (!candidate && typeof plain.content === 'string') {
+          candidate = extractImageFromHtml(plain.content) || findFirstImageUrl(plain.content);
+        }
+
+        if (candidate) {
+          normalized.contentBlocks = normalizeRichBlocks([{ type: 'image', url: candidate, alt: '' }]);
+        }
+      }
+    }
+  } catch (e) {
+    // non-fatal
+  }
+
+  return normalized;
 };
 
 /**

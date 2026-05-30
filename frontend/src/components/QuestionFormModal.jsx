@@ -24,10 +24,12 @@ function QuestionFormModal({
   chapterTitle,
   lectureTitle,
   segmentTitle,
+  mode = 'create',
 }) {
   const [step, setStep] = useState(1);
   const contentBlocks = Array.isArray(draft?.contentBlocks) ? draft.contentBlocks : [];
   const modalInnerRef = useRef(null);
+  const isEditing = mode === 'edit';
 
   useEffect(() => {
     if (isOpen) {
@@ -163,7 +165,7 @@ function QuestionFormModal({
         {/* Header */}
         <div style={{ marginBottom: '24px' }}>
           <h2 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: '600', color: '#111' }}>
-            Tạo Câu Hỏi Theo Từng Bước
+            {isEditing ? 'Sửa Câu Hỏi Theo Từng Bước' : 'Tạo Câu Hỏi Theo Từng Bước'}
           </h2>
           <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#666' }}>
             Loại câu hỏi: <strong>{QUESTION_TYPE_LABELS[draft.type] || draft.type}</strong>
@@ -198,7 +200,7 @@ function QuestionFormModal({
               fontWeight: 600,
               fontSize: 12,
             }}>
-              Bước 2: Xác nhận thêm câu hỏi
+              {isEditing ? 'Bước 2: Xác nhận chỉnh sửa' : 'Bước 2: Xác nhận thêm câu hỏi'}
             </span>
           </div>
 
@@ -298,7 +300,9 @@ function QuestionFormModal({
             const result = validateDraft(draft);
             return (
               <div style={{ marginBottom: '24px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: 16 }}>
-                <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>Xác nhận thông tin câu hỏi</h3>
+                <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>
+                  {isEditing ? 'Xác nhận thông tin chỉnh sửa' : 'Xác nhận thông tin câu hỏi'}
+                </h3>
                 <p style={{ margin: '0 0 10px 0' }}><strong>Loại:</strong> {QUESTION_TYPE_LABELS[draft.type] || draft.type}</p>
                 <p style={{ margin: '0 0 10px 0' }}><strong>Công khai:</strong> {draft.isPublished ? 'Có' : 'Không'}</p>
                 <p style={{ margin: '0 0 6px 0' }}><strong>Nội dung câu hỏi:</strong></p>
@@ -415,7 +419,7 @@ function QuestionFormModal({
                       }}
                       disabled={!result.ok}
                     >
-                      Xác nhận thêm câu hỏi
+                      {isEditing ? 'Lưu thay đổi' : 'Xác nhận thêm câu hỏi'}
                     </button>
                   );
                 })()}

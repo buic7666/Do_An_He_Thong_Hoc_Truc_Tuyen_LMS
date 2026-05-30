@@ -134,6 +134,38 @@ const normalizeBlocks = (blocks = []) => {
   }));
 };
 
+const blocksToHtml = (blocks = []) => {
+  if (!Array.isArray(blocks) || !blocks.length) {
+    return '';
+  }
+
+  return blocks.map((block) => {
+    if (!block || typeof block !== 'object') {
+      return '';
+    }
+
+    if (block.type === 'image') {
+      const url = String(block.url || '').trim();
+      if (!url) return '';
+      const safeUrl = url.replace(/"/g, '%22');
+      const safeAlt = String(block.alt || '').replace(/"/g, '&quot;');
+      return `<span data-image-wrap="1" style="position: relative; display: inline-block; vertical-align: middle; margin: 0 4px;"><img src="${safeUrl}" alt="${safeAlt}" style="max-width: 100%; height: auto; display: inline-block; vertical-align: middle;" /><button type="button" data-remove-image="1" data-editor-remove-only="1" contenteditable="false" style="position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.9); background: rgba(17,24,39,0.82); color: #fff; font-size: 14px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">×</button></span>`;
+    }
+
+    if (block.type === 'video') {
+      const url = String(block.url || '').trim();
+      if (!url) return '';
+      if (isYouTubeUrl(url)) {
+        return buildInlineVideoEmbedHtml(getYouTubeEmbedSrc(url));
+      }
+      const safeUrl = url.replace(/"/g, '%22');
+      return `<video controls src="${safeUrl}" style="max-width: 100%; display: inline-block; vertical-align: middle; margin: 0 4px;"></video>`;
+    }
+
+    return String(block.text || '');
+  }).join('');
+};
+
 const RichContentEditor = ({
   value,
   onChange,
@@ -164,11 +196,11 @@ const RichContentEditor = ({
     const editor = textareaRef.current;
     if (!editor) return;
 
-    const nextHtml = String(textValue || '');
+    const nextHtml = blocksToHtml(blocks);
     if (editor.innerHTML !== nextHtml) {
       editor.innerHTML = nextHtml;
     }
-  }, [textValue]);
+  }, [blocks, textValue]);
 
   // Auto-test helper: when URL contains ?editorAutoTest=1, run a quick selection->Bold flow
   useEffect(() => {

@@ -82,6 +82,62 @@ const getYouTubeVideoId = (rawUrl) => {
   return null;
 };
 
+const isLikelyImageUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+
+  if (/^(data:image\/[a-zA-Z0-9.+-]+;base64,)/i.test(raw)) {
+    return true;
+  }
+
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(raw)) {
+    return true;
+  }
+
+  return /\/uploads\/images\//i.test(raw);
+};
+
+const normalizePreviewBlocks = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  if (isLikelyImageUrl(raw)) {
+    return [{ type: 'image', url: raw, alt: '' }];
+  }
+
+  if (raw.includes('<') && raw.includes('>') && typeof DOMParser !== 'undefined') {
+    try {
+      const doc = new DOMParser().parseFromString(raw, 'text/html');
+      const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+      const images = Array.from(doc.querySelectorAll('img[src]'));
+      const blocks = [];
+
+      if (plainText) {
+        blocks.push({ type: 'text', text: plainText });
+      }
+
+      images.forEach((img) => {
+        const src = String(img.getAttribute('src') || '').trim();
+        if (src) {
+          blocks.push({
+            type: 'image',
+            url: src,
+            alt: String(img.getAttribute('alt') || '').trim(),
+          });
+        }
+      });
+
+      if (blocks.length) {
+        return blocks;
+      }
+    } catch (_error) {
+      // fall through to plain text
+    }
+  }
+
+  return [{ type: 'text', text: raw }];
+};
+
 function ManHinhHocTap() {
   const GOOGLE_YOUTUBE_TOKEN_KEY = 'googleYoutubeAccessToken';
   const [isLoading, setIsLoading] = useState(true);
@@ -846,7 +902,12 @@ function ManHinhHocTap() {
   }, [selectedQuizId, selectedQuizScope]);
 
   const formatSegmentContentText = (item) => {
-    const text = String(item?.content || item?.title || '').trim();
+    const raw = String(item?.content || item?.title || '').trim();
+    if (!raw) {
+      return 'Chưa có nội dung mô tả.';
+    }
+
+    const text = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     return text || 'Chưa có nội dung mô tả.';
   };
 
@@ -930,25 +991,39 @@ function ManHinhHocTap() {
                 <div className='study-segment-content-meta' style={{ marginBottom: 8 }}>
                   Chọn sẵn {item.questionTitles.length} câu hỏi
                 </div>
-              ) : Array.isArray(item.questionTitles) && item.questionTitles.length ? (
+              ) : null}
+              {Array.isArray(item.questionTitles) && item.questionTitles.length ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                  {item.questionTitles.map((title, questionIndex) => (
-                    <span
-                      key={`${title}-${questionIndex}`}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        padding: '6px 10px',
-                        borderRadius: 999,
-                        background: '#ede9fe',
-                        color: '#5b21b6',
-                        fontWeight: 700,
-                        fontSize: 13,
-                      }}
-                    >
-                      {title}
-                    </span>
-                  ))}
+                  {item.questionTitles.map((title, questionIndex) => {
+                    const previewBlocks = normalizePreviewBlocks(title);
+                    return (
+                      <span
+                        key={`${title}-${questionIndex}`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-start',
+                          gap: 8,
+                          padding: '6px 10px',
+                          borderRadius: 999,
+                          background: '#ede9fe',
+                          color: '#5b21b6',
+                          fontWeight: 700,
+                          fontSize: 13,
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {Array.isArray(previewBlocks) && previewBlocks.some((block) => block.type === 'image' || block.type === 'video') ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', maxWidth: '100%' }}>
+                            <RichContentRenderer blocks={previewBlocks} />
+                          </span>
+                        ) : (
+                          title
+                        )}
+                      </span>
+                    );
+                  })}
                 </div>
               ) : Array.isArray(item.questionIds) && item.questionIds.length ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
@@ -978,8 +1053,29 @@ function ManHinhHocTap() {
                 className='study-segment-content-link-button'
                 onClick={() => handleSelectQuiz(item.quizId, 'segment', item)}
               >
-                Làm bài kiểm tra
+                Làm bài tập
               </button>
+            ) : null}
+            {Array.isArray(item.questionPreviews) && item.questionPreviews.length ? (
+              <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+                {item.questionPreviews.map((preview, previewIndex) => (
+                  <div
+                    key={`${preview.id || previewIndex}`}
+                    style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 10,
+                      padding: 10,
+                      background: '#fff',
+                    }}
+                  >
+                    {Array.isArray(preview.contentBlocks) && preview.contentBlocks.length > 0 ? (
+                      <RichContentRenderer blocks={preview.contentBlocks} />
+                    ) : (
+                      <p style={{ margin: 0 }}>{preview.content || `Câu hỏi #${preview.id}`}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
             ) : null}
             {!isLocked && Number(item?.quizId || 0) <= 0 ? (
               <p className='study-segment-content-empty'>Bài tập đang được giảng viên cấu hình, vui lòng thử lại sau.</p>

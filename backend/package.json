@@ -7,6 +7,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "migrate": "node src/scripts/migrate.js",
+    "migrate:normalize-cloze": "node src/scripts/normalizeClozePayload.js",
     "seed": "node src/scripts/seedComplete.js",
     "seed:teacher-dashboard": "node src/scripts/seedTeacherDashboard.js",
     "seed:video-course": "node src/scripts/seedMultiVideoCourse.js",

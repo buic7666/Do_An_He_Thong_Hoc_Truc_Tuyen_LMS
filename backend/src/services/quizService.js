@@ -6,10 +6,12 @@ const {
   StudentAnswer,
   Course,
 } = require('../models');
+const questionService = require('./questionService');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const { HttpError } = require('../utils/httpError');
 const { gradeAnswer } = require('./gradingService');
+const { normalizeRichBlocks } = require('../utils/richContent');
 
 const parseJsonField = (value, fallback = null) => {
   if (value == null) {
@@ -42,7 +44,7 @@ const normalizeClozeInnerFromChild = (childQuestion, fallbackInner = {}) => {
     type: childType,
     content: String(childPlain?.content || fallbackInner?.content || '').trim(),
     contentBlocks: Array.isArray(childMetadata.contentBlocks)
-      ? childMetadata.contentBlocks
+      ? normalizeRichBlocks(childMetadata.contentBlocks)
       : (Array.isArray(fallbackInner.contentBlocks) ? fallbackInner.contentBlocks : []),
     explanation: childMetadata.explanation ?? fallbackInner.explanation ?? null,
     isPublished: Boolean(childPlain?.isPublished ?? fallbackInner?.isPublished ?? false),
@@ -619,6 +621,79 @@ const normalizeQuiz = (quiz, includeQuestions = false) => {
   };
 };
 
+const resolveQuestionSnapshot = (question) => {
+  const plain = typeof question?.toJSON === 'function' ? question.toJSON() : (question || {});
+  const metadata = parseJsonField(plain.metadata, {}) || {};
+  const contentBlocks = Array.isArray(metadata.contentBlocks)
+    ? normalizeRichBlocks(metadata.contentBlocks)
+    : Array.isArray(metadata.blocks)
+      ? normalizeRichBlocks(metadata.blocks)
+      : Array.isArray(metadata.richContent?.blocks)
+        ? normalizeRichBlocks(metadata.richContent.blocks)
+        : [];
+  const questionText = String(plain.content || metadata.questionText || metadata.title || '').trim();
+
+  return {
+    id: plain.id,
+    content: questionText,
+    type: plain.type || 'MULTIPLE_CHOICE',
+    questionText,
+    metadata,
+    options: Array.isArray(metadata.options) ? metadata.options : [],
+    optionsRich: Array.isArray(metadata.optionsRich) ? metadata.optionsRich : [],
+    contentBlocks,
+  };
+};
+
+const hydrateQuestionsFromFreshRows = async (questions = []) => {
+  const ids = Array.from(new Set(
+    questions
+      .map((question) => Number(question?.id))
+      .filter((id) => Number.isFinite(id)),
+  ));
+
+  if (ids.length === 0) {
+    return questions;
+  }
+
+  const freshResults = await Promise.allSettled(ids.map((id) => questionService.getQuestionById(id)));
+  const freshMap = new Map();
+  freshResults.forEach((result, index) => {
+    if (result.status === 'fulfilled' && result.value) {
+      freshMap.set(ids[index], result.value);
+    }
+  });
+
+  return questions.map((question) => {
+    const fresh = freshMap.get(Number(question.id));
+    if (!fresh) {
+      return question;
+    }
+
+    const nextContentBlocks = Array.isArray(fresh.contentBlocks) && fresh.contentBlocks.length > 0
+      ? fresh.contentBlocks
+      : (Array.isArray(question.contentBlocks) ? question.contentBlocks : []);
+    const nextOptions = Array.isArray(fresh.options) && fresh.options.length > 0
+      ? fresh.options
+      : (Array.isArray(question.options) ? question.options : []);
+    const nextOptionsRich = Array.isArray(fresh.optionsRich) && fresh.optionsRich.length > 0
+      ? fresh.optionsRich
+      : (Array.isArray(question.optionsRich) ? question.optionsRich : []);
+    const nextQuestionText = fresh.questionText || question.questionText || question.content || '';
+
+    return {
+      ...question,
+      ...fresh,
+      content: nextQuestionText,
+      questionText: nextQuestionText,
+      contentBlocks: nextContentBlocks,
+      options: nextOptions,
+      optionsRich: nextOptionsRich,
+      QuizQuestion: question.QuizQuestion,
+    };
+  });
+};
+
 /**
  * Normalize quiz with full question data
  */
@@ -627,11 +702,11 @@ const normalizeQuizWithQuestions = async (quiz) => {
   const baseQuestions = (plain.questions || []).map((q) => {
     const metadata = parseJsonField(q.metadata, {});
     const resolvedContentBlocks = Array.isArray(metadata?.contentBlocks)
-      ? metadata.contentBlocks
+      ? normalizeRichBlocks(metadata.contentBlocks)
       : Array.isArray(metadata?.blocks)
-        ? metadata.blocks
+        ? normalizeRichBlocks(metadata.blocks)
         : Array.isArray(metadata?.richContent?.blocks)
-          ? metadata.richContent.blocks
+          ? normalizeRichBlocks(metadata.richContent.blocks)
           : [];
     const resolvedQuestionText = String(
       q.content || metadata?.questionText || metadata?.title || '',
@@ -652,12 +727,14 @@ const normalizeQuizWithQuestions = async (quiz) => {
     };
   });
 
+  const resolvedBaseQuestions = await hydrateQuestionsFromFreshRows(baseQuestions);
+
   const clozeParentIds = baseQuestions
     .filter((question) => normalizeQuestionType(question.type) === 'CLOZE')
     .map((question) => Number(question.id));
   const childMapByParentId = await loadChildQuestionsByParentIds(clozeParentIds);
 
-  const questions = baseQuestions.map((question) => {
+  const questions = resolvedBaseQuestions.map((question) => {
     if (normalizeQuestionType(question.type) !== 'CLOZE') {
       return question;
     }
@@ -670,6 +747,24 @@ const normalizeQuizWithQuestions = async (quiz) => {
       ),
     };
   });
+
+  // Defensive: ensure every question has normalized contentBlocks populated.
+  const questionsWithBlocks = questions.map((q) => {
+    try {
+      const hasBlocks = Array.isArray(q.contentBlocks) && q.contentBlocks.length > 0;
+      if (hasBlocks) return q;
+
+      // Use resolveQuestionSnapshot to derive blocks from metadata/legacy shapes
+      const snapshot = resolveQuestionSnapshot(q);
+      return {
+        ...q,
+        contentBlocks: Array.isArray(snapshot.contentBlocks) ? snapshot.contentBlocks : [],
+      };
+    } catch (e) {
+      return q;
+    }
+  });
+  
 
   return {
     id: plain.id,
@@ -737,11 +832,15 @@ const getQuizAttemptDetails = async (attemptId, studentId) => {
     answers: plain.answers
       .map((sa) => ({
         questionId: sa.questionId,
+        questionContentBlocks: normalizeRichBlocks(parseJsonField(sa.question.metadata, {})?.contentBlocks || []),
         question: {
           id: sa.question.id,
           content: sa.question.content,
           type: sa.question.type,
-          metadata: parseJsonField(sa.question.metadata, {}),
+          metadata: {
+            ...parseJsonField(sa.question.metadata, {}),
+            contentBlocks: normalizeRichBlocks(parseJsonField(sa.question.metadata, {})?.contentBlocks || []),
+          },
         },
         answerType: sa.answerType,
         answerValue: parseJsonField(sa.answerValue, sa.answerValue),

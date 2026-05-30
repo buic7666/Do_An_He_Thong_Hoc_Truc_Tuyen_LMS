@@ -4,6 +4,7 @@ const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 const { Lesson, LessonSegment, LessonLabel, Question, Quiz, QuizQuestion } = require('../models');
 const { HttpError } = require('../utils/httpError');
+const { normalizeRichBlocks } = require('../utils/richContent');
 
 const SEGMENT_ITEM_TYPES = new Set(['text', 'document', 'question', 'quiz', 'videoClip']);
 
@@ -135,7 +136,7 @@ const normalizeSegmentContentItems = (items = []) => {
           ? item.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
           : [];
         payload.questionTitles = Array.isArray(item?.questionTitles)
-          ? item.questionTitles.map((title) => String(title || '').trim()).filter(Boolean)
+          ? item.questionTitles.map((title) => String(title || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
           : [];
         payload.randomize = Boolean(item?.randomize);
         payload.randomCount = toNullableInteger(item?.randomCount) || null;
@@ -278,9 +279,22 @@ const syncQuizContentItems = async (segment, normalizedItems, currentUser) => {
     await QuizQuestion.destroy({ where: { quizId: quiz.id } });
     if (selectedQuestionIds.length > 0) {
       // Validate that referenced question IDs actually exist to avoid FK violations
-      const existingQuestions = await Question.findAll({ where: { id: selectedQuestionIds }, attributes: ['id'] });
+      const existingQuestions = await Question.findAll({
+        where: { id: selectedQuestionIds },
+        attributes: ['id', 'type', 'content', 'metadata'],
+      });
       const existingIds = existingQuestions.map((q) => Number(q.id));
       const validQuestionIds = selectedQuestionIds.filter((id) => existingIds.includes(Number(id)));
+      const questionPreviewMap = new Map(existingQuestions.map((q) => {
+        const plain = q.toJSON();
+        const metadata = parseQuestionMetadata(plain.metadata);
+        return [Number(plain.id), {
+          id: Number(plain.id),
+          type: plain.type,
+          content: String(plain.content || metadata.questionText || metadata.title || '').trim(),
+          contentBlocks: Array.isArray(metadata.contentBlocks) ? normalizeRichBlocks(metadata.contentBlocks) : [],
+        }];
+      }));
 
       if (validQuestionIds.length !== selectedQuestionIds.length) {
         try {
@@ -294,6 +308,10 @@ const syncQuizContentItems = async (segment, normalizedItems, currentUser) => {
           // ignore logging errors
         }
       }
+        quiz.questionPreviews = validQuestionIds
+          .map((questionId) => questionPreviewMap.get(Number(questionId)))
+          .filter(Boolean);
+
 
       if (validQuestionIds.length > 0) {
         await QuizQuestion.bulkCreate(

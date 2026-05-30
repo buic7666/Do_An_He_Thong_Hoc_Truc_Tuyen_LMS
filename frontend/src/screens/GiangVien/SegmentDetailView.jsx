@@ -8,6 +8,7 @@ import SelectQuestionsModal from '../../components/SelectQuestionsModal';
 import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from '../../components/RichContentEditor';
 import RichContentRenderer from '../../components/RichContentRenderer';
 import QuestionTypeFields from '../../components/QuestionTypeFields';
+import QuizTaker from '../../components/QuizTaker';
 import {
   fetchQuestionsApi,
   createQuestionApi,
@@ -19,6 +20,40 @@ import { useLocation } from 'react-router-dom';
 import { uploadTeacherFileApi } from '../../api/teacherApi';
 import './SegmentDetailView.css';
 import '../../components/QuizTaker.css';
+
+const isLikelyImageUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (/^(data:image\/[a-zA-Z0-9.+-]+;base64,)/i.test(raw)) return true;
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(raw)) return true;
+  return /\/uploads\/images\//i.test(raw);
+};
+
+const normalizePreviewBlocks = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  if (isLikelyImageUrl(raw)) {
+    return [{ type: 'image', url: raw, alt: '' }];
+  }
+
+  if (raw.includes('<') && raw.includes('>') && typeof DOMParser !== 'undefined') {
+    try {
+      const doc = new DOMParser().parseFromString(raw, 'text/html');
+      const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+      const images = Array.from(doc.querySelectorAll('img[src]'));
+      const blocks = [];
+      if (plainText) blocks.push({ type: 'text', text: plainText });
+      images.forEach((img) => {
+        const src = String(img.getAttribute('src') || '').trim();
+        if (src) blocks.push({ type: 'image', url: src, alt: String(img.getAttribute('alt') || '').trim() });
+      });
+      if (blocks.length) return blocks;
+    } catch (_error) {}
+  }
+
+  return [{ type: 'text', text: raw }];
+};
 
 const SEGMENT_CONTENT_META = {
   text: { icon: '📝', title: 'Text', color: '#3498db' },
@@ -42,6 +77,7 @@ const createEmptyQuestionDraft = () => ({
   type: 'MULTIPLE_CHOICE',
   metadata: { text_template: '', inner_questions: {} },
   content: '',
+  contentBlocks: createEmptyRichBlocks(),
   isPublished: false,
   options: ['', '', '', ''],
   optionsRich: [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
@@ -81,6 +117,37 @@ const parseJson = (value, fallback = {}) => {
 
 const normalizeContentBlocks = (value) => (Array.isArray(value) ? value : []);
 
+const normalizeRichBlocksValue = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  const parsed = parseJson(value, null);
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    if (Array.isArray(parsed.contentBlocks)) {
+      return parsed.contentBlocks;
+    }
+
+    if (Array.isArray(parsed.blocks)) {
+      return parsed.blocks;
+    }
+
+    if (Array.isArray(parsed.richContent?.blocks)) {
+      return parsed.richContent.blocks;
+    }
+  }
+
+  if (typeof value === 'string') {
+    return normalizePreviewBlocks(value);
+  }
+
+  return [];
+};
+
 const normalizeMetadata = (question) => {
   const metadata = parseJson(question?.metadata, {});
   return metadata && typeof metadata === 'object' ? metadata : {};
@@ -100,7 +167,7 @@ const getQuestionTitle = (question, metadata) => (
 );
 
 const renderRichText = (value) => {
-  const blocks = normalizeContentBlocks(value);
+  const blocks = normalizeRichBlocksValue(value);
   return blocks.length > 0 ? <RichContentRenderer blocks={blocks} /> : null;
 };
 
@@ -217,14 +284,15 @@ const formatInnerQuestionAnswer = (item) => {
 };
 
 const renderQuestionPayloadSummary = (question, metadata) => {
-  const contentBlocks = normalizeContentBlocks(metadata.contentBlocks || question.contentBlocks);
+  const contentBlocks = normalizeRichBlocksValue(metadata.contentBlocks || question.contentBlocks);
   const questionTitle = getQuestionTitle(question, metadata);
+  const contentPlain = (Array.isArray(contentBlocks) && contentBlocks.length) ? richContentToPlainText(contentBlocks) : String(metadata.text_template || question.content || '').trim();
 
   return (
     <div className="detail-section">
       <h3>📝 Câu Hỏi</h3>
       <div className="question-content">
-        {questionTitle ? <p>{questionTitle}</p> : null}
+        {questionTitle && String(questionTitle || '').trim() !== String(contentPlain || '').trim() ? <p>{questionTitle}</p> : null}
         {contentBlocks.length > 0 ? (
           <RichContentRenderer blocks={contentBlocks} />
         ) : (
@@ -265,7 +333,7 @@ const QuestionDetailModal = ({ question, onClose, panelRef }) => {
   const innerQuestions = metadata.inner_questions && typeof metadata.inner_questions === 'object'
     ? Object.entries(metadata.inner_questions)
     : [];
-  const contentBlocks = normalizeContentBlocks(metadata.contentBlocks || question.contentBlocks);
+  const contentBlocks = normalizeRichBlocksValue(metadata.contentBlocks || question.contentBlocks);
   const questionTitle = getQuestionTitle(question, metadata);
 
   return (
@@ -292,15 +360,19 @@ const QuestionDetailModal = ({ question, onClose, panelRef }) => {
                     <div key={`option-${index}`} className={`option-item ${correctIndices.includes(index) ? 'correct' : ''}`}>
                       <span className="option-index">{String.fromCharCode(65 + index)}</span>
                       <div className="option-text-wrapper">
-                        {typeof option === 'string' ? (
-                          <p>{option}</p>
-                        ) : Array.isArray(option?.contentBlocks) && option.contentBlocks.length > 0 ? (
-                          <RichContentRenderer blocks={option.contentBlocks} />
-                        ) : option?.text ? (
-                          <p>{option.text}</p>
-                        ) : (
-                          <p>{String(option || '')}</p>
-                        )}
+                        {(() => {
+                          const optionBlocks = normalizeRichBlocksValue(option?.contentBlocks || option?.blocks || option?.richContent?.blocks || option?.text || option);
+
+                          if (optionBlocks.length > 0) {
+                            return <RichContentRenderer blocks={optionBlocks} />;
+                          }
+
+                          if (option?.text) {
+                            return <p>{option.text}</p>;
+                          }
+
+                          return <p>{String(option || '')}</p>;
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -337,6 +409,14 @@ const QuestionDetailModal = ({ question, onClose, panelRef }) => {
                   {renderInfoItem('Số từ tối đa', String(metadata.wordLimit?.max ?? question.wordLimitMax ?? 'Chưa có'))}
                   {renderInfoItem('Mô hình AI', metadata.aiModel || question.aiModel || 'Chưa có')}
                 </div>
+                {renderRichText(metadata.instructionsBlocks || question.instructionsBlocks) ? (
+                  <div style={{ marginTop: 12 }}>
+                    <h4 style={{ marginBottom: 8 }}>Hướng dẫn dạng rich text</h4>
+                    <div className="question-content">
+                      {renderRichText(metadata.instructionsBlocks || question.instructionsBlocks)}
+                    </div>
+                  </div>
+                ) : null}
                 {rubric.length ? (
                   <div style={{ marginTop: 12 }}>
                     <h4 style={{ marginBottom: 8 }}>Rubric</h4>
@@ -377,15 +457,36 @@ const QuestionDetailModal = ({ question, onClose, panelRef }) => {
                           <span className="option-index">{index + 1}</span>
                           <div className="option-text-wrapper">
                             <p><strong>{key || `q${index + 1}`}</strong> - {QUESTION_TYPE_LABELS[String(item?.type || '').toUpperCase()] || String(item?.type || '').replace('_', ' ')}</p>
-                            <p>{item?.content || item?.questionText || 'Chưa có nội dung'}</p>
-                            {Array.isArray(item?.contentBlocks) && item.contentBlocks.length > 0 ? (
-                              <div style={{ marginTop: 8 }}>
-                                <RichContentRenderer blocks={item.contentBlocks} />
-                              </div>
-                            ) : null}
+                                        {(() => {
+                                          const innerBlocks = normalizeRichBlocksValue(item?.contentBlocks || item?.blocks || item?.richContent?.blocks || item?.content || item?.questionText || item);
+                                          if (innerBlocks.length) {
+                                            return (
+                                              <div style={{ marginTop: 8 }}>
+                                                <RichContentRenderer blocks={innerBlocks} />
+                                              </div>
+                                            );
+                                          }
+
+                                          return <p>{item?.content || item?.questionText || 'Chưa có nội dung'}</p>;
+                                        })()}
                             <div style={{ marginTop: 8 }}>
                               {(String(item?.type || '').toUpperCase().replace(/[\s-]+/g, '_') === 'MULTIPLE_CHOICE' || String(item?.type || '').toUpperCase().replace(/[\s-]+/g, '_') === 'MULTICHOICE') ? <p><strong>Đáp án đúng:</strong> {formatInnerQuestionAnswer(item)}</p> : null}
-                              {(String(item?.type || '').toUpperCase().replace(/[\s-]+/g, '_') === 'MULTIPLE_CHOICE' || String(item?.type || '').toUpperCase().replace(/[\s-]+/g, '_') === 'MULTICHOICE') ? <p><strong>Lựa chọn:</strong> {(Array.isArray(item?.options) ? item.options : []).join(' | ') || 'Chưa có'}</p> : null}
+                              {(String(item?.type || '').toUpperCase().replace(/[\s-]+/g, '_') === 'MULTIPLE_CHOICE' || String(item?.type || '').toUpperCase().replace(/[\s-]+/g, '_') === 'MULTICHOICE') ? (
+                                <div>
+                                  <strong>Lựa chọn:</strong>
+                                  <div style={{ marginTop: 8 }}>
+                                    {(Array.isArray(item?.options) ? item.options : []).map((option, oi) => {
+                                      const optionBlocks = normalizeRichBlocksValue(option?.contentBlocks || option?.blocks || option?.richContent?.blocks || option?.text || option);
+
+                                      if (optionBlocks.length) {
+                                        return <div key={`opt-${oi}`} style={{ marginBottom: 8 }}><RichContentRenderer blocks={optionBlocks} /></div>;
+                                      }
+
+                                      return <div key={`opt-${oi}`} style={{ marginBottom: 8 }}>{String(option ?? '')}</div>;
+                                    })}
+                                  </div>
+                                </div>
+                              ) : null}
                               {String(item?.type || '').toUpperCase().replace(/[\s-]+/g, '_') === 'TRUE_FALSE' ? <p><strong>Đáp án đúng:</strong> {formatInnerQuestionAnswer(item)}</p> : null}
                               {String(item?.type || '').toUpperCase().replace(/[\s-]+/g, '_') === 'SHORT_ANSWER' ? <p><strong>Đáp án chấp nhận:</strong> {formatInnerQuestionAnswer(item)}</p> : null}
                               {String(item?.type || '').toUpperCase().replace(/[\s-]+/g, '_') === 'NUMERICAL' ? <p><strong>Đáp án số:</strong> {formatInnerQuestionAnswer(item)}</p> : null}
@@ -501,6 +602,7 @@ function SegmentDetailView() {
   const [viewQuestion, setViewQuestion] = useState(null);
   const viewQuestionPanelRef = useRef(null);
   const [selectQuestionsModal, setSelectQuestionsModal] = useState({ open: false, itemIndex: null });
+  const [quizPreview, setQuizPreview] = useState({ open: false, quizId: null, title: '' });
   const location = useLocation();
 
   const loadQuestions = async () => {
@@ -712,17 +814,27 @@ function SegmentDetailView() {
 
     const metadata = parseJson(question.metadata, {});
     const type = QUESTION_TYPES.includes(question.type) ? question.type : 'MULTIPLE_CHOICE';
+    const contentBlocks = normalizeRichBlocksValue(question.contentBlocks || metadata.contentBlocks || metadata.blocks || metadata.richContent?.blocks);
+    const optionsRichSource = Array.isArray(question.optionsRich) && question.optionsRich.length
+      ? question.optionsRich
+      : (Array.isArray(metadata.optionsRich) && metadata.optionsRich.length ? metadata.optionsRich : []);
+    const optionsRich = optionsRichSource.length
+      ? optionsRichSource.map((blocks, index) => normalizeRichBlocksValue(blocks).length ? normalizeRichBlocksValue(blocks) : [{ type: 'text', text: String(metadata.options?.[index] || question.options?.[index] || '') }])
+      : (Array.isArray(metadata.options) || Array.isArray(question.options)
+        ? (metadata.options || question.options || []).map((item) => ([{ type: 'text', text: String(item || '') }]))
+        : [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()]);
+
+    const normalizedOptions = optionsRich.map((blocks, index) => richContentToPlainText(blocks) || String(metadata.options?.[index] || question.options?.[index] || '').trim());
 
     setQuestionEditingId(questionId);
     setQuestionDraft({
       ...createEmptyQuestionDraft(),
       type,
-      content: question.content || question.questionText || '',
+      content: contentBlocks.length ? richContentToPlainText(contentBlocks) : (question.content || question.questionText || ''),
+      contentBlocks,
       isPublished: Boolean(question.isPublished),
-      options: metadata.options || question.options || ['', '', '', ''],
-      optionsRich: Array.isArray(metadata.optionsRich) && metadata.optionsRich.length
-        ? metadata.optionsRich
-        : (metadata.options || question.options || ['', '', '', '']).map((item) => ([{ type: 'text', text: String(item || '') }])),
+      options: normalizedOptions.length ? normalizedOptions : (metadata.options || question.options || ['', '', '', '']),
+      optionsRich,
       correctIndices: metadata.correctIndices || (Number.isInteger(question.correctIndex) ? [question.correctIndex] : [0]),
       allowMultipleCorrect: Boolean(metadata.allowMultipleCorrect),
       explanation: metadata.explanation || question.explanation || '',
@@ -730,7 +842,7 @@ function SegmentDetailView() {
       acceptedAnswersText: Array.isArray(metadata.acceptedAnswers) ? metadata.acceptedAnswers.join('\n') : '',
       caseSensitive: metadata.caseSensitive === true,
       fuzzyMatch: metadata.fuzzyMatch !== false,
-      instructions: metadata.instructions || '',
+      instructions: metadata.instructions || question.instructions || '',
       rubric: Array.isArray(metadata.rubric) && metadata.rubric.length ? metadata.rubric : createEmptyQuestionDraft().rubric,
       wordLimitMin: Number(metadata.wordLimit?.min ?? 100),
       wordLimitMax: Number(metadata.wordLimit?.max ?? 400),
@@ -749,6 +861,7 @@ function SegmentDetailView() {
     const base = {
       type: questionDraft.type,
       content,
+      contentBlocks: Array.isArray(questionDraft.contentBlocks) ? questionDraft.contentBlocks : createEmptyRichBlocks(),
       courseId: Number(courseId),
       chapterId: Number(chapterId),
       lectureId: Number(lessonId),
@@ -1133,6 +1246,19 @@ function SegmentDetailView() {
     || Number(currentItem.randomCount || 0) > 0
   );
 
+  const handleOpenQuizPreview = () => {
+    if (!currentItem?.quizId) return;
+    setQuizPreview({
+      open: true,
+      quizId: Number(currentItem.quizId),
+      title: currentItem.title || 'Xem trước bài tập',
+    });
+  };
+
+  const handleCloseQuizPreview = () => {
+    setQuizPreview({ open: false, quizId: null, title: '' });
+  };
+
   return (
     <div className="container-segment-detail">
       <TeacherSidebar />
@@ -1320,11 +1446,18 @@ function SegmentDetailView() {
                           <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: '#f8fafc', border: '1px solid #e5e7eb' }}>
                             <div style={{ fontWeight: 700, marginBottom: 8, color: '#111827' }}>Câu hỏi đã chọn</div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                              {(Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? currentItem.questionTitles : currentItem.questionIds).map((questionValue, questionIndex) => (
-                                <span key={`${questionValue}-${questionIndex}`} style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 10px', borderRadius: 999, background: '#ede9fe', color: '#5b21b6', fontWeight: 700, fontSize: 13 }}>
-                                  {Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? questionValue : `Câu #${questionValue}`}
-                                </span>
-                              ))}
+                              {(Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? currentItem.questionTitles : currentItem.questionIds).map((questionValue, questionIndex) => {
+                                const previewBlocks = Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? normalizePreviewBlocks(questionValue) : [];
+                                return (
+                                  <span key={`${questionValue}-${questionIndex}`} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 999, background: '#ede9fe', color: '#5b21b6', fontWeight: 700, fontSize: 13, maxWidth: '100%', overflow: 'hidden' }}>
+                                    {Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length && previewBlocks.some((block) => block.type === 'image' || block.type === 'video') ? (
+                                      <RichContentRenderer blocks={previewBlocks} />
+                                    ) : (
+                                      Array.isArray(currentItem.questionTitles) && currentItem.questionTitles.length ? questionValue : `Câu #${questionValue}`
+                                    )}
+                                  </span>
+                                );
+                              })}
                             </div>
                           </div>
                         ) : null}
@@ -1338,7 +1471,19 @@ function SegmentDetailView() {
                           </div>
                         ) : null}
 
-                        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="btn-save-all"
+                            onClick={handleOpenQuizPreview}
+                            disabled={!currentItem?.quizId}
+                            style={{
+                              background: '#2563eb',
+                              opacity: currentItem?.quizId ? 1 : 0.6,
+                            }}
+                          >
+                            👁️ Xem trước bài tập
+                          </button>
                           <button
                             type="button"
                             className="btn-save-all"
@@ -1353,6 +1498,56 @@ function SegmentDetailView() {
                             {isSaving ? 'Đang lưu...' : '💾 Lưu bài tập'}
                           </button>
                         </div>
+
+                        {quizPreview.open && quizPreview.quizId ? (
+                          <div
+                            style={{
+                              position: 'fixed',
+                              inset: 0,
+                              zIndex: 2000,
+                              background: 'rgba(15, 23, 42, 0.72)',
+                              display: 'flex',
+                              alignItems: 'stretch',
+                              justifyContent: 'stretch',
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: 'relative',
+                                width: '100%',
+                                height: '100%',
+                                background: '#f8fafc',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <div style={{ position: 'absolute', top: 14, right: 14, zIndex: 2 }}>
+                                <button
+                                  type="button"
+                                  onClick={handleCloseQuizPreview}
+                                  style={{
+                                    border: 'none',
+                                    background: '#111827',
+                                    color: 'white',
+                                    padding: '10px 14px',
+                                    borderRadius: 10,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+                                  }}
+                                >
+                                  Đóng
+                                </button>
+                              </div>
+                              <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
+                                <QuizTaker
+                                  quizId={quizPreview.quizId}
+                                  previewMode
+                                  onBack={handleCloseQuizPreview}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     ) : (
                       <>
@@ -1473,6 +1668,7 @@ function SegmentDetailView() {
                               const metadata = parseJson(question.metadata, {});
                               const type = question.type || 'MULTIPLE_CHOICE';
                               const isExpanded = expandedQuestionId === question.id;
+                              const questionBlocks = normalizeRichBlocksValue(question.contentBlocks || metadata.contentBlocks || metadata.blocks || metadata.richContent?.blocks || question.content || question.questionText);
 
                               let answerPreview = 'Chưa thiết lập';
                               if (type === 'MULTIPLE_CHOICE') {
@@ -1493,6 +1689,11 @@ function SegmentDetailView() {
                                         <span className="question-bank-type-badge">{QUESTION_TYPE_LABELS[type] || type}</span>
                                         <h4>{index + 1}. {question.content || question.questionText || 'Không có nội dung'}</h4>
                                       </div>
+                                      {questionBlocks.length > 0 ? (
+                                        <div style={{ marginTop: 8, maxWidth: '100%' }}>
+                                          <RichContentRenderer blocks={questionBlocks} />
+                                        </div>
+                                      ) : null}
                                       <p className="question-bank-card-preview">{answerPreview}</p>
                                     </div>
                                     <div className="question-bank-card-actions">
@@ -1555,6 +1756,7 @@ function SegmentDetailView() {
                     chapterTitle={chapter?.title}
                     lectureTitle={lesson?.title}
                     segmentTitle={segment?.title}
+                    mode={questionEditingId ? 'edit' : 'create'}
                   />
 
                   <SelectQuestionsModal

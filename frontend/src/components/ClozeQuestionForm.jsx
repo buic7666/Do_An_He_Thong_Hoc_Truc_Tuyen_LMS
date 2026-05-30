@@ -32,7 +32,114 @@ const createInnerQuestionDraft = (index = 0) => ({
   isPublished: false,
 });
 
-const cloneOptions = (options) => (Array.isArray(options) && options.length > 0 ? options.map((item) => String(item ?? '')) : ['']);
+const normalizeBlocksArray = (value) => (Array.isArray(value) ? value : []);
+
+const getYouTubeThumbSrc = (url) => {
+  try {
+    const parsed = new URL(String(url || '').trim());
+    const host = parsed.hostname.replace('www.', '').toLowerCase();
+    let id = '';
+
+    if (host === 'youtu.be') {
+      id = parsed.pathname.slice(1).split(/[?&#]/)[0] || '';
+    } else if (parsed.pathname === '/watch') {
+      id = parsed.searchParams.get('v') || '';
+    } else if (parsed.pathname.startsWith('/embed/')) {
+      id = parsed.pathname.split('/embed/')[1]?.split(/[?&#]/)[0] || '';
+    } else if (parsed.pathname.startsWith('/shorts/')) {
+      id = parsed.pathname.split('/shorts/')[1]?.split(/[?&#]/)[0] || '';
+    }
+
+    return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : '';
+  } catch (_error) {
+    return '';
+  }
+};
+
+const optionToText = (item) => {
+  if (typeof item === 'string' || typeof item === 'number') {
+    return String(item);
+  }
+
+  if (item && typeof item === 'object') {
+    if (typeof item.text === 'string' && item.text.trim()) {
+      return item.text;
+    }
+
+    if (Array.isArray(item.contentBlocks)) {
+      const plain = richContentToPlainText(item.contentBlocks);
+      if (plain) {
+        return plain;
+      }
+    }
+
+    if (Array.isArray(item.blocks)) {
+      const plain = richContentToPlainText(item.blocks);
+      if (plain) {
+        return plain;
+      }
+    }
+  }
+
+  return '';
+};
+
+const cloneOptions = (options) => (Array.isArray(options) && options.length > 0
+  ? options.map((item) => optionToText(item)).map((item) => String(item ?? ''))
+  : ['']);
+
+const toNormalizedOptionsRich = (item) => {
+  const source = Array.isArray(item?.optionsRich) ? item.optionsRich : [];
+  if (source.length > 0) {
+    return source.map((blocks) => normalizeBlocksArray(blocks));
+  }
+
+  const options = Array.isArray(item?.options) ? item.options : [];
+  return options.map((option) => {
+    if (option && typeof option === 'object') {
+      if (Array.isArray(option.contentBlocks)) return normalizeBlocksArray(option.contentBlocks);
+      if (Array.isArray(option.blocks)) return normalizeBlocksArray(option.blocks);
+    }
+
+    const text = optionToText(option).trim();
+    return text ? [{ type: 'text', text }] : createEmptyRichBlocks();
+  });
+};
+
+const collectMediaPreviewItems = (item) => {
+  const mediaItems = [];
+
+  const pushBlocks = (blocks, sourceLabel) => {
+    normalizeBlocksArray(blocks).forEach((block) => {
+      const blockType = String(block?.type || '').toLowerCase();
+      if (blockType !== 'image' && blockType !== 'video') {
+        return;
+      }
+
+      const url = String(block?.url || '').trim();
+      if (!url) {
+        return;
+      }
+
+      const thumb = blockType === 'video' ? (getYouTubeThumbSrc(url) || '') : url;
+      mediaItems.push({
+        type: blockType,
+        sourceLabel,
+        url,
+        thumb,
+        title: String(block?.title || block?.alt || '').trim(),
+      });
+    });
+  };
+
+  pushBlocks(item?.contentBlocks, 'Nội dung');
+
+  toNormalizedOptionsRich(item).forEach((blocks, optionIndex) => {
+    pushBlocks(blocks, `Đáp án ${optionIndex + 1}`);
+  });
+
+  return mediaItems;
+};
 
 const normalizeInitialInnerQuestions = (innerQuestions) => {
   if (!innerQuestions || typeof innerQuestions !== 'object') {
@@ -50,7 +157,7 @@ const normalizeInitialInnerQuestions = (innerQuestions) => {
     points: Number.isFinite(Number(value?.points)) ? Number(value.points) : 1,
     options: (value?.type === 'MULTICHOICE' ? [...cloneOptions(value?.options), '', '', '', ''].slice(0, 4) : cloneOptions(value?.options)),
     optionsRich: value?.type === 'MULTICHOICE'
-      ? [...(Array.isArray(value?.optionsRich) && value.optionsRich.length ? value.optionsRich : []), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()].slice(0, 4)
+      ? [...toNormalizedOptionsRich(value), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()].slice(0, 4)
       : (Array.isArray(value?.optionsRich) && value.optionsRich.length ? value.optionsRich : [createEmptyRichBlocks()]),
     content: value?.content == null ? '' : String(value.content),
     contentBlocks: Array.isArray(value?.contentBlocks) ? value.contentBlocks : createEmptyRichBlocks(),
@@ -202,7 +309,12 @@ function ClozeQuestionForm({
         };
 
         if (item.type === 'MULTICHOICE') {
-          normalized.options = cloneOptions(item.options).map((option) => String(option).trim()).filter(Boolean);
+          const normalizedOptionsRich = toNormalizedOptionsRich(item);
+          normalized.optionsRich = normalizedOptionsRich;
+          normalized.options = cloneOptions(item.options)
+            .map((option) => String(option).trim())
+            .map((option, optionIndex) => option || richContentToPlainText(normalizedOptionsRich[optionIndex]))
+            .filter(Boolean);
           normalized.correctIndices = Array.isArray(item.correctIndices)
             ? item.correctIndices.map((indexValue) => Number(indexValue)).filter((indexValue) => Number.isFinite(indexValue))
             : [0];
@@ -700,10 +812,19 @@ function ClozeQuestionForm({
         const normalized = {
           type: normalizeInnerQuestionType(item.type),
           points: Number(item.points) || 1,
+          content: String(item.content || '').trim(),
+          contentBlocks: normalizeBlocksArray(item.contentBlocks),
+          explanation: String(item.explanation || '').trim(),
+          isPublished: Boolean(item.isPublished),
         };
 
         if (item.type === 'MULTICHOICE') {
-          normalized.options = cloneOptions(item.options).map((option) => String(option).trim()).filter(Boolean);
+          const normalizedOptionsRich = toNormalizedOptionsRich(item);
+          normalized.optionsRich = normalizedOptionsRich;
+          normalized.options = cloneOptions(item.options)
+            .map((option) => String(option).trim())
+            .map((option, optionIndex) => option || richContentToPlainText(normalizedOptionsRich[optionIndex]))
+            .filter(Boolean);
           normalized.correctIndices = Array.isArray(item.correctIndices)
             ? item.correctIndices.map((indexValue) => Number(indexValue)).filter((indexValue) => Number.isFinite(indexValue))
             : [0];
@@ -799,15 +920,51 @@ function ClozeQuestionForm({
         <div className="space-y-2.5 border-t border-slate-200 px-6 py-4">
           {innerQuestions.map((item, index) => {
             const previewText = richContentToPlainText(item.contentBlocks) || String(item.content || '').trim() || 'Chưa có nội dung';
-            const cardErrors = validation.byKey[item.key] || [];
+            const cardErrors = validation.byKey[getInnerQuestionKey(item, index)] || [];
+            const mediaItems = collectMediaPreviewItems(item);
+            const visibleMediaItems = mediaItems.slice(0, 4);
+            const hiddenMediaCount = Math.max(0, mediaItems.length - visibleMediaItems.length);
+            const normalizedType = String(item?.type || '').toUpperCase();
+            const points = Number(item?.points) || 1;
+            const optionCount = normalizedType === 'MULTICHOICE' ? cloneOptions(item?.options).map((option) => String(option || '').trim()).filter(Boolean).length : 0;
 
             return (
               <div key={item.key || index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <h4 className="text-base font-semibold text-slate-900">Câu hỏi nhỏ {index + 1}</h4>
-                    <p className="mt-1 text-xs font-medium text-sky-700">{QUESTION_TYPE_LABELS[item.type] || item.type}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700">{QUESTION_TYPE_LABELS[item.type] || item.type}</span>
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">{points} điểm</span>
+                      {optionCount > 0 ? <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{optionCount} đáp án</span> : null}
+                      {mediaItems.length > 0 ? <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700">{mediaItems.length} media</span> : null}
+                    </div>
                     <p className="mt-2 line-clamp-2 text-sm text-slate-600">{previewText}</p>
+
+                    {visibleMediaItems.length ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {visibleMediaItems.map((media, mediaIndex) => (
+                          <div
+                            key={`${item.key || index}-media-${mediaIndex}`}
+                            className="relative h-14 w-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+                            title={`${media.sourceLabel}${media.title ? ` - ${media.title}` : ''}`}
+                          >
+                            {media.thumb ? (
+                              <img src={media.thumb} alt={media.title || media.sourceLabel} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold text-slate-600">VIDEO</div>
+                            )}
+                            {media.type === 'video' ? (
+                              <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-[10px] font-bold text-white">▶</span>
+                            ) : null}
+                          </div>
+                        ))}
+                        {hiddenMediaCount > 0 ? (
+                          <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">+{hiddenMediaCount}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+
                     {cardErrors.length ? (
                       <p className="mt-2 text-xs font-semibold text-rose-600">Có {cardErrors.length} lỗi cần sửa</p>
                     ) : null}

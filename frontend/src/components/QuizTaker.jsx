@@ -18,6 +18,190 @@ const parseJson = (value, fallback = {}) => {
   return value;
 };
 
+const richBlocksToPlainText = (blocks = []) => blocks
+  .map((block) => {
+    if (!block || typeof block !== 'object') return '';
+    if (String(block.type || '').toLowerCase() === 'text') {
+      return String(block.text || '').trim();
+    }
+    return '';
+  })
+  .filter(Boolean)
+  .join(' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const normalizeQuestionBlocks = (blocks = []) => {
+  if (!Array.isArray(blocks)) {
+    return [];
+  }
+
+  const normalized = [];
+
+  blocks.forEach((block) => {
+    if (!block || typeof block !== 'object') {
+      return;
+    }
+
+    const type = String(block.type || 'text').toLowerCase();
+
+    if (type === 'image' || type === 'video') {
+      normalized.push({
+        type,
+        url: String(block.url || '').trim(),
+        alt: String(block.alt || '').trim(),
+        title: String(block.title || '').trim(),
+      });
+      return;
+    }
+
+    const text = String(block.text || '').trim();
+    if (!text) {
+      return;
+    }
+
+    if (text.includes('<') && text.includes('>') && typeof DOMParser !== 'undefined') {
+      try {
+        const doc = new DOMParser().parseFromString(text, 'text/html');
+        const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+        const images = Array.from(doc.querySelectorAll('img[src]'));
+
+        if (plainText) {
+          normalized.push({ type: 'text', text: plainText });
+        }
+
+        images.forEach((img) => {
+          const src = String(img.getAttribute('src') || '').trim();
+          if (!src) {
+            return;
+          }
+
+          normalized.push({
+            type: 'image',
+            url: src,
+            alt: String(img.getAttribute('alt') || block.alt || '').trim(),
+          });
+        });
+
+        return;
+      } catch (_error) {
+        // fall through to plain text handling
+      }
+    }
+
+    normalized.push({ type: 'text', text });
+  });
+
+  return normalized;
+};
+
+const isLikelyImageUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+
+  if (/^(data:image\/[a-zA-Z0-9.+-]+;base64,)/i.test(raw)) {
+    return true;
+  }
+
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(raw)) {
+    return true;
+  }
+
+  if (/\/uploads\/images\//i.test(raw)) {
+    return true;
+  }
+
+  return false;
+};
+
+const toRenderableOption = (option, richBlocks = null, fallbackLabel = '') => {
+  const blocks = Array.isArray(richBlocks) ? richBlocks : [];
+  if (blocks.length > 0) {
+    return {
+      label: richBlocksToPlainText(blocks) || fallbackLabel,
+      blocks,
+    };
+  }
+
+  const text = getInnerChoiceText(option, fallbackLabel);
+  if (isLikelyImageUrl(text)) {
+    return {
+      label: fallbackLabel,
+      blocks: [{ type: 'image', url: text, alt: fallbackLabel }],
+    };
+  }
+
+  return {
+    label: text || fallbackLabel,
+    blocks: [],
+  };
+};
+
+const getInnerChoiceText = (option, fallbackLabel = '') => {
+  if (typeof option === 'string' || typeof option === 'number') {
+    const text = String(option).trim();
+    return text || fallbackLabel;
+  }
+
+  if (option && typeof option === 'object') {
+    if (typeof option.text === 'string' && option.text.trim()) {
+      return option.text.trim();
+    }
+
+    if (Array.isArray(option.contentBlocks)) {
+      const text = richBlocksToPlainText(option.contentBlocks);
+      if (text) return text;
+    }
+
+    if (Array.isArray(option.blocks)) {
+      const text = richBlocksToPlainText(option.blocks);
+      if (text) return text;
+    }
+  }
+
+  return fallbackLabel;
+};
+
+const getInnerMultipleChoiceOptions = (innerMeta = {}) => {
+  const options = Array.isArray(innerMeta.options) ? innerMeta.options : [];
+  const optionsRich = Array.isArray(innerMeta.optionsRich) ? innerMeta.optionsRich : [];
+  const optionCount = Math.max(options.length, optionsRich.length);
+
+  if (optionCount === 0) {
+    return [];
+  }
+
+  return Array.from({ length: optionCount }).map((_, index) => {
+    const fallbackLabel = `Lựa chọn ${index + 1}`;
+    const rawOption = options[index];
+    const richOption = optionsRich[index];
+
+    let label = getInnerChoiceText(rawOption, '');
+    let blocks = [];
+
+    if (rawOption && typeof rawOption === 'object') {
+      if (Array.isArray(rawOption.contentBlocks)) {
+        blocks = rawOption.contentBlocks;
+      } else if (Array.isArray(rawOption.blocks)) {
+        blocks = rawOption.blocks;
+      }
+    }
+
+    if (!label && Array.isArray(richOption)) {
+      label = richBlocksToPlainText(richOption);
+      blocks = richOption;
+    }
+
+    label = String(label || fallbackLabel).trim();
+
+    return {
+      label,
+      value: label,
+      blocks,
+    };
+  });
+};
+
 /**
  * QuestionDetailModal Component
  * Displays detailed view of a question
@@ -266,7 +450,7 @@ const formatGradingDetails = (item) => {
   return [];
 };
 
-const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
+const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = false }) => {
   const [quiz, setQuiz] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -280,7 +464,6 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
   const [attemptId, setAttemptId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedQuestionDetail, setSelectedQuestionDetail] = useState(null);
 
   const autoSaveIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
@@ -301,7 +484,9 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
           type: item.type || 'MULTIPLE_CHOICE',
           metadata,
           options: Array.isArray(item.options) ? item.options : (Array.isArray(metadata.options) ? metadata.options : []),
-          contentBlocks: Array.isArray(item.contentBlocks) ? item.contentBlocks : (Array.isArray(metadata.contentBlocks) ? metadata.contentBlocks : []),
+          contentBlocks: normalizeQuestionBlocks(
+            Array.isArray(item.contentBlocks) ? item.contentBlocks : (Array.isArray(metadata.contentBlocks) ? metadata.contentBlocks : []),
+          ),
         };
       });
 
@@ -311,6 +496,56 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
       });
       setTimeLeft(Number(payload.duration || 0) * 60);
 
+      try {
+        const responses = await Promise.all(
+          normalizedQuestions
+            .filter((q) => q.id)
+            .map((q) => httpClient.get(`/questions/${q.id}`)),
+        );
+
+        const byId = {};
+        responses.forEach((r) => {
+          const d = r?.data?.data;
+          if (d && d.id) byId[d.id] = d;
+        });
+
+        const enriched = normalizedQuestions.map((q) => {
+          const remote = byId[q.id];
+          if (!remote) {
+            return q;
+          }
+
+          const meta = parseJson(remote.metadata, {});
+          const remoteBlocks = Array.isArray(remote.contentBlocks)
+            ? remote.contentBlocks
+            : (Array.isArray(meta.contentBlocks) ? meta.contentBlocks : []);
+          const nextBlocks = remoteBlocks.length > 0 ? normalizeQuestionBlocks(remoteBlocks) : q.contentBlocks;
+
+          return {
+            ...q,
+            questionText: remote.questionText || remote.content || q.questionText,
+            content: remote.content || remote.questionText || q.content,
+            type: remote.type || q.type,
+            metadata: Object.keys(meta).length > 0 ? meta : q.metadata,
+            options: Array.isArray(remote.options) && remote.options.length > 0
+              ? remote.options
+              : (Array.isArray(meta.options) && meta.options.length > 0 ? meta.options : q.options),
+            contentBlocks: nextBlocks,
+          };
+        });
+
+        setQuiz((prev) => ({ ...prev, questions: enriched }));
+      } catch (e) {
+        // do not block quiz load if enrichment fails
+        // eslint-disable-next-line no-console
+        console.warn('Failed to enrich quiz questions', e);
+      }
+
+      if (previewMode) {
+        setAttemptId(null);
+        return;
+      }
+
       const attemptResponse = await httpClient.post(`/quizzes/${quizId}/start`);
       setAttemptId(attemptResponse?.data?.data?.id || null);
     } catch (err) {
@@ -318,14 +553,14 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
     } finally {
       setLoading(false);
     }
-  }, [quizId]);
+  }, [quizId, previewMode]);
 
   useEffect(() => {
     loadQuiz();
   }, [loadQuiz]);
 
   const saveAnswers = useCallback(async () => {
-    if (!attemptId || isSubmitted) {
+    if (previewMode || !attemptId || isSubmitted) {
       return;
     }
 
@@ -343,10 +578,10 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
     } finally {
       setIsSaving(false);
     }
-  }, [quizId, attemptId, answers, isSubmitted]);
+  }, [quizId, attemptId, answers, isSubmitted, previewMode]);
 
   useEffect(() => {
-    if (!attemptId || isSubmitted) {
+    if (previewMode || !attemptId || isSubmitted) {
       return undefined;
     }
 
@@ -361,9 +596,16 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
         clearInterval(autoSaveIntervalRef.current);
       }
     };
-  }, [attemptId, answers, isSubmitted, saveAnswers]);
+  }, [attemptId, answers, isSubmitted, saveAnswers, previewMode]);
 
   const handleSubmit = useCallback(async () => {
+    if (previewMode) {
+      if (onBack) {
+        onBack();
+      }
+      return;
+    }
+
     if (!attemptId) {
       return;
     }
@@ -408,10 +650,10 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [attemptId, answers, onSubmit, quizId]);
+  }, [attemptId, answers, onSubmit, quizId, previewMode, onBack]);
 
   useEffect(() => {
-    if (timeLeft == null || timeLeft <= 0 || isSubmitted) {
+    if (previewMode || timeLeft == null || timeLeft <= 0 || isSubmitted) {
       return undefined;
     }
 
@@ -432,15 +674,15 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
     };
     // NOTE: intentionally not depending on `timeLeft` to avoid recreating the
     // interval every second. Depend on `isSubmitted` and `handleSubmit` only.
-  }, [isSubmitted, handleSubmit]);
+  }, [isSubmitted, handleSubmit, previewMode]);
 
   useEffect(() => {
     return () => {
-      if (!isSubmitted && Object.keys(answers).length > 0) {
+      if (!previewMode && !isSubmitted && Object.keys(answers).length > 0) {
         saveAnswers();
       }
     };
-  }, [answers, isSubmitted, saveAnswers]);
+  }, [answers, isSubmitted, saveAnswers, previewMode]);
 
   const setQuestionAnswer = (questionId, type, value) => {
     setAnswers((prev) => ({
@@ -471,25 +713,41 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
   const getQuestionBlocks = (question) => {
     const metadata = parseJson(question?.metadata, {});
 
+    // Prefer the already-normalized `question.contentBlocks` (set in loadQuiz)
+    // because `metadata.contentBlocks` may contain legacy/raw HTML that was
+    // not normalized. This prevents showing stale/duplicate content.
+    if (Array.isArray(question?.contentBlocks) && question.contentBlocks.length > 0) {
+      const nb = normalizeQuestionBlocks(question.contentBlocks);
+      // Debugging aid: log when image blocks are present or missing
+      try { console.log('getQuestionBlocks: using question.contentBlocks', { questionId: question?.id, blocksCount: nb.length, blocksSample: nb.slice(0,3) }); } catch (e) {}
+      return nb;
+    }
+
     if (Array.isArray(metadata?.contentBlocks) && metadata.contentBlocks.length > 0) {
-      return metadata.contentBlocks;
+      const nb = normalizeQuestionBlocks(metadata.contentBlocks);
+      try { console.log('getQuestionBlocks: using metadata.contentBlocks', { questionId: question?.id, blocksCount: nb.length, blocksSample: nb.slice(0,3) }); } catch (e) {}
+      return nb;
     }
 
     if (Array.isArray(metadata?.blocks) && metadata.blocks.length > 0) {
-      return metadata.blocks;
+      return normalizeQuestionBlocks(metadata.blocks);
     }
 
     if (Array.isArray(metadata?.richContent?.blocks) && metadata.richContent.blocks.length > 0) {
-      return metadata.richContent.blocks;
+      return normalizeQuestionBlocks(metadata.richContent.blocks);
     }
 
     if (Array.isArray(question?.contentBlocks) && question.contentBlocks.length > 0) {
-      return question.contentBlocks;
+      return normalizeQuestionBlocks(question.contentBlocks);
     }
 
     const textFallback = String(
       question?.content || question?.questionText || metadata?.questionText || metadata?.title || '',
     ).trim();
+
+    if (isLikelyImageUrl(textFallback)) {
+      return [{ type: 'image', url: textFallback, alt: 'question-image' }];
+    }
 
     return textFallback ? [{ type: 'text', text: textFallback }] : [];
   };
@@ -503,9 +761,9 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
       const template = String(metadata.text_template || '');
       const inner = metadata.inner_questions && typeof metadata.inner_questions === 'object' ? metadata.inner_questions : {};
       const contentBlocks = Array.isArray(metadata.contentBlocks)
-        ? metadata.contentBlocks
+        ? normalizeQuestionBlocks(metadata.contentBlocks)
         : Array.isArray(question.contentBlocks)
-          ? question.contentBlocks
+          ? normalizeQuestionBlocks(question.contentBlocks)
           : [];
       const innerEntries = Object.entries(inner).sort((left, right) => {
         const leftIndex = Number(String(left[0] || '').replace(/\D/g, '')) || 0;
@@ -533,40 +791,63 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
         const innerType = String(innerMeta.type || 'SHORT_ANSWER').toUpperCase();
         const isCorrect = gradedItem ? Number(gradedItem.score || 0) > 0 : null;
 
-        if (innerType === 'MULTIPLE_CHOICE') {
-          const options = Array.isArray(innerMeta.options) ? innerMeta.options : [];
+        if (innerType === 'MULTIPLE_CHOICE' || innerType === 'MULTICHOICE') {
+          const options = getInnerMultipleChoiceOptions(innerMeta);
           const selected = answerMap[key] || '';
+
           return (
-            <select
-              value={selected}
-              onChange={(e) => onChangeBlank(key, e.target.value)}
-              disabled={isSubmittedState}
-              className={`cloze-blank ${isSubmittedState ? (isCorrect ? 'correct' : 'incorrect') : ''}`}
-            >
-              <option value="">-- Chọn --</option>
-              {options.map((opt, i) => (
-                <option key={`opt-${key}-${i}`} value={typeof opt === 'string' ? opt : (opt?.text || String(opt || ''))}>{typeof opt === 'string' ? opt : (opt?.text || String(opt || ''))}</option>
-              ))}
-            </select>
+            <div className="question-options">
+              {options.map((opt, i) => {
+                const checked = selected === opt.value;
+                return (
+                  <label key={`opt-${key}-${i}`} className="option">
+                    <input
+                      type="radio"
+                      name={`cloze-${question.id}-${key}`}
+                      checked={checked}
+                      onChange={() => onChangeBlank(key, opt.value)}
+                      disabled={isSubmittedState}
+                    />
+                    <span className="option-text">
+                      {Array.isArray(opt.blocks) && opt.blocks.length > 0 ? (
+                        <RichContentRenderer blocks={opt.blocks} />
+                      ) : (
+                        opt.label
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           );
         }
 
         if (innerType === 'TRUE_FALSE') {
           const val = answerMap[key];
+
           return (
-            <select
-              value={typeof val === 'boolean' ? (val ? 'true' : 'false') : (val == null ? '' : String(val))}
-              onChange={(e) => {
-                const nextValue = e.target.value === 'true' ? true : e.target.value === 'false' ? false : null;
-                onChangeBlank(key, nextValue);
-              }}
-              disabled={isSubmittedState}
-              className={`cloze-blank ${isSubmittedState ? (isCorrect ? 'correct' : 'incorrect') : ''}`}
-            >
-              <option value="">-- Chọn --</option>
-              <option value="true">Đúng</option>
-              <option value="false">Sai</option>
-            </select>
+            <div className="question-options">
+              <label className="option">
+                <input
+                  type="radio"
+                  name={`cloze-${question.id}-${key}`}
+                  checked={val === true || val === 'true'}
+                  onChange={() => onChangeBlank(key, true)}
+                  disabled={isSubmittedState}
+                />
+                <span className="option-text">Đúng</span>
+              </label>
+              <label className="option">
+                <input
+                  type="radio"
+                  name={`cloze-${question.id}-${key}`}
+                  checked={val === false || val === 'false'}
+                  onChange={() => onChangeBlank(key, false)}
+                  disabled={isSubmittedState}
+                />
+                <span className="option-text">Sai</span>
+              </label>
+            </div>
           );
         }
 
@@ -583,6 +864,20 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
         }
 
         const val = answerMap[key] || '';
+
+        if (innerType === 'SHORT_ANSWER') {
+          return (
+            <input
+              type="text"
+              value={val}
+              onChange={(e) => onChangeBlank(key, e.target.value)}
+              disabled={isSubmittedState}
+              placeholder="Nhập câu trả lời ngắn..."
+              className={`cloze-blank ${isSubmittedState ? (isCorrect ? 'correct' : 'incorrect') : ''}`}
+            />
+          );
+        }
+
         return (
           <input
             type="text"
@@ -610,20 +905,26 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
             {innerEntries.map(([key, innerMeta], index) => {
               const graded = blankGrading[key];
               const innerType = String(innerMeta.type || 'SHORT_ANSWER').toUpperCase();
+              const innerBlocks = Array.isArray(innerMeta.contentBlocks) ? innerMeta.contentBlocks : [];
+              const innerBlocksText = richBlocksToPlainText(innerBlocks);
+              const innerTitle = String(innerMeta.content || '').trim();
+              const shouldRenderInnerTitle = innerTitle && innerTitle !== innerBlocksText;
 
               return (
                 <div key={`cloze-${key}-${index}`} className="cloze-question-card">
                   <div className="cloze-question-card__header">
                     <div>
                       <p className="cloze-question-card__eyebrow">Câu hỏi {index + 1}</p>
-                      <h4 className="cloze-question-card__title">{innerMeta.content || 'Câu hỏi nhỏ'}</h4>
+                      {shouldRenderInnerTitle ? <h4 className="cloze-question-card__title">{innerTitle}</h4> : null}
                     </div>
                     <span className="cloze-question-card__type">{innerType}</span>
                   </div>
-                  {Array.isArray(innerMeta.contentBlocks) && innerMeta.contentBlocks.length > 0 ? (
+                  {innerBlocks.length > 0 ? (
                     <div className="cloze-question-card__content">
-                      <RichContentRenderer blocks={innerMeta.contentBlocks} />
+                      <RichContentRenderer blocks={innerBlocks} />
                     </div>
+                  ) : !shouldRenderInnerTitle ? (
+                    <div className="cloze-question-card__content">Câu hỏi nhỏ</div>
                   ) : null}
                   <div className="cloze-question-card__answer">
                     {renderInnerQuestionInput(key, innerMeta, isSubmitted, graded)}
@@ -644,6 +945,17 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
     if (questionType === 'MULTIPLE_CHOICE') {
       const selectedIndices = answers[question.id]?.value?.indices || [];
       const options = Array.isArray(question.options) ? question.options : [];
+      const optionsRich = Array.isArray(metadata.optionsRich)
+        ? metadata.optionsRich
+        : Array.isArray(question.optionsRich)
+          ? question.optionsRich
+          : [];
+      const optionCount = Math.max(options.length, optionsRich.length);
+      const resolvedOptions = Array.from({ length: optionCount }).map((_, index) => toRenderableOption(
+        options[index],
+        optionsRich[index],
+        `Lựa chọn ${index + 1}`,
+      ));
 
       // grading info when submitted
       const grading = gradingMap[question.id] || null;
@@ -651,7 +963,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
 
       return (
         <div className="question-options">
-          {options.map((option, index) => {
+          {resolvedOptions.map((option, index) => {
             const isSelected = selectedIndices.includes(index);
             let optionClass = 'option';
 
@@ -672,16 +984,10 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
                   disabled={isSubmitted}
                 />
                 <span className="option-text">
-                  {typeof option === 'string' ? (
-                    option
-                  ) : Array.isArray(option?.contentBlocks) && option.contentBlocks.length > 0 ? (
-                    <RichContentRenderer blocks={option.contentBlocks} />
-                  ) : Array.isArray(option?.blocks) && option.blocks.length > 0 ? (
+                  {Array.isArray(option?.blocks) && option.blocks.length > 0 ? (
                     <RichContentRenderer blocks={option.blocks} />
-                  ) : option?.text ? (
-                    option.text
                   ) : (
-                    String(option || '')
+                    option.label
                   )}
                 </span>
               </label>
@@ -820,7 +1126,13 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
   const getTextOnlyQuestionStatement = (question) => {
     const blocks = getQuestionBlocks(question);
     const textParts = blocks
-      .map((block) => (block?.type === 'text' ? String(block.text || '').trim() : ''))
+      .map((block) => {
+        if (block?.type !== 'text') return '';
+        const txt = String(block.text || '').trim();
+        // If the text contains HTML tags or inline image markup, skip it here
+        if (/</.test(txt) && />/.test(txt)) return '';
+        return txt;
+      })
       .filter(Boolean);
 
     if (textParts.length > 0) {
@@ -832,6 +1144,9 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
       return '';
     }
 
+    // If content contains HTML tags, don't return it as plain text here
+    if (/</.test(rawContent) && />/.test(rawContent)) return '';
+
     if (/^https?:\/\/(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)\//i.test(rawContent)) {
       return '';
     }
@@ -839,7 +1154,15 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
     return rawContent;
   };
 
+  const normalizeDisplayText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+  const currentQuestionBlocks = getQuestionBlocks(currentQuestion);
   const currentQuestionText = getTextOnlyQuestionStatement(currentQuestion);
+  const currentQuestionBlocksText = normalizeDisplayText(richBlocksToPlainText(currentQuestionBlocks));
+  const shouldRenderQuestionText = Boolean(normalizeDisplayText(currentQuestionText))
+    && normalizeDisplayText(currentQuestionText) !== currentQuestionBlocksText;
+  const currentQuestionType = String(currentQuestion?.type || '').toUpperCase();
+  const shouldRenderTopQuestionContent = currentQuestionType !== 'CLOZE';
 
   return (
     <div className={`quiz-taker ${compact ? 'quiz-taker--compact' : ''}`}>
@@ -865,21 +1188,21 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
 
           {currentQuestion ? (
             <div className="quiz-taker__question">
-              {currentQuestionText ? (
+              {shouldRenderTopQuestionContent && shouldRenderQuestionText ? (
                 <div className="question-statement" style={{ marginBottom: 12, fontSize: 16, fontWeight: 700, color: '#0f172a', lineHeight: 1.5 }}>
                   {currentQuestionText}
                 </div>
               ) : null}
-              <div className="question-text">
-                <RichContentRenderer blocks={getQuestionBlocks(currentQuestion)} />
-              </div>
-              <button 
-                onClick={() => setSelectedQuestionDetail(currentQuestion)}
-                className="btn btn--secondary btn--view-detail"
-                style={{ marginBottom: 12 }}
-              >
-                📋 Xem thêm
-              </button>
+              {shouldRenderTopQuestionContent && currentQuestionBlocks.length > 0 ? (
+                <div className="question-text">
+                  <RichContentRenderer blocks={currentQuestionBlocks} />
+                </div>
+              ) : null}
+              {shouldRenderTopQuestionContent && currentQuestionBlocks.length === 0 && !currentQuestionText ? (
+                <div className="question-text">
+                  <RichContentRenderer blocks={currentQuestionBlocks} />
+                </div>
+              ) : null}
               {renderQuestionInput(currentQuestion)}
             </div>
           ) : null}
@@ -928,8 +1251,8 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
           </div>
 
           <div className="quiz-taker__footer">
-            {isSaving ? <span className="saving-status">Đang lưu...</span> : null}
-            {isSubmitted && result ? (
+            {!previewMode && isSaving ? <span className="saving-status">Đang lưu...</span> : null}
+            {!previewMode && isSubmitted && result ? (
               <button
                 onClick={() => setShowResultDetails(true)}
                 className="btn btn--secondary btn--large"
@@ -937,20 +1260,18 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false }) => {
                 Xem chi tiết chấm điểm
               </button>
             ) : null}
-            <button onClick={handleSubmit} disabled={isSubmitted || isSubmitting} className="btn btn--primary btn--large">
-              {isSubmitting ? 'Đang nộp bài...' : `Nộp bài (${answeredCount}/${questionCount} câu)`}
-            </button>
+            {previewMode ? (
+              <button onClick={onBack} className="btn btn--primary btn--large">
+                Đóng xem trước
+              </button>
+            ) : (
+              <button onClick={handleSubmit} disabled={isSubmitted || isSubmitting} className="btn btn--primary btn--large">
+                {isSubmitting ? 'Đang nộp bài...' : `Nộp bài (${answeredCount}/${questionCount} câu)`}
+              </button>
+            )}
           </div>
         </div>
       </div>
-
-      {/* Modal overlay */}
-      {selectedQuestionDetail ? (
-        <QuestionDetailModal 
-          question={selectedQuestionDetail} 
-          onClose={() => setSelectedQuestionDetail(null)} 
-        />
-      ) : null}
     </div>
   );
 };
