@@ -37,16 +37,31 @@ const normalizePreviewBlocks = (value) => {
     return [{ type: 'image', url: raw, alt: '' }];
   }
 
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.replace('www.', '').toLowerCase();
+    if (host === 'youtube.com' || host === 'youtu.be' || host === 'm.youtube.com') {
+      return [{ type: 'video', url: raw, title: 'YouTube video' }];
+    }
+  } catch (_error) {
+    // not a URL
+  }
+
   if (raw.includes('<') && raw.includes('>') && typeof DOMParser !== 'undefined') {
     try {
       const doc = new DOMParser().parseFromString(raw, 'text/html');
       const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
       const images = Array.from(doc.querySelectorAll('img[src]'));
+      const iframes = Array.from(doc.querySelectorAll('iframe[src]'));
       const blocks = [];
       if (plainText) blocks.push({ type: 'text', text: plainText });
       images.forEach((img) => {
         const src = String(img.getAttribute('src') || '').trim();
         if (src) blocks.push({ type: 'image', url: src, alt: String(img.getAttribute('alt') || '').trim() });
+      });
+      iframes.forEach((iframe) => {
+        const src = String(iframe.getAttribute('src') || '').trim();
+        if (src) blocks.push({ type: 'video', url: src, title: String(iframe.getAttribute('title') || 'YouTube video').trim() });
       });
       if (blocks.length) return blocks;
     } catch (_error) {}
@@ -285,14 +300,12 @@ const formatInnerQuestionAnswer = (item) => {
 
 const renderQuestionPayloadSummary = (question, metadata) => {
   const contentBlocks = normalizeRichBlocksValue(metadata.contentBlocks || question.contentBlocks);
-  const questionTitle = getQuestionTitle(question, metadata);
   const contentPlain = (Array.isArray(contentBlocks) && contentBlocks.length) ? richContentToPlainText(contentBlocks) : String(metadata.text_template || question.content || '').trim();
 
   return (
     <div className="detail-section">
       <h3>📝 Câu Hỏi</h3>
       <div className="question-content">
-        {questionTitle && String(questionTitle || '').trim() !== String(contentPlain || '').trim() ? <p>{questionTitle}</p> : null}
         {contentBlocks.length > 0 ? (
           <RichContentRenderer blocks={contentBlocks} />
         ) : (
@@ -303,7 +316,7 @@ const renderQuestionPayloadSummary = (question, metadata) => {
   );
 };
 
-const QuestionDetailModal = ({ question, onClose, panelRef }) => {
+const QuestionDetailModal = ({ question, onClose }) => {
   if (!question) {
     return null;
   }
@@ -315,6 +328,18 @@ const QuestionDetailModal = ({ question, onClose, panelRef }) => {
     : Array.isArray(question.options)
       ? question.options
       : [];
+  const optionsRichSource = Array.isArray(question.optionsRich) && question.optionsRich.length
+    ? question.optionsRich
+    : (Array.isArray(metadata.optionsRich) && metadata.optionsRich.length ? metadata.optionsRich : []);
+  const combinedOptions = (() => {
+    const maxLen = Math.max(options.length, optionsRichSource.length);
+    const out = [];
+    for (let i = 0; i < maxLen; i += 1) {
+      if (i < optionsRichSource.length) out.push({ rich: optionsRichSource[i], raw: options[i] });
+      else out.push({ rich: null, raw: options[i] });
+    }
+    return out;
+  })();
   const correctIndices = Array.isArray(metadata.correctIndices)
     ? metadata.correctIndices.map((index) => Number(index)).filter((index) => Number.isFinite(index))
     : Array.isArray(question.correctIndices)
@@ -337,10 +362,17 @@ const QuestionDetailModal = ({ question, onClose, panelRef }) => {
   const questionTitle = getQuestionTitle(question, metadata);
 
   return (
-      <div ref={panelRef} className="inline-detail-panel">
+    <div className="question-detail-modal-overlay" onClick={onClose} role="presentation">
+      <div
+        className="question-detail-modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chi Tiết Câu Hỏi"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="inline-detail-panel__header">
           <h2>Chi Tiết Câu Hỏi</h2>
-          <button className="question-detail-modal-close" onClick={onClose}>×</button>
+          <button type="button" className="question-detail-modal-close" onClick={onClose}>×</button>
         </div>
 
         <div className="inline-detail-panel__body">
@@ -356,22 +388,23 @@ const QuestionDetailModal = ({ question, onClose, panelRef }) => {
                   </div>
                 ) : null}
                 <div className="options-list">
-                  {options.map((option, index) => (
+                  {combinedOptions.map((opt, index) => (
                     <div key={`option-${index}`} className={`option-item ${correctIndices.includes(index) ? 'correct' : ''}`}>
                       <span className="option-index">{String.fromCharCode(65 + index)}</span>
                       <div className="option-text-wrapper">
                         {(() => {
-                          const optionBlocks = normalizeRichBlocksValue(option?.contentBlocks || option?.blocks || option?.richContent?.blocks || option?.text || option);
+                          const source = opt.rich ?? opt.raw;
+                          const optionBlocks = normalizeRichBlocksValue(source?.contentBlocks || source?.blocks || source?.richContent?.blocks || source?.text || source);
 
                           if (optionBlocks.length > 0) {
                             return <RichContentRenderer blocks={optionBlocks} />;
                           }
 
-                          if (option?.text) {
-                            return <p>{option.text}</p>;
+                          if (source?.text) {
+                            return <p>{source.text}</p>;
                           }
 
-                          return <p>{String(option || '')}</p>;
+                          return <p>{String(source || '')}</p>;
                         })()}
                       </div>
                     </div>
@@ -513,11 +546,12 @@ const QuestionDetailModal = ({ question, onClose, panelRef }) => {
         </div>
 
         <div className="inline-detail-panel__footer">
-            <button className="btn btn--primary" onClick={onClose}>
-              Đóng
-            </button>
+          <button type="button" className="btn btn--primary" onClick={onClose}>
+            Đóng
+          </button>
         </div>
       </div>
+    </div>
   );
 };
 
@@ -701,12 +735,6 @@ function SegmentDetailView() {
   }, [courseId, chapterId, lessonId, segmentId]);
 
   useEffect(() => {
-    if (viewQuestion && viewQuestionPanelRef.current) {
-      viewQuestionPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [viewQuestion]);
-
-  useEffect(() => {
     if (!segment || loading) {
       return undefined;
     }
@@ -871,10 +899,14 @@ function SegmentDetailView() {
 
     if (questionDraft.type === 'MULTIPLE_CHOICE') {
       const pairs = (Array.isArray(questionDraft.optionsRich) ? questionDraft.optionsRich : questionDraft.options.map((item) => ([{ type: 'text', text: String(item || '') }])) )
-        .map((blocks, index) => ({ rawIndex: index, value: richContentToPlainText(blocks) || String(questionDraft.options?.[index] || '').trim() }))
-        .filter((item) => item.value);
+          .map((blocks, index) => {
+            const normalized = normalizeRichBlocksValue(blocks);
+            const text = richContentToPlainText(normalized) || String(questionDraft.options?.[index] || '').trim();
+            return { rawIndex: index, blocks: normalized, value: text };
+          })
+          .filter((item) => (Array.isArray(item.blocks) && item.blocks.length) || String(item.value || '').trim() !== '');
 
-      const options = pairs.map((item) => item.value);
+        const options = pairs.map((item) => item.value || '');
       let correctIndices = [];
       if (questionDraft.allowMultipleCorrect) {
         correctIndices = pairs
@@ -997,7 +1029,11 @@ function SegmentDetailView() {
     if (normalizedInnerType === 'MULTIPLE_CHOICE') {
       const optionsRich = Array.isArray(innerQuestion.optionsRich) ? innerQuestion.optionsRich : [];
       const options = optionsRich.length
-        ? optionsRich.map((blocks, index) => richContentToPlainText(blocks) || String(innerQuestion.options?.[index] || '').trim()).filter(Boolean)
+        ? (optionsRich.map((blocks, index) => {
+            const normalized = normalizeRichBlocksValue(blocks);
+            const text = richContentToPlainText(normalized) || String(innerQuestion.options?.[index] || '').trim();
+            return { blocks: normalized, value: text };
+          }).filter((it) => (Array.isArray(it.blocks) && it.blocks.length) || String(it.value || '').trim() !== '').map((it) => it.value || ''))
         : (Array.isArray(innerQuestion.options) ? innerQuestion.options.map((item) => String(item || '').trim()).filter(Boolean) : []);
 
       return {
@@ -1647,14 +1683,6 @@ function SegmentDetailView() {
                           ) : null}
                         </div>
 
-                        {viewQuestion ? (
-                          <QuestionDetailModal
-                            panelRef={viewQuestionPanelRef}
-                            question={viewQuestion}
-                            onClose={() => setViewQuestion(null)}
-                          />
-                        ) : null}
-
                         {questionError ? <div className="error-message" style={{ marginTop: 12 }}>{questionError}</div> : null}
                         {questionLoading ? <p style={{ marginTop: 12 }}>Đang tải câu hỏi...</p> : null}
 
@@ -1728,6 +1756,15 @@ function SegmentDetailView() {
                                       {type === 'ESSAY' ? (
                                         <p><strong>Rubric:</strong> {(metadata.rubric || []).map((item) => item.name).join(', ') || 'Chưa có'}</p>
                                       ) : null}
+                                    </div>
+                                  ) : null}
+
+                                  {viewQuestion && Number(viewQuestion.id) === Number(question.id) ? (
+                                    <div ref={viewQuestionPanelRef} style={{ marginTop: 16 }}>
+                                      <QuestionDetailModal
+                                        question={viewQuestion}
+                                        onClose={() => setViewQuestion(null)}
+                                      />
                                     </div>
                                   ) : null}
                                 </article>

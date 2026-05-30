@@ -1,5 +1,6 @@
 const HTML_TAG_REGEX = /<[^>]*>/g;
 const IMAGE_TAG_REGEX = /<img\b[^>]*>/gi;
+const IFRAME_TAG_REGEX = /<iframe\b[^>]*>/gi;
 const REMOVE_EDITOR_BUTTON_REGEX = /<button\b[^>]*data-editor-remove-only=["']?1["']?[^>]*>[\s\S]*?<\/button>/gi;
 
 const decodeHtmlEntities = (value) => String(value || '')
@@ -33,8 +34,9 @@ const normalizeHtmlTextBlock = (text) => {
 
   const sanitizedHtml = rawText.replace(REMOVE_EDITOR_BUTTON_REGEX, '');
   const imageMatches = [...sanitizedHtml.matchAll(IMAGE_TAG_REGEX)];
+  const iframeMatches = [...sanitizedHtml.matchAll(IFRAME_TAG_REGEX)];
 
-  if (imageMatches.length === 0) {
+  if (imageMatches.length === 0 && iframeMatches.length === 0) {
     const plainText = stripHtml(sanitizedHtml);
     return plainText ? [{ type: 'text', text: plainText }] : [];
   }
@@ -42,25 +44,41 @@ const normalizeHtmlTextBlock = (text) => {
   const blocks = [];
   let lastIndex = 0;
 
-  imageMatches.forEach((match) => {
-    const imageTag = match[0];
-    const imageIndex = Number(match.index || 0);
-    const beforeText = stripHtml(sanitizedHtml.slice(lastIndex, imageIndex));
-
+  const pushTextBetween = (from, to) => {
+    const beforeText = stripHtml(sanitizedHtml.slice(from, to));
     if (beforeText) {
       blocks.push({ type: 'text', text: beforeText });
     }
+  };
 
-    const imageUrl = getAttribute(imageTag, 'src');
-    if (imageUrl) {
-      blocks.push({
-        type: 'image',
-        url: imageUrl,
-        alt: getAttribute(imageTag, 'alt'),
-      });
+  const matches = [
+    ...imageMatches.map((match) => ({ kind: 'image', match })),
+    ...iframeMatches.map((match) => ({ kind: 'iframe', match })),
+  ].sort((a, b) => Number(a.match.index || 0) - Number(b.match.index || 0));
+
+  matches.forEach(({ kind, match }) => {
+    const tag = match[0];
+    const tagIndex = Number(match.index || 0);
+    pushTextBetween(lastIndex, tagIndex);
+
+    const tagUrl = getAttribute(tag, 'src');
+    if (tagUrl) {
+      if (kind === 'image') {
+        blocks.push({
+          type: 'image',
+          url: tagUrl,
+          alt: getAttribute(tag, 'alt'),
+        });
+      } else if (kind === 'iframe') {
+        blocks.push({
+          type: 'video',
+          url: tagUrl,
+          title: getAttribute(tag, 'title') || 'YouTube video',
+        });
+      }
     }
 
-    lastIndex = imageIndex + imageTag.length;
+    lastIndex = tagIndex + tag.length;
   });
 
   const tailText = stripHtml(sanitizedHtml.slice(lastIndex));

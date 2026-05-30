@@ -116,31 +116,12 @@ const escapeHtmlAttr = (value) => String(value || '')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;');
 
-const buildExpandedVideoHtml = (embedSrc, title) => {
-  const safeSrc = escapeHtmlAttr(embedSrc);
-  const safeTitle = escapeHtmlAttr(title || 'YouTube video');
-  return `<span data-inline-video-expanded="1" style="display:inline-block;vertical-align:middle;width:180px;max-width:100%;margin:0 6px;line-height:0;border-radius:8px;overflow:hidden;background:#000;box-shadow:0 2px 10px rgba(0,0,0,0.12);"><iframe title="${safeTitle}" src="${safeSrc}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen sandbox="allow-scripts allow-same-origin allow-presentation" style="width:180px;height:101px;border:0;display:block;"></iframe></span>`;
-};
+const buildVideoFrameSrc = (url) => getYouTubeEmbedSrc(url);
 
-const buildClickableVideoHtml = (url, title) => {
-  const embedSrc = getYouTubeEmbedSrc(url);
-  const thumbSrc = getYouTubeThumbSrc(url);
-  const expandedHtml = buildExpandedVideoHtml(embedSrc, title);
-  const safeExpandedHtml = escapeHtmlAttr(expandedHtml);
-  const safeThumb = escapeHtmlAttr(thumbSrc);
+const buildVideoIframeHtml = (url, title) => {
+  const safeSrc = escapeHtmlAttr(buildVideoFrameSrc(url));
   const safeTitle = escapeHtmlAttr(title || 'YouTube video');
-  return `
-    <span
-      data-inline-video="1"
-      data-expanded-html="${safeExpandedHtml}"
-      onclick="this.outerHTML=this.getAttribute('data-expanded-html');"
-      style="display:inline-block;vertical-align:middle;width:180px;max-width:100%;margin:0 6px;line-height:0;border-radius:8px;overflow:hidden;background:#000;box-shadow:0 2px 10px rgba(0,0,0,0.12);cursor:pointer;position:relative;"
-      title="${safeTitle}"
-    >
-      ${thumbSrc ? `<img src="${safeThumb}" alt="${safeTitle}" style="width:180px;height:101px;object-fit:cover;display:block;" />` : `<span style="width:180px;height:101px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;">Video</span>`}
-      <span aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.18);color:#fff;font-size:24px;font-weight:700;">▶</span>
-    </span>
-  `;
+  return `<span class="rich-content-renderer__video-frame" style="display:block;position:relative;width:100%;max-width:640px;aspect-ratio:16 / 9;border-radius:8px;overflow:hidden;background:#000;"><iframe title="${safeTitle}" src="${safeSrc}" class="rich-content-renderer__video-iframe" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" style="width:100%;height:100%;border:0;display:block;"></iframe></span>`;
 };
 
 const isYouTubeHref = (href) => {
@@ -182,7 +163,7 @@ const embedYouTubeLinksInHtml = (html) => {
       const href = String(anchor.getAttribute('href') || '').trim();
       if (!isYouTubeHref(href)) return;
 
-      const videoHtml = buildClickableVideoHtml(href, anchor.textContent?.trim() || 'YouTube video');
+      const videoHtml = buildVideoIframeHtml(href, anchor.textContent?.trim() || 'YouTube video');
       const fragment = doc.createRange().createContextualFragment(videoHtml);
       anchor.replaceWith(fragment);
     });
@@ -216,13 +197,40 @@ const RichContentRenderer = ({ blocks = [] }) => {
     );
   };
 
-  const renderInlineVideo = (url, title) => (
-    <span
-      dangerouslySetInnerHTML={{
-        __html: buildClickableVideoHtml(url, title),
-      }}
-    />
-  );
+  const renderInlineVideo = (url, title, keyHint) => {
+    const embedSrc = buildVideoFrameSrc(url);
+
+    return (
+      <div
+        key={keyHint}
+        className="rich-content-renderer__video-frame"
+        style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: 640,
+          aspectRatio: '16 / 9',
+          borderRadius: 8,
+          overflow: 'hidden',
+          background: '#000',
+        }}
+      >
+        <iframe
+          title={title || 'YouTube video'}
+          src={embedSrc}
+          className="rich-content-renderer__video-iframe"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          style={{
+            width: '100%',
+            height: '100%',
+            border: 0,
+            display: 'block',
+          }}
+        />
+      </div>
+    );
+  };
 
   return (
     <div className="rich-content-renderer" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -236,6 +244,7 @@ const RichContentRenderer = ({ blocks = [] }) => {
               const parser = new DOMParser();
               const doc = parser.parseFromString(text, 'text/html');
               const images = Array.from(doc.querySelectorAll('img[src]'));
+              const iframes = Array.from(doc.querySelectorAll('iframe[src]'));
               const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
 
               if (images.length > 0) {
@@ -262,6 +271,24 @@ const RichContentRenderer = ({ blocks = [] }) => {
                     {block.caption ? <figcaption className="rich-content-renderer__caption">{String(block.caption)}</figcaption> : null}
                   </figure>
                 );
+              }
+
+              if (iframes.length > 0) {
+                const iframe = iframes[0];
+                const src = resolveMediaUrl(String(iframe.getAttribute('src') || '').trim());
+                if (src) {
+                  return (
+                    <figure key={idx} className="rich-content-renderer__figure rich-content-renderer__figure--video" style={{ margin: 0 }}>
+                      {renderBlockTitle(block, '')}
+                      <span
+                        dangerouslySetInnerHTML={{
+                          __html: buildClickableVideoHtml(src, String(iframe.getAttribute('title') || block.title || `video-${idx}`)),
+                        }}
+                      />
+                      {block.caption ? <figcaption className="rich-content-renderer__caption">{String(block.caption)}</figcaption> : null}
+                    </figure>
+                  );
+                }
               }
 
               if (plainText) {

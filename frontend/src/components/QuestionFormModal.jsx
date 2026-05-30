@@ -11,6 +11,111 @@ const QUESTION_TYPE_LABELS = {
   CLOZE: 'Câu hỏi bài đọc',
 };
 
+const isLikelyImageUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (/^(data:image\/[a-zA-Z0-9.+-]+;base64,)/i.test(raw)) return true;
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(raw)) return true;
+  return /\/(uploads\/images\/|uploads\/images\/)/i.test(raw);
+};
+
+const isYouTubeUrl = (value) => {
+  try {
+    const url = new URL(String(value || '').trim());
+    const host = url.hostname.replace('www.', '').toLowerCase();
+    return host === 'youtube.com' || host === 'youtu.be' || host === 'm.youtube.com';
+  } catch (_error) {
+    return false;
+  }
+};
+
+const normalizePreviewRichBlocks = (value) => {
+  if (Array.isArray(value)) {
+    return value.flatMap((block) => {
+      if (!block || typeof block !== 'object') return [];
+
+      if (block.type === 'image' || block.type === 'video') {
+        return [block];
+      }
+
+      const text = String(block.text || '').trim();
+      if (!text) return [];
+
+      if (isLikelyImageUrl(text)) {
+        return [{ type: 'image', url: text, alt: String(block.alt || '') }];
+      }
+
+      if (isYouTubeUrl(text)) {
+        return [{ type: 'video', url: text, title: String(block.title || 'YouTube video') }];
+      }
+
+      if (text.includes('<') && text.includes('>') && typeof DOMParser !== 'undefined') {
+        try {
+          const doc = new DOMParser().parseFromString(text, 'text/html');
+          const blocks = [];
+          const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+          if (plainText) {
+            blocks.push({ type: 'text', text: plainText });
+          }
+
+          Array.from(doc.querySelectorAll('img[src]')).forEach((img) => {
+            const src = String(img.getAttribute('src') || '').trim();
+            if (src) {
+              blocks.push({ type: 'image', url: src, alt: String(img.getAttribute('alt') || '').trim() });
+            }
+          });
+
+          Array.from(doc.querySelectorAll('iframe[src]')).forEach((iframe) => {
+            const src = String(iframe.getAttribute('src') || '').trim();
+            if (src) {
+              blocks.push({ type: 'video', url: src, title: String(iframe.getAttribute('title') || 'YouTube video').trim() });
+            }
+          });
+
+          if (blocks.length) return blocks;
+        } catch (_error) {
+          // fall through to plain text
+        }
+      }
+
+      return [{ type: 'text', text }];
+    });
+  }
+
+  if (typeof value === 'string') {
+    const raw = String(value || '').trim();
+    if (!raw) return [];
+    if (isLikelyImageUrl(raw)) return [{ type: 'image', url: raw, alt: '' }];
+    if (isYouTubeUrl(raw)) return [{ type: 'video', url: raw, title: 'YouTube video' }];
+
+    if (raw.includes('<') && raw.includes('>') && typeof DOMParser !== 'undefined') {
+      try {
+        const doc = new DOMParser().parseFromString(raw, 'text/html');
+        const blocks = [];
+        const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+        const images = Array.from(doc.querySelectorAll('img[src]'));
+        const iframes = Array.from(doc.querySelectorAll('iframe[src]'));
+        if (plainText) blocks.push({ type: 'text', text: plainText });
+        images.forEach((img) => {
+          const src = String(img.getAttribute('src') || '').trim();
+          if (src) blocks.push({ type: 'image', url: src, alt: String(img.getAttribute('alt') || '').trim() });
+        });
+        iframes.forEach((iframe) => {
+          const src = String(iframe.getAttribute('src') || '').trim();
+          if (src) blocks.push({ type: 'video', url: src, title: String(iframe.getAttribute('title') || 'YouTube video').trim() });
+        });
+        if (blocks.length) return blocks;
+      } catch (_error) {
+        // ignore
+      }
+    }
+
+    return [{ type: 'text', text: raw }];
+  }
+
+  return [];
+};
+
 function QuestionFormModal({
   isOpen,
   draft,
@@ -27,7 +132,7 @@ function QuestionFormModal({
   mode = 'create',
 }) {
   const [step, setStep] = useState(1);
-  const contentBlocks = Array.isArray(draft?.contentBlocks) ? draft.contentBlocks : [];
+  const contentBlocks = normalizePreviewRichBlocks(draft?.contentBlocks || draft?.content || []);
   const modalInnerRef = useRef(null);
   const isEditing = mode === 'edit';
 
@@ -326,7 +431,7 @@ function QuestionFormModal({
                               {((Array.isArray(draft.correctIndices) ? draft.correctIndices.map(Number) : []).includes(index)) ? 'Đáp án đúng' : 'Đáp án'}
                             </span>
                           </div>
-                          <RichContentRenderer blocks={Array.isArray(optionBlocks) && optionBlocks.length ? optionBlocks : [{ type: 'text', text: draft.options?.[index] || '' }]} />
+                          <RichContentRenderer blocks={normalizePreviewRichBlocks(optionBlocks.length ? optionBlocks : draft.options?.[index] || '')} />
                         </div>
                       )) : null}
                     </div>
