@@ -19,12 +19,31 @@ const createApp = () => {
     }),
   );
 
+  const allowedOrigins = [process.env.FRONTEND_ORIGIN || 'http://localhost:5173', 'http://localhost:5174'];
+
+  const corsOptions = {
+    origin: (origin, callback) => {
+      // allow requests with no origin (like mobile apps, curl, or same-origin)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    credentials: true,
+    optionsSuccessStatus: 204,
+  };
+
+  app.use(cors(corsOptions));
+  app.options('*', cors(corsOptions));
+
   app.use(
     rateLimit({
       windowMs: env.security.rateLimitWindowMs,
       max: env.security.rateLimitMax,
       standardHeaders: true,
       legacyHeaders: false,
+      skip: (req) => req.method === 'OPTIONS',
       message: {
         success: false,
         status: 429,
@@ -33,8 +52,6 @@ const createApp = () => {
       },
     }),
   );
-
-  app.use(cors());
   app.use(express.json({ limit: '1mb' }));
   app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
   app.use(requestLogger);

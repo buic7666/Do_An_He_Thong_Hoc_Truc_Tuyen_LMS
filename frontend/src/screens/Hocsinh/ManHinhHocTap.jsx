@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGoogleLogin } from '@react-oauth/google';
 import httpClient from '../../api/httpClient';
 import { fetchCourseDetailApi, fetchCourseProgressApi } from '../../api/courseApi';
@@ -18,7 +19,7 @@ const SEGMENT_CONTENT_META = {
   text: { icon: '📝', title: 'Text' },
   document: { icon: '📎', title: 'Tài liệu' },
   question: { icon: '❓', title: 'Câu hỏi' },
-  quiz: { icon: '🧪', title: 'Bài kiểm tra' },
+  quiz: { icon: '🧪', title: 'Bài tập' },
   videoClip: { icon: '🎬', title: 'Đoạn video' },
 };
 
@@ -81,6 +82,62 @@ const getYouTubeVideoId = (rawUrl) => {
   return null;
 };
 
+const isLikelyImageUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+
+  if (/^(data:image\/[a-zA-Z0-9.+-]+;base64,)/i.test(raw)) {
+    return true;
+  }
+
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(raw)) {
+    return true;
+  }
+
+  return /\/uploads\/images\//i.test(raw);
+};
+
+const normalizePreviewBlocks = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  if (isLikelyImageUrl(raw)) {
+    return [{ type: 'image', url: raw, alt: '' }];
+  }
+
+  if (raw.includes('<') && raw.includes('>') && typeof DOMParser !== 'undefined') {
+    try {
+      const doc = new DOMParser().parseFromString(raw, 'text/html');
+      const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+      const images = Array.from(doc.querySelectorAll('img[src]'));
+      const blocks = [];
+
+      if (plainText) {
+        blocks.push({ type: 'text', text: plainText });
+      }
+
+      images.forEach((img) => {
+        const src = String(img.getAttribute('src') || '').trim();
+        if (src) {
+          blocks.push({
+            type: 'image',
+            url: src,
+            alt: String(img.getAttribute('alt') || '').trim(),
+          });
+        }
+      });
+
+      if (blocks.length) {
+        return blocks;
+      }
+    } catch (_error) {
+      // fall through to plain text
+    }
+  }
+
+  return [{ type: 'text', text: raw }];
+};
+
 function ManHinhHocTap() {
   const GOOGLE_YOUTUBE_TOKEN_KEY = 'googleYoutubeAccessToken';
   const [isLoading, setIsLoading] = useState(true);
@@ -98,6 +155,7 @@ function ManHinhHocTap() {
   const [courseProgress, setCourseProgress] = useState(null);
   const [selectedQuizId, setSelectedQuizId] = useState(null);
   const [selectedQuizScope, setSelectedQuizScope] = useState(null);
+  const [selectedQuizInfo, setSelectedQuizInfo] = useState(null);
   const [showQuizForChapterId, setShowQuizForChapterId] = useState(null);
   const [lessonSegments, setLessonSegments] = useState([]);
   const [selectedSegmentId, setSelectedSegmentId] = useState(null);
@@ -817,23 +875,39 @@ function ManHinhHocTap() {
     verifyCurrentVideoSubscription(youtubeAccessToken, { silent: true });
   }, [currentVideoId, youtubeAccessToken, verifyCurrentVideoSubscription]);
 
-  const handleSelectQuiz = (quizId, scopeType) => {
-    setSelectedQuizId(Number(quizId));
+  const navigate = useNavigate();
+
+  const handleSelectQuiz = (quizId, scopeType, quizInfo = null) => {
+    const id = Number(quizId);
+    console.debug('[ManHinhHocTap] handleSelectQuiz called (overlay)', { quizId: quizId, parsedId: id, scopeType });
+    setSelectedQuizId(id);
     setSelectedQuizScope(scopeType || null);
+    setSelectedQuizInfo(quizInfo || null);
   };
 
   const handleBackFromQuiz = () => {
     setSelectedQuizId(null);
     setSelectedQuizScope(null);
+    setSelectedQuizInfo(null);
   };
 
   const handleQuizSubmitted = () => {
     setSelectedQuizId(null);
     setSelectedQuizScope(null);
+    setSelectedQuizInfo(null);
   };
 
+  useEffect(() => {
+    console.debug('[ManHinhHocTap] selectedQuizId/scope changed', { selectedQuizId, selectedQuizScope });
+  }, [selectedQuizId, selectedQuizScope]);
+
   const formatSegmentContentText = (item) => {
-    const text = String(item?.content || item?.title || '').trim();
+    const raw = String(item?.content || item?.title || '').trim();
+    if (!raw) {
+      return 'Chưa có nội dung mô tả.';
+    }
+
+    const text = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     return text || 'Chưa có nội dung mô tả.';
   };
 
@@ -904,32 +978,52 @@ function ManHinhHocTap() {
         )}
 
         {item.type === 'quiz' && (
+          (() => { console.debug('[ManHinhHocTap] rendering quiz item', { segmentId: segment?.id, itemIndex, quizId: item?.quizId, item }); })(),
           <div className='study-segment-content-body'>
             <div style={{ marginBottom: 12 }}>
               <p style={{ marginBottom: 8 }}>{formatSegmentContentText(item) || 'Bài tập từ ngân hàng câu hỏi của phần này.'}</p>
               {item.randomize ? (
                 <div className='study-segment-content-meta' style={{ marginBottom: 8 }}>
-                  Random {Number(item.randomCount || 0)} câu từ ngân hàng câu hỏi
+                  Ngẫu nhiên {Number(item.randomCount || 0)} câu từ ngân hàng câu hỏi
                 </div>
-              ) : Array.isArray(item.questionTitles) && item.questionTitles.length ? (
+              ) : null}
+              {!item.randomize && Array.isArray(item.questionTitles) && item.questionTitles.length ? (
+                <div className='study-segment-content-meta' style={{ marginBottom: 8 }}>
+                  Chọn sẵn {item.questionTitles.length} câu hỏi
+                </div>
+              ) : null}
+              {Array.isArray(item.questionTitles) && item.questionTitles.length ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                  {item.questionTitles.map((title, questionIndex) => (
-                    <span
-                      key={`${title}-${questionIndex}`}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        padding: '6px 10px',
-                        borderRadius: 999,
-                        background: '#ede9fe',
-                        color: '#5b21b6',
-                        fontWeight: 700,
-                        fontSize: 13,
-                      }}
-                    >
-                      {title}
-                    </span>
-                  ))}
+                  {item.questionTitles.map((title, questionIndex) => {
+                    const previewBlocks = normalizePreviewBlocks(title);
+                    return (
+                      <span
+                        key={`${title}-${questionIndex}`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-start',
+                          gap: 8,
+                          padding: '6px 10px',
+                          borderRadius: 999,
+                          background: '#ede9fe',
+                          color: '#5b21b6',
+                          fontWeight: 700,
+                          fontSize: 13,
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {Array.isArray(previewBlocks) && previewBlocks.some((block) => block.type === 'image' || block.type === 'video') ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', maxWidth: '100%' }}>
+                            <RichContentRenderer blocks={previewBlocks} />
+                          </span>
+                        ) : (
+                          title
+                        )}
+                      </span>
+                    );
+                  })}
                 </div>
               ) : Array.isArray(item.questionIds) && item.questionIds.length ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
@@ -953,9 +1047,42 @@ function ManHinhHocTap() {
                 </div>
               ) : null}
             </div>
+            {!isLocked && Number(item?.quizId || 0) > 0 ? (
+              <button
+                type='button'
+                className='study-segment-content-link-button'
+                onClick={() => handleSelectQuiz(item.quizId, 'segment', item)}
+              >
+                Làm bài tập
+              </button>
+            ) : null}
+            {Array.isArray(item.questionPreviews) && item.questionPreviews.length ? (
+              <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+                {item.questionPreviews.map((preview, previewIndex) => (
+                  <div
+                    key={`${preview.id || previewIndex}`}
+                    style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 10,
+                      padding: 10,
+                      background: '#fff',
+                    }}
+                  >
+                    {Array.isArray(preview.contentBlocks) && preview.contentBlocks.length > 0 ? (
+                      <RichContentRenderer blocks={preview.contentBlocks} />
+                    ) : (
+                      <p style={{ margin: 0 }}>{preview.content || `Câu hỏi #${preview.id}`}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {!isLocked && Number(item?.quizId || 0) <= 0 ? (
+              <p className='study-segment-content-empty'>Bài tập đang được giảng viên cấu hình, vui lòng thử lại sau.</p>
+            ) : null}
             {resourceUrl && !isLocked ? (
               <a className='study-segment-content-link' href={resourceUrl} target='_blank' rel='noreferrer'>
-                Làm bài tập
+                Tài nguyên bổ sung
               </a>
             ) : null}
           </div>
@@ -1040,7 +1167,7 @@ function ManHinhHocTap() {
                   <span>{`${getStudentVisibleContentItems(selectedSegment).length} nội dung`}</span>
                 </div>
 
-                <div className='study-content-items-tabs'>
+                <ol className='study-content-items-list'>
                   {selectedSegment.contentItems.map((item, itemIndex) => {
                     if (!isStudentVisibleContentItem(item)) {
                       return null;
@@ -1051,18 +1178,19 @@ function ManHinhHocTap() {
                     const meta = SEGMENT_CONTENT_META[item.type] || SEGMENT_CONTENT_META.text;
 
                     return (
-                      <button
-                        key={`${selectedSegment.id}-${itemIndex}`}
-                        type='button'
-                        className={`study-content-item-tab ${isSelected ? 'is-active' : ''}`}
-                        onClick={() => handleSelectContentItem(selectedSegment, itemIndex)}
-                      >
-                        <span className='study-content-item-tab-icon'>{meta.icon}</span>
-                        <span className='study-content-item-tab-label'>{item.title || `${meta.title} #${itemIndex + 1}`}</span>
-                      </button>
+                      <li key={`${selectedSegment.id}-${itemIndex}`} className='study-content-item-row'>
+                        <button
+                          type='button'
+                          className={`study-content-item-tab ${isSelected ? 'is-active' : ''}`}
+                          onClick={() => handleSelectContentItem(selectedSegment, itemIndex)}
+                        >
+                          <span className='study-content-item-tab-icon'>{meta.icon}</span>
+                          <span className='study-content-item-tab-label'>{item.title || `${meta.title} #${itemIndex + 1}`}</span>
+                        </button>
+                      </li>
                     );
                   })}
-                </div>
+                </ol>
 
                 {selectedContent ? (
                   <div className='study-content-item-panel'>
@@ -1121,12 +1249,41 @@ function ManHinhHocTap() {
             </p>
           </div>
 
+          {selectedQuizId && selectedQuizScope === 'segment' ? (
+            <div className='study-quiz-overlay' role='dialog' aria-modal='true'>
+              <div className='study-quiz-overlay__backdrop' onClick={handleBackFromQuiz} />
+              <div className='study-quiz-overlay__panel'>
+                      {selectedQuizInfo ? (
+                        <div style={{ padding: '12px 16px 0 16px', color: '#0f172a' }}>
+                          <div style={{ fontWeight: 800, marginBottom: 6 }}>Bài kiểm tra ngẫu nhiên</div>
+                          {selectedQuizInfo.randomize ? (
+                            <div style={{ fontSize: 13, color: '#475569' }}>
+                              Hệ thống sẽ lấy ngẫu nhiên {Number(selectedQuizInfo.randomCount || 0)} câu từ ngân hàng câu hỏi của phần này.
+                            </div>
+                          ) : Array.isArray(selectedQuizInfo.questionTitles) && selectedQuizInfo.questionTitles.length ? (
+                            <div style={{ fontSize: 13, color: '#475569' }}>
+                              Bài này dùng {selectedQuizInfo.questionTitles.length} câu đã chọn sẵn.
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                <QuizTaker
+                  quizId={selectedQuizId}
+                  compact
+                  onBack={handleBackFromQuiz}
+                  onSubmit={handleQuizSubmitted}
+                />
+              </div>
+            </div>
+          ) : null}
+
           {showQuizForChapterId ? (
             <div className='study-video-wrapper'>
               <div className='study-quiz-section'>
                 {selectedQuizId && selectedQuizScope === 'chapter' ? (
                   <QuizTaker 
                     quizId={selectedQuizId} 
+                    compact
                     onBack={() => {
                       setShowQuizForChapterId(null);
                       setSelectedQuizId(null);
@@ -1226,29 +1383,27 @@ function ManHinhHocTap() {
                                 </button>
 
                                 {isActive && lessonSegments.length > 0 && (
-                                  <div className='study-sidebar-segment-tabs'>
-                                    {lessonSegments.map((segment) => {
+                                  <ol className='study-sidebar-segment-tabs'>
+                                    {lessonSegments.map((segment, segmentIndex) => {
                                       const isSelected = Number(selectedSegmentId) === Number(segment.id);
 
                                       return (
-                                        <button
-                                          key={segment.id}
-                                          type='button'
-                                          className={`study-sidebar-segment-tab ${isSelected ? 'is-active' : ''}`}
-                                          onClick={() => {
-                                            handleSelectSegment(segment);
-                                          }}
-                                        >
-                                          <span className='study-sidebar-segment-title'>
-                                            {segment.title || `Phần ${segment.id}`}
-                                          </span>
-                                          <span className='study-sidebar-segment-time'>
-                                            {formatDuration(segment.startTime)} - {formatDuration(segment.endTime)}
-                                          </span>
-                                        </button>
+                                        <li key={segment.id} className='study-sidebar-segment-item'>
+                                          <button
+                                            type='button'
+                                            className={`study-sidebar-segment-tab ${isSelected ? 'is-active' : ''}`}
+                                            onClick={() => {
+                                              handleSelectSegment(segment);
+                                            }}
+                                          >
+                                            <span className='study-sidebar-segment-title'>
+                                              {segment.title || `Phần ${segmentIndex + 1}`}
+                                            </span>
+                                          </button>
+                                        </li>
                                       );
                                     })}
-                                  </div>
+                                  </ol>
                                 )}
                               </div>
                             );
@@ -1302,29 +1457,27 @@ function ManHinhHocTap() {
                             </button>
 
                             {isActive && lessonSegments.length > 0 && (
-                              <div className='study-sidebar-segment-tabs'>
-                                {lessonSegments.map((segment) => {
+                              <ol className='study-sidebar-segment-tabs'>
+                                {lessonSegments.map((segment, segmentIndex) => {
                                   const isSelected = Number(selectedSegmentId) === Number(segment.id);
 
                                   return (
-                                    <button
-                                      key={segment.id}
-                                      type='button'
-                                      className={`study-sidebar-segment-tab ${isSelected ? 'is-active' : ''}`}
-                                      onClick={() => {
-                                        handleSelectSegment(segment);
-                                      }}
-                                    >
-                                      <span className='study-sidebar-segment-title'>
-                                        {segment.title || `Phần ${segment.id}`}
-                                      </span>
-                                      <span className='study-sidebar-segment-time'>
-                                        {formatDuration(segment.startTime)} - {formatDuration(segment.endTime)}
-                                      </span>
-                                    </button>
+                                    <li key={segment.id} className='study-sidebar-segment-item'>
+                                      <button
+                                        type='button'
+                                        className={`study-sidebar-segment-tab ${isSelected ? 'is-active' : ''}`}
+                                        onClick={() => {
+                                          handleSelectSegment(segment);
+                                        }}
+                                      >
+                                        <span className='study-sidebar-segment-title'>
+                                          {segment.title || `Phần ${segmentIndex + 1}`}
+                                        </span>
+                                      </button>
+                                    </li>
                                   );
                                 })}
-                              </div>
+                              </ol>
                             )}
                           </div>
                         );

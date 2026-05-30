@@ -45,6 +45,7 @@ const segmentContentItemSchema = z
     content: z.string().trim().max(5000).optional(),
     resourceUrl: z.string().trim().url().max(1000).optional().or(z.literal('')),
     // Optional fields to support quiz setup from question bank
+    quizId: z.coerce.number().int().positive().optional(),
     questionIds: z.array(z.coerce.number().int().positive()).optional(),
     questionTitles: z.array(z.string()).optional(),
     randomize: z.boolean().optional(),

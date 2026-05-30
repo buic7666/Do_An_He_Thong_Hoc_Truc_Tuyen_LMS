@@ -6,10 +6,12 @@ const {
   StudentAnswer,
   Course,
 } = require('../models');
+const questionService = require('./questionService');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const { HttpError } = require('../utils/httpError');
 const { gradeAnswer } = require('./gradingService');
+const { normalizeRichBlocks } = require('../utils/richContent');
 
 const parseJsonField = (value, fallback = null) => {
   if (value == null) {
@@ -25,6 +27,142 @@ const parseJsonField = (value, fallback = null) => {
   }
 
   return value;
+};
+
+const normalizeQuestionType = (type) => {
+  const normalized = String(type || '').toUpperCase();
+  return normalized === 'MULTICHOICE' ? 'MULTIPLE_CHOICE' : normalized;
+};
+
+const normalizeClozeInnerFromChild = (childQuestion, fallbackInner = {}) => {
+  const childPlain = typeof childQuestion?.toJSON === 'function' ? childQuestion.toJSON() : childQuestion;
+  const childMetadata = parseJsonField(childPlain?.metadata, {}) || {};
+  const childType = normalizeQuestionType(childPlain?.type || fallbackInner?.type || 'SHORT_ANSWER');
+
+  const base = {
+    ...fallbackInner,
+    type: childType,
+    content: String(childPlain?.content || fallbackInner?.content || '').trim(),
+    contentBlocks: Array.isArray(childMetadata.contentBlocks)
+      ? normalizeRichBlocks(childMetadata.contentBlocks)
+      : (Array.isArray(fallbackInner.contentBlocks) ? fallbackInner.contentBlocks : []),
+    explanation: childMetadata.explanation ?? fallbackInner.explanation ?? null,
+    isPublished: Boolean(childPlain?.isPublished ?? fallbackInner?.isPublished ?? false),
+  };
+
+  if (childType === 'MULTIPLE_CHOICE') {
+    const correctIndices = Array.isArray(childMetadata.correctIndices)
+      ? childMetadata.correctIndices
+      : (typeof childMetadata.correctIndex === 'number' ? [Number(childMetadata.correctIndex)] : []);
+
+    return {
+      ...base,
+      options: Array.isArray(childMetadata.options)
+        ? childMetadata.options
+        : (Array.isArray(fallbackInner.options) ? fallbackInner.options : []),
+      optionsRich: Array.isArray(childMetadata.optionsRich)
+        ? childMetadata.optionsRich
+        : (Array.isArray(fallbackInner.optionsRich) ? fallbackInner.optionsRich : []),
+      correctIndices,
+    };
+  }
+
+  if (childType === 'TRUE_FALSE') {
+    return {
+      ...base,
+      correctAnswer: childMetadata.correctAnswer === true,
+    };
+  }
+
+  if (childType === 'SHORT_ANSWER') {
+    const acceptedAnswers = Array.isArray(childMetadata.acceptedAnswers)
+      ? childMetadata.acceptedAnswers
+      : (Array.isArray(fallbackInner.acceptedAnswers) ? fallbackInner.acceptedAnswers : []);
+
+    return {
+      ...base,
+      acceptedAnswers,
+      caseSensitive: Boolean(childMetadata.caseSensitive ?? fallbackInner.caseSensitive ?? false),
+      fuzzyMatch: childMetadata.fuzzyMatch !== false,
+    };
+  }
+
+  if (childType === 'ESSAY') {
+    return {
+      ...base,
+      instructions: String(childMetadata.instructions || fallbackInner.instructions || '').trim(),
+      rubric: Array.isArray(childMetadata.rubric)
+        ? childMetadata.rubric
+        : (Array.isArray(fallbackInner.rubric) ? fallbackInner.rubric : []),
+      wordLimit: childMetadata.wordLimit || fallbackInner.wordLimit || { min: 0, max: 2000 },
+    };
+  }
+
+  return base;
+};
+
+const mergeClozeMetadataWithChildren = (metadata = {}, childQuestions = []) => {
+  const baseMetadata = metadata && typeof metadata === 'object' ? metadata : {};
+  const existingInner = baseMetadata.inner_questions && typeof baseMetadata.inner_questions === 'object'
+    ? baseMetadata.inner_questions
+    : {};
+  const existingKeys = Object.keys(existingInner);
+  const orderedChildren = [...childQuestions].sort((a, b) => {
+    const orderA = Number(a?.orderIndex || 0);
+    const orderB = Number(b?.orderIndex || 0);
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    return Number(a?.id || 0) - Number(b?.id || 0);
+  });
+
+  const innerQuestions = {};
+
+  orderedChildren.forEach((child, index) => {
+    const key = existingKeys[index] || `q${Number(child?.orderIndex || index + 1)}`;
+    const fallbackInner = existingInner[key] && typeof existingInner[key] === 'object' ? existingInner[key] : {};
+    innerQuestions[key] = normalizeClozeInnerFromChild(child, fallbackInner);
+  });
+
+  Object.entries(existingInner).forEach(([key, value]) => {
+    if (!innerQuestions[key]) {
+      innerQuestions[key] = value;
+    }
+  });
+
+  return {
+    ...baseMetadata,
+    text_template: String(baseMetadata.text_template || ''),
+    inner_questions: innerQuestions,
+  };
+};
+
+const loadChildQuestionsByParentIds = async (parentIds = []) => {
+  if (!Array.isArray(parentIds) || parentIds.length === 0) {
+    return new Map();
+  }
+
+  const children = await Question.findAll({
+    where: {
+      parentQuestionId: {
+        [Op.in]: parentIds,
+      },
+    },
+    attributes: ['id', 'parentQuestionId', 'orderIndex', 'content', 'type', 'metadata', 'isPublished'],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['id', 'ASC']],
+  });
+
+  const grouped = new Map();
+  children.forEach((child) => {
+    const plain = child.toJSON();
+    const parentId = Number(plain.parentQuestionId);
+    if (!grouped.has(parentId)) {
+      grouped.set(parentId, []);
+    }
+    grouped.get(parentId).push(plain);
+  });
+
+  return grouped;
 };
 
 const shuffleArray = (items) => {
@@ -173,7 +311,7 @@ const getQuizDetail = async (quizId) => {
     throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
   }
 
-  return normalizeQuizWithQuestions(quiz);
+  return await normalizeQuizWithQuestions(quiz);
 };
 
 /**
@@ -353,6 +491,12 @@ const submitQuiz = async (quizId, studentId, answers = {}) => {
     throw new HttpError(400, 'No questions found for this quiz');
   }
 
+  const clozeParentIds = quizQuestions
+    .map((item) => item.question)
+    .filter((question) => normalizeQuestionType(question?.type) === 'CLOZE')
+    .map((question) => Number(question.id));
+  const childMapByParentId = await loadChildQuestionsByParentIds(clozeParentIds);
+
   // Chấm từng câu và lưu StudentAnswer
   const studentAnswers = [];
   const scores = [];
@@ -361,7 +505,13 @@ const submitQuiz = async (quizId, studentId, answers = {}) => {
   for (const qq of quizQuestions) {
     const question = qq.question;
     const studentAnswer = answers[question.id];
-    const questionMetadata = parseJsonField(question.metadata, {});
+    let questionMetadata = parseJsonField(question.metadata, {});
+    if (normalizeQuestionType(question.type) === 'CLOZE') {
+      questionMetadata = mergeClozeMetadataWithChildren(
+        questionMetadata,
+        childMapByParentId.get(Number(question.id)) || [],
+      );
+    }
 
     if (!studentAnswer) {
       console.warn(`No answer provided for question ${question.id}`);
@@ -471,23 +621,150 @@ const normalizeQuiz = (quiz, includeQuestions = false) => {
   };
 };
 
+const resolveQuestionSnapshot = (question) => {
+  const plain = typeof question?.toJSON === 'function' ? question.toJSON() : (question || {});
+  const metadata = parseJsonField(plain.metadata, {}) || {};
+  const contentBlocks = Array.isArray(metadata.contentBlocks)
+    ? normalizeRichBlocks(metadata.contentBlocks)
+    : Array.isArray(metadata.blocks)
+      ? normalizeRichBlocks(metadata.blocks)
+      : Array.isArray(metadata.richContent?.blocks)
+        ? normalizeRichBlocks(metadata.richContent.blocks)
+        : [];
+  const questionText = String(plain.content || metadata.questionText || metadata.title || '').trim();
+
+  return {
+    id: plain.id,
+    content: questionText,
+    type: plain.type || 'MULTIPLE_CHOICE',
+    questionText,
+    metadata,
+    options: Array.isArray(metadata.options) ? metadata.options : [],
+    optionsRich: Array.isArray(metadata.optionsRich) ? metadata.optionsRich : [],
+    contentBlocks,
+  };
+};
+
+const hydrateQuestionsFromFreshRows = async (questions = []) => {
+  const ids = Array.from(new Set(
+    questions
+      .map((question) => Number(question?.id))
+      .filter((id) => Number.isFinite(id)),
+  ));
+
+  if (ids.length === 0) {
+    return questions;
+  }
+
+  const freshResults = await Promise.allSettled(ids.map((id) => questionService.getQuestionById(id)));
+  const freshMap = new Map();
+  freshResults.forEach((result, index) => {
+    if (result.status === 'fulfilled' && result.value) {
+      freshMap.set(ids[index], result.value);
+    }
+  });
+
+  return questions.map((question) => {
+    const fresh = freshMap.get(Number(question.id));
+    if (!fresh) {
+      return question;
+    }
+
+    const nextContentBlocks = Array.isArray(fresh.contentBlocks) && fresh.contentBlocks.length > 0
+      ? fresh.contentBlocks
+      : (Array.isArray(question.contentBlocks) ? question.contentBlocks : []);
+    const nextOptions = Array.isArray(fresh.options) && fresh.options.length > 0
+      ? fresh.options
+      : (Array.isArray(question.options) ? question.options : []);
+    const nextOptionsRich = Array.isArray(fresh.optionsRich) && fresh.optionsRich.length > 0
+      ? fresh.optionsRich
+      : (Array.isArray(question.optionsRich) ? question.optionsRich : []);
+    const nextQuestionText = fresh.questionText || question.questionText || question.content || '';
+
+    return {
+      ...question,
+      ...fresh,
+      content: nextQuestionText,
+      questionText: nextQuestionText,
+      contentBlocks: nextContentBlocks,
+      options: nextOptions,
+      optionsRich: nextOptionsRich,
+      QuizQuestion: question.QuizQuestion,
+    };
+  });
+};
+
 /**
  * Normalize quiz with full question data
  */
-const normalizeQuizWithQuestions = (quiz) => {
+const normalizeQuizWithQuestions = async (quiz) => {
   const plain = quiz.toJSON();
-  const questions = (plain.questions || []).map((q) => ({
-    metadata: parseJsonField(q.metadata, {}),
-    id: q.id,
-    content: q.content,
-    type: q.type || 'MULTIPLE_CHOICE',
-    questionText: q.content,
-    options: (parseJsonField(q.metadata, {})?.options) || [],
-    QuizQuestion: {
-      order: q.QuizQuestion?.order,
-      points: q.QuizQuestion?.points,
-    },
-  }));
+  const baseQuestions = (plain.questions || []).map((q) => {
+    const metadata = parseJsonField(q.metadata, {});
+    const resolvedContentBlocks = Array.isArray(metadata?.contentBlocks)
+      ? normalizeRichBlocks(metadata.contentBlocks)
+      : Array.isArray(metadata?.blocks)
+        ? normalizeRichBlocks(metadata.blocks)
+        : Array.isArray(metadata?.richContent?.blocks)
+          ? normalizeRichBlocks(metadata.richContent.blocks)
+          : [];
+    const resolvedQuestionText = String(
+      q.content || metadata?.questionText || metadata?.title || '',
+    ).trim();
+
+    return {
+      metadata: metadata,
+      id: q.id,
+      content: resolvedQuestionText,
+      type: q.type || 'MULTIPLE_CHOICE',
+      questionText: resolvedQuestionText,
+      options: metadata?.options || [],
+      contentBlocks: resolvedContentBlocks,
+      QuizQuestion: {
+        order: q.QuizQuestion?.order,
+        points: q.QuizQuestion?.points,
+      },
+    };
+  });
+
+  const resolvedBaseQuestions = await hydrateQuestionsFromFreshRows(baseQuestions);
+
+  const clozeParentIds = baseQuestions
+    .filter((question) => normalizeQuestionType(question.type) === 'CLOZE')
+    .map((question) => Number(question.id));
+  const childMapByParentId = await loadChildQuestionsByParentIds(clozeParentIds);
+
+  const questions = resolvedBaseQuestions.map((question) => {
+    if (normalizeQuestionType(question.type) !== 'CLOZE') {
+      return question;
+    }
+
+    return {
+      ...question,
+      metadata: mergeClozeMetadataWithChildren(
+        question.metadata,
+        childMapByParentId.get(Number(question.id)) || [],
+      ),
+    };
+  });
+
+  // Defensive: ensure every question has normalized contentBlocks populated.
+  const questionsWithBlocks = questions.map((q) => {
+    try {
+      const hasBlocks = Array.isArray(q.contentBlocks) && q.contentBlocks.length > 0;
+      if (hasBlocks) return q;
+
+      // Use resolveQuestionSnapshot to derive blocks from metadata/legacy shapes
+      const snapshot = resolveQuestionSnapshot(q);
+      return {
+        ...q,
+        contentBlocks: Array.isArray(snapshot.contentBlocks) ? snapshot.contentBlocks : [],
+      };
+    } catch (e) {
+      return q;
+    }
+  });
+  
 
   return {
     id: plain.id,
@@ -555,11 +832,15 @@ const getQuizAttemptDetails = async (attemptId, studentId) => {
     answers: plain.answers
       .map((sa) => ({
         questionId: sa.questionId,
+        questionContentBlocks: normalizeRichBlocks(parseJsonField(sa.question.metadata, {})?.contentBlocks || []),
         question: {
           id: sa.question.id,
           content: sa.question.content,
           type: sa.question.type,
-          metadata: parseJsonField(sa.question.metadata, {}),
+          metadata: {
+            ...parseJsonField(sa.question.metadata, {}),
+            contentBlocks: normalizeRichBlocks(parseJsonField(sa.question.metadata, {})?.contentBlocks || []),
+          },
         },
         answerType: sa.answerType,
         answerValue: parseJsonField(sa.answerValue, sa.answerValue),

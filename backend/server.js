@@ -30,7 +30,11 @@ const bootstrap = async () => {
     await TeacherInteraction.sync();
     await LessonWatchPosition.sync();
     await LessonSegment.sync();
-    await LessonLabel.sync({ alter: true });
+    try {
+      await LessonLabel.sync({ alter: true });
+    } catch (syncError) {
+      console.warn('Skipping lesson_labels alter sync:', syncError.message);
+    }
 
     app.listen(env.port, () => {
       console.log(`Backend server is running on port ${env.port}`);

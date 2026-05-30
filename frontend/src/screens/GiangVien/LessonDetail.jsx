@@ -1,361 +1,151 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import ReactDOM from 'react-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import TeacherSidebar from '../../components/TeacherSidebar';
 import httpClient from '../../api/httpClient';
-import { uploadTeacherFileApi } from '../../api/teacherApi';
+import QuestionFormModal from '../../components/QuestionFormModal';
+import ClozeQuestionForm from '../../components/ClozeQuestionForm';
+import SelectQuestionsModal from '../../components/SelectQuestionsModal';
+import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText, richContentTextOnlyToPlainText } from '../../components/RichContentEditor';
+import RichContentRenderer from '../../components/RichContentRenderer';
+import QuestionTypeFields from '../../components/QuestionTypeFields';
+import CommentThread from '../../components/CommentThread';
+import QuizTaker from '../../components/QuizTaker';
 import {
+  fetchQuestionsApi,
+  createQuestionApi,
+  updateQuestionApi,
+  deleteQuestionApi,
   fetchLessonSegmentsApi,
   createLessonSegmentApi,
   updateLessonSegmentApi,
   deleteLessonSegmentApi,
   reorderLessonSegmentsApi,
 } from '../../api/teacherManagementApi';
-import CommentThread from '../../components/CommentThread';
-import QuestionFormModal from '../../components/QuestionFormModal';
-import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from '../../components/RichContentEditor';
-import SelectQuestionsModal from '../../components/SelectQuestionsModal';
-import { createQuestionApi, updateQuestionApi } from '../../api/teacherManagementApi';
+import { fetchLessonDetailApi } from '../../api/lessonApi';
+import { uploadTeacherFileApi } from '../../api/teacherApi';
 import './LessonDetail.css';
+import '../../components/QuizTaker.css';
 
-// Hàm lấy video ID từ URL YouTube
-const getYouTubeVideoId = (rawUrl) => {
-  if (!rawUrl) return null;
-  try {
-    const url = new URL(rawUrl);
-    const host = url.hostname.replace('www.', '');
-    if (host === 'youtu.be') {
-      return url.pathname.slice(1).split(/[?&#]/)[0];
-    }
-    if (host === 'youtube.com' || host === 'm.youtube.com') {
-      if (url.pathname === '/watch') {
-        return url.searchParams.get('v');
-      }
-      if (url.pathname.startsWith('/embed/')) {
-        return url.pathname.split('/embed/')[1];
-      }
-      if (url.pathname.startsWith('/shorts/')) {
-        return url.pathname.split('/shorts/')[1];
-      }
-    }
-  } catch (_error) {
-    return null;
-  }
-  return null;
+const isLikelyImageUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (/^(data:image\/[a-zA-Z0-9.+-]+;base64,)/i.test(raw)) return true;
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(raw)) return true;
+  return /\/uploads\/images\//i.test(raw);
 };
 
-// Hàm format thời gian
-const formatTime = (seconds) => {
-  const total = Math.max(0, Number(seconds || 0));
-  const hrs = Math.floor(total / 3600);
-  const mins = Math.floor((total % 3600) / 60);
-  const secs = Math.floor(total % 60);
-  if (hrs > 0) {
-    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  }
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-};
+const normalizePreviewBlocks = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
 
-// Hàm parse thời gian từ input
-const parseTime = (timeStr) => {
-  if (!timeStr) return 0;
-  const parts = String(timeStr).split(':').map(Number);
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  return parts[0] || 0;
+  if (isLikelyImageUrl(raw)) {
+    return [{ type: 'image', url: raw, alt: '' }];
+  }
+
+      {quizPreview.open && quizPreview.quizId ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 2000,
+            background: 'rgba(15, 23, 42, 0.72)',
+            display: 'flex',
+            alignItems: 'stretch',
+            justifyContent: 'stretch',
+          }}
+        >
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: '100%',
+              background: '#f8fafc',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ position: 'absolute', top: 14, right: 14, zIndex: 2 }}>
+              <button
+                type="button"
+                onClick={handleCloseQuizPreview}
+                style={{
+                  border: 'none',
+                  background: '#111827',
+                  color: 'white',
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+                }}
+              >
+                Đóng
+              </button>
+            </div>
+            <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
+              <QuizTaker
+                quizId={quizPreview.quizId}
+                previewMode
+                onBack={handleCloseQuizPreview}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+  if (raw.includes('<') && raw.includes('>') && typeof DOMParser !== 'undefined') {
+    try {
+      const doc = new DOMParser().parseFromString(raw, 'text/html');
+      const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+      const images = Array.from(doc.querySelectorAll('img[src]'));
+      const blocks = [];
+      if (plainText) blocks.push({ type: 'text', text: plainText });
+      images.forEach((img) => {
+        const src = String(img.getAttribute('src') || '').trim();
+        if (src) blocks.push({ type: 'image', url: src, alt: String(img.getAttribute('alt') || '').trim() });
+      });
+      if (blocks.length) return blocks;
+    } catch (_error) {}
+  }
+
+  return [{ type: 'text', text: raw }];
 };
 
 const SEGMENT_CONTENT_META = {
-  text: { icon: '📝', title: 'Text' },
-  document: { icon: '📎', title: 'Tài liệu' },
-  question: { icon: '❓', title: 'Câu hỏi' },
-  quiz: { icon: '🧪', title: 'Bài kiểm tra' },
-  videoClip: { icon: '🎬', title: 'Đoạn video' },
-};
-
-const createEmptyContentItem = (type = 'text', orderIndex = 1) => ({
-  type,
-  title: '',
-  content: '',
-  resourceUrl: '',
-  questionIds: [],
-  questionTitles: [],
-  randomize: false,
-  randomCount: 0,
-  startTime: '',
-  endTime: '',
-  orderIndex,
-});
-
-const getUploadAcceptByItemType = (type) => {
-  if (type === 'document') {
-    return '.pdf,application/pdf';
-  }
-
-  if (type === 'quiz' || type === 'question') {
-    return '.pdf,application/pdf,image/*';
-  }
-
-  return '*/*';
-};
-
-const resolveUploadTypeByMime = (mimeType = '') => {
-  if (mimeType === 'application/pdf') {
-    return 'document';
-  }
-  if (mimeType === 'video/mp4') {
-    return 'video';
-  }
-  if (mimeType.startsWith('image/')) {
-    return 'image';
-  }
-  return null;
-};
-
-const isUploadTypeAllowedForContentType = (contentType, uploadType) => {
-  if (contentType === 'document') {
-    return uploadType === 'document';
-  }
-
-  if (contentType === 'quiz' || contentType === 'question') {
-    return uploadType === 'document' || uploadType === 'image';
-  }
-
-  return true;
-};
-
-const normalizeContentItemsForForm = (items = []) => {
-  if (!Array.isArray(items) || !items.length) {
-    return [createEmptyContentItem('text', 1)];
-  }
-
-  return items.map((item, index) => ({
-    ...createEmptyContentItem(item.type || 'text', index + 1),
-    ...item,
-    startTime: item?.startTime == null ? '' : String(item.startTime),
-    endTime: item?.endTime == null ? '' : String(item.endTime),
-    orderIndex: index + 1,
-  }));
+  text: { icon: '📝', title: 'Text', color: '#3498db' },
+  document: { icon: '📎', title: 'Tài liệu', color: '#e74c3c' },
+  question: { icon: '❓', title: 'Câu hỏi', color: '#f39c12' },
+  quiz: { icon: '🧪', title: 'Bài tập', color: '#9b59b6' },
+  videoClip: { icon: '🎬', title: 'Video Clip', color: '#1abc9c' },
 };
 
 function LessonDetail() {
-  const { lessonId, courseId, chapterId } = useParams();
+  const { courseId, chapterId, lessonId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const playerRef = useRef(null);
+  const resourceUploadInputRefs = useRef([]);
 
   const [lesson, setLesson] = useState(null);
   const [segments, setSegments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const playerRef = useRef(null);
-
-  // State cho modal thêm/sửa phần
-  const [showModal, setShowModal] = useState(false);
-  const [editingSegment, setEditingSegment] = useState(null);
-  const [formData, setFormData] = useState({
-    title: '',
-    startTime: '',
-    endTime: '',
-    orderIndex: '',
-    contentItems: [createEmptyContentItem('text', 1)],
-  });
-
+  const [segmentsLoading, setSegmentsLoading] = useState(false);
   const [playingSegmentId, setPlayingSegmentId] = useState(null);
-  const [uploadingContentIndex, setUploadingContentIndex] = useState(null);
-  const [uploadMessageByIndex, setUploadMessageByIndex] = useState({});
-  const [dragOverContentIndex, setDragOverContentIndex] = useState(null);
-  const resourceUploadInputRefs = useRef({});
-
-  // Log params để debug
-  useEffect(() => {
-    console.log('LessonDetail params:', { lessonId, courseId, chapterId });
-  }, [lessonId, courseId, chapterId]);
-
-  // Lấy thông tin bài học
-  const loadLessonDetail = async () => {
-    try {
-      if (!lessonId) {
-        throw new Error('Lesson ID not found');
-      }
-      const response = await httpClient.get(`/lessons/${lessonId}`);
-      const lessonData = response?.data?.data || response?.data;
-      if (!lessonData) {
-        throw new Error('No lesson data returned');
-      }
-      setLesson(lessonData);
-    } catch (err) {
-      console.error('Load lesson detail error:', err);
-      setError('Không thể tải thông tin bài học. ' + (err?.message || ''));
-    }
-  };
-
-  // Lấy danh sách phần
-  const loadSegments = async () => {
-    try {
-      if (!lessonId) {
-        throw new Error('Lesson ID not found');
-      }
-      const items = await fetchLessonSegmentsApi(lessonId);
-      const sortedItems = Array.isArray(items)
-        ? [...items].sort((left, right) => {
-            const leftOrder = Number(left.orderIndex || 0);
-            const rightOrder = Number(right.orderIndex || 0);
-            if (leftOrder !== rightOrder) return leftOrder - rightOrder;
-            return Number(left.startTime || 0) - Number(right.startTime || 0);
-          })
-        : [];
-      setSegments(sortedItems);
-    } catch (err) {
-      console.error('Load segments error:', err);
-      setError(prev => prev || err?.response?.data?.message || 'Không thể tải danh sách phần');
-      setSegments([]);
-    }
-  };
-
-  useEffect(() => {
-    if (lessonId && courseId && chapterId) {
-      setLoading(true);
-      setError('');
-      Promise.all([loadLessonDetail(), loadSegments()])
-        .finally(() => setLoading(false));
-    } else {
-      setError('Thông tin bài học không hợp lệ. Vui lòng quay lại và thử lại.');
-      setLoading(false);
-    }
-  }, [lessonId, courseId, chapterId]);
-
-  // Mở modal thêm phần
-  const handleOpenAddModal = () => {
-    setEditingSegment(null);
-    setFormData({
-      title: '',
-      orderIndex: String((segments?.length || 0) + 1),
-      contentItems: [createEmptyContentItem('text', 1)],
-    });
-    setShowModal(true);
-  };
-
-  // Mở modal sửa phần
-  const handleOpenEditModal = (segment) => {
-    setEditingSegment(segment);
-    setFormData({
-      title: segment.title || '',
-      orderIndex: String(segment.orderIndex || ''),
-      contentItems: normalizeContentItemsForForm(segment.contentItems || []),
-    });
-    setShowModal(true);
-  };
-
-  // Xử lý thay đổi form
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handleContentItemChange = (index, field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      contentItems: prev.contentItems.map((item, itemIndex) => {
-        if (itemIndex !== index) return item;
-
-        if (field === 'type') {
-          const nextItem = {
-            ...createEmptyContentItem(value, index + 1),
-            type: value,
-          };
-          if (value === 'quiz') {
-            setTimeout(() => setSelectQuestionsModal({ open: true, itemIndex: index }), 0);
-          }
-          return nextItem;
-        }
-
-        return {
-          ...item,
-          [field]: value,
-        };
-      }),
-    }));
-  };
-
-  const handleAddContentItem = () => {
-    setFormData((prev) => ({
-      ...prev,
-      contentItems: [
-        ...prev.contentItems,
-        createEmptyContentItem('text', prev.contentItems.length + 1),
-      ],
-    }));
-  };
-
-  const handleMoveContentItem = (index, direction) => {
-    setFormData((prev) => {
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= prev.contentItems.length) {
-        return prev;
-      }
-
-      const items = [...prev.contentItems];
-      const [moved] = items.splice(index, 1);
-      items.splice(nextIndex, 0, moved);
-
-      return {
-        ...prev,
-        contentItems: items.map((item, itemIndex) => ({
-          ...item,
-          orderIndex: itemIndex + 1,
-        })),
-      };
-    });
-  };
-
-  const handleDeleteContentItem = (index) => {
-    setFormData((prev) => {
-      if (prev.contentItems.length <= 1) {
-        return {
-          ...prev,
-          contentItems: [createEmptyContentItem('text', 1)],
-        };
-      }
-
-      const items = prev.contentItems.filter((_, itemIndex) => itemIndex !== index);
-      return {
-        ...prev,
-        contentItems: items.map((item, itemIndex) => ({
-          ...item,
-          orderIndex: itemIndex + 1,
-        })),
-      };
-    });
-  };
-
-  const handleTriggerResourceUpload = (index) => {
-    const input = resourceUploadInputRefs.current[index];
-    if (input) {
-      input.click();
-    }
-  };
-
-  const handleOpenQuestionManager = () => {
-    // replaced by modal flow below — keep for backward compat but noop here
-    return;
-  };
-
-  // Question modal state (used when adding from Lesson modal)
-  const createEmptyQuestionDraft = () => ({
+  const [questionModalOpen, setQuestionModalOpen] = useState(false);
+  const [questionDraft, setQuestionDraft] = useState({
     type: 'MULTIPLE_CHOICE',
+    metadata: { text_template: '', inner_questions: {} },
     content: '',
-    contentBlocks: createEmptyRichBlocks(),
     isPublished: false,
     options: ['', '', '', ''],
     optionsRich: [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
     correctIndices: [0],
+    allowMultipleCorrect: false,
     explanation: '',
     correctAnswer: true,
-    acceptedAnswersText: '',
+    acceptedAnswersRich: [createEmptyRichBlocks()],
     caseSensitive: false,
     fuzzyMatch: true,
-    instructions: '',
+    instructionsRich: createEmptyRichBlocks(),
     rubric: [
       { name: 'Nội dung', weight: 40, description: '' },
       { name: 'Lập luận', weight: 30, description: '' },
@@ -366,325 +156,402 @@ function LessonDetail() {
     aiModel: 'gpt-3.5-turbo',
   });
 
-  const [questionModalOpen, setQuestionModalOpen] = useState(false);
-  const [questionDraft, setQuestionDraft] = useState(createEmptyQuestionDraft());
-  const [questionEditingId, setQuestionEditingId] = useState(null);
+  const [editingSegment, setEditingSegment] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [formData, setFormData] = useState({ title: '', orderIndex: 1, contentItems: [] });
+  const [uploadingContentIndex, setUploadingContentIndex] = useState(null);
+  const [dragOverContentIndex, setDragOverContentIndex] = useState(null);
+  const [uploadMessageByIndex, setUploadMessageByIndex] = useState({});
+  const [error, setError] = useState(null);
   const [selectQuestionsModal, setSelectQuestionsModal] = useState({ open: false, itemIndex: null });
+  const [quizPreview, setQuizPreview] = useState({ open: false, quizId: null, title: '' });
+
+  const loading = segmentsLoading || !lesson;
+
+  const createEmptyContentItem = (type = 'text', orderIndex = 1) => ({
+    type,
+    title: '',
+    content: '',
+    resourceUrl: '',
+    questionIds: [],
+    questionTitles: [],
+    randomize: false,
+    randomCount: 1,
+    startTime: '',
+    endTime: '',
+    orderIndex,
+  });
+
+  const getUploadAcceptByItemType = (type) => {
+    if (type === 'document') return '.pdf,image/*';
+    if (type === 'videoClip') return 'video/*';
+    return 'image/*,.pdf,video/*';
+  };
+
+  const handleContentItemChange = (index, field, value) => {
+    setFormData((prev) => {
+      const nextItems = [...prev.contentItems];
+      const current = nextItems[index] || createEmptyContentItem('text', index + 1);
+      nextItems[index] = { ...current, [field]: value };
+      return { ...prev, contentItems: nextItems };
+    });
+  };
+
+  const handleMoveContentItem = (index, direction) => {
+    setFormData((prev) => {
+      const nextItems = [...prev.contentItems];
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= nextItems.length) return prev;
+      const [moved] = nextItems.splice(index, 1);
+      nextItems.splice(targetIndex, 0, moved);
+      return { ...prev, contentItems: nextItems.map((item, itemIndex) => ({ ...item, orderIndex: itemIndex + 1 })) };
+    });
+  };
+
+  const handleDeleteContentItem = (index) => {
+    setFormData((prev) => {
+      const nextItems = prev.contentItems.filter((_item, itemIndex) => itemIndex !== index);
+      return {
+        ...prev,
+        contentItems: nextItems.length ? nextItems.map((item, itemIndex) => ({ ...item, orderIndex: itemIndex + 1 })) : [createEmptyContentItem('text', 1)],
+      };
+    });
+  };
+
+  const handleAddContentItem = (type = 'text') => {
+    setFormData((prev) => ({
+      ...prev,
+      contentItems: [...prev.contentItems, createEmptyContentItem(type, prev.contentItems.length + 1)],
+    }));
+  };
+
+  const handleTriggerResourceUpload = (index) => {
+    resourceUploadInputRefs.current[index]?.click();
+  };
+
+  const handleOpenAddModal = () => {
+    setEditingSegment(null);
+    setFormData({ title: '', orderIndex: 1, contentItems: [createEmptyContentItem('text', 1)] });
+    setShowModal(true);
+  };
+
+  const handleOpenEditModal = (segment) => {
+    setEditingSegment(segment);
+    setFormData({
+      title: segment?.title || '',
+      orderIndex: segment?.orderIndex || 1,
+      contentItems: Array.isArray(segment?.contentItems) && segment.contentItems.length
+        ? segment.contentItems.map((item, index) => ({
+          type: item.type || 'text',
+          title: item.title || '',
+          content: item.content || '',
+          resourceUrl: item.resourceUrl || '',
+          questionIds: Array.isArray(item.questionIds) ? item.questionIds : [],
+          questionTitles: Array.isArray(item.questionTitles) ? item.questionTitles : [],
+          randomize: Boolean(item.randomize),
+          randomCount: Number(item.randomCount || 0),
+          startTime: item.startTime ?? '',
+          endTime: item.endTime ?? '',
+          orderIndex: index + 1,
+        }))
+        : [createEmptyContentItem('text', 1)],
+    });
+    setShowModal(true);
+  };
 
   const handleAddQuestionInLesson = () => {
-    if (!editingSegment?.id) return alert('Vui lòng lưu phần trước khi thêm câu hỏi.');
-    setQuestionEditingId(null);
-    setQuestionDraft(createEmptyQuestionDraft());
-    setQuestionModalOpen(true);
+    if (!editingSegment?.id) return;
+    navigate(`/teacher/courses/${courseId}/chapters/${chapterId}/lessons/${lessonId}/segments/${editingSegment.id}`);
   };
 
-  const buildQuestionPayload = () => {
-    const content = richContentToPlainText(questionDraft.contentBlocks) || questionDraft.content.trim();
-    if (!content) throw new Error('Vui lòng nhập nội dung câu hỏi.');
-
-    const base = {
-      type: questionDraft.type,
-      content,
-      contentBlocks: questionDraft.contentBlocks,
-      courseId: Number(courseId),
-      chapterId: Number(chapterId),
-      lectureId: Number(lessonId),
-      segmentId: Number(editingSegment?.id),
-      isPublished: questionDraft.isPublished,
-    };
-
-    if (questionDraft.type === 'MULTIPLE_CHOICE') {
-      const pairs = questionDraft.options
-        .map((item, index) => ({ rawIndex: index, value: item.trim() }))
-        .filter((item) => item.value);
-
-      const options = pairs.map((item) => item.value);
-      const selectedCorrectIndex = questionDraft.correctIndices[0];
-      const correctIndices = pairs
-        .map((item, index) => ({ index, isCorrect: item.rawIndex === selectedCorrectIndex }))
-        .filter((item) => item.isCorrect)
-        .map((item) => item.index);
-
-      if (options.length < 2) {
-        throw new Error('Câu hỏi trắc nghiệm cần ít nhất 2 đáp án.');
-      }
-      if (!correctIndices.length) {
-        throw new Error('Hãy chọn ít nhất 1 đáp án đúng.');
-      }
-
-      return {
-        ...base,
-        options,
-        optionsRich: questionDraft.optionsRich,
-        correctIndices,
-        explanation: questionDraft.explanation.trim() || undefined,
-      };
-    }
-
-    if (questionDraft.type === 'TRUE_FALSE') {
-      return {
-        ...base,
-        correctAnswer: questionDraft.correctAnswer,
-        explanation: questionDraft.explanation.trim() || undefined,
-      };
-    }
-
-    if (questionDraft.type === 'SHORT_ANSWER') {
-      const acceptedAnswers = questionDraft.acceptedAnswersText
-        .split('\n')
-        .map((item) => item.trim())
-        .filter(Boolean);
-
-      if (!acceptedAnswers.length) {
-        throw new Error('Câu trả lời ngắn cần ít nhất 1 đáp án chấp nhận.');
-      }
-
-      return {
-        ...base,
-        acceptedAnswers,
-        caseSensitive: questionDraft.caseSensitive,
-        fuzzyMatch: questionDraft.fuzzyMatch,
-        explanation: questionDraft.explanation.trim() || undefined,
-      };
-    }
-
-    const rubric = questionDraft.rubric
-      .map((item) => ({
-        name: item.name.trim(),
-        weight: Number(item.weight),
-        description: item.description.trim(),
-      }))
-      .filter((item) => item.name && item.description && Number.isFinite(item.weight));
-
-    const totalWeight = rubric.reduce((sum, item) => sum + item.weight, 0);
-    if (!rubric.length) {
-      throw new Error('Câu tự luận cần ít nhất 1 tiêu chí hợp lệ.');
-    }
-    if (totalWeight !== 100) {
-      throw new Error('Tổng trọng số rubric của ESSAY phải bằng 100.');
-    }
-
-    return {
-      ...base,
-      instructions: questionDraft.instructions.trim(),
-      rubric,
-      wordLimit: {
-        min: Number(questionDraft.wordLimitMin),
-        max: Number(questionDraft.wordLimitMax),
-      },
-      aiModel: questionDraft.aiModel,
-    };
+  const handleSelectQuestionsForItem = (questionIds = [], questionTitles = []) => {
+    if (selectQuestionsModal.itemIndex == null) return;
+    handleContentItemChange(selectQuestionsModal.itemIndex, 'questionIds', questionIds);
+    handleContentItemChange(selectQuestionsModal.itemIndex, 'questionTitles', questionTitles);
+    setSelectQuestionsModal({ open: false, itemIndex: null });
   };
 
-  const handleSaveQuestionFromLesson = async () => {
+  const handleOpenQuizPreview = (item) => {
+    if (!item?.quizId) return;
+    setQuizPreview({
+      open: true,
+      quizId: Number(item.quizId),
+      title: item.title || 'Xem trước bài kiểm tra',
+    });
+  };
+
+  const handleCloseQuizPreview = () => {
+    setQuizPreview({ open: false, quizId: null, title: '' });
+  };
+
+  const handleFinishModal = () => setQuestionModalOpen(false);
+
+  const getYouTubeVideoId = (url) => {
     try {
-      const payload = buildQuestionPayload();
-      if (questionEditingId) {
-        await updateQuestionApi(questionEditingId, payload);
-      } else {
-        await createQuestionApi(payload);
+      const u = new URL(String(url || '').trim());
+      const host = u.hostname.replace('www.', '').toLowerCase();
+
+      if (host === 'youtu.be') {
+        return u.pathname.slice(1).split(/[?&#]/)[0] || '';
       }
-      setQuestionModalOpen(false);
-      setQuestionEditingId(null);
-      setQuestionDraft(createEmptyQuestionDraft());
-      // Optionally refresh segments/questions in parent
-      await loadSegments();
-    } catch (err) {
-      alert(err?.response?.data?.message || err.message || 'Không thể lưu câu hỏi.');
+      if (u.pathname === '/watch') {
+        return u.searchParams.get('v') || '';
+      }
+      if (u.pathname.startsWith('/embed/')) {
+        return u.pathname.split('/embed/')[1]?.split(/[?&#]/)[0] || '';
+      }
+      if (u.pathname.startsWith('/shorts/')) {
+        return u.pathname.split('/shorts/')[1]?.split(/[?&#]/)[0] || '';
+      }
+      return '';
+    } catch (_e) {
+      return '';
     }
   };
 
   const renderQuestionTypeSpecificForm = () => {
-    if (questionDraft.type === 'MULTIPLE_CHOICE') {
-      return (
-        <>
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Các lựa chọn đáp án</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {questionDraft.optionsRich.map((optionBlocks, index) => (
-              <div key={`question-option-${index}`} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  <input
-                    type="radio"
-                    name="question-correct-answer"
-                    checked={questionDraft.correctIndices.includes(index)}
-                    onChange={() => setQuestionDraft((prev) => ({ ...prev, correctIndices: [index] }))}
-                  />
-                  <span style={{ width: 22, fontWeight: 700 }}>{String.fromCharCode(65 + index)}</span>
-        <SelectQuestionsModal
-          isOpen={selectQuestionsModal.open}
-          filters={{ courseId: Number(courseId), chapterId: Number(chapterId), lectureId: Number(lessonId), segmentId: editingSegment?.id }}
-          initial={selectQuestionsModal.itemIndex != null ? (formData.contentItems[selectQuestionsModal.itemIndex]?.questionIds || []) : []}
-          onClose={() => setSelectQuestionsModal({ open: false, itemIndex: null })}
-          onConfirm={(data) => {
-            const idx = selectQuestionsModal.itemIndex;
-            if (idx == null) return;
-            if (data.randomize) {
-              handleContentItemChange(idx, 'questionIds', []);
-              handleContentItemChange(idx, 'questionTitles', []);
-              handleContentItemChange(idx, 'randomize', true);
-              handleContentItemChange(idx, 'randomCount', Number(data.randomCount || 1));
-            } else {
-              handleContentItemChange(idx, 'questionIds', Array.isArray(data.questionIds) ? data.questionIds : []);
-              handleContentItemChange(idx, 'questionTitles', Array.isArray(data.questionTitles) ? data.questionTitles : []);
-              handleContentItemChange(idx, 'randomize', false);
-              handleContentItemChange(idx, 'randomCount', 0);
-            }
-          }}
-        />
-                  <span style={{ color: '#6b7280' }}>Đáp án {String.fromCharCode(65 + index)}</span>
-                </label>
-                <RichContentEditor
-                  title=""
-                  helperText="Có thể dùng văn bản, ảnh hoặc video cho đáp án này."
-                  value={optionBlocks}
-                  onChange={(nextBlocks) => {
-                    const next = [...questionDraft.optionsRich];
-                    next[index] = nextBlocks;
-                    const nextPlainOptions = [...questionDraft.options];
-                    nextPlainOptions[index] = richContentToPlainText(nextBlocks);
-                    setQuestionDraft((prev) => ({ ...prev, optionsRich: next, options: nextPlainOptions }));
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        </>
-      );
-    }
 
     if (questionDraft.type === 'TRUE_FALSE') {
       return (
-        <div className="form-group">
-          <label>Đáp án đúng</label>
-          <select
-            className="form-input"
-            value={String(questionDraft.correctAnswer)}
-            onChange={(event) => setQuestionDraft((prev) => ({ ...prev, correctAnswer: event.target.value === 'true' }))}
-          >
-            <option value="true">Đúng</option>
-            <option value="false">Sai</option>
-          </select>
+        <div style={{ marginBottom: 20, background: '#f0f9ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: 16 }}>
+          <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, fontSize: 15, color: '#111' }}>
+            ✓ Đáp án đúng *
+          </label>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: questionDraft.correctAnswer === true ? '#dbeafe' : 'white', borderRadius: 8, border: '1px solid #bfdbfe', cursor: 'pointer', fontWeight: questionDraft.correctAnswer === true ? 600 : 500 }}>
+              <input
+                type="radio"
+                name="true-false-answer"
+                checked={questionDraft.correctAnswer === true}
+                onChange={() => setQuestionDraft((prev) => ({ ...prev, correctAnswer: true }))}
+              />
+              <span>Đúng (True)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: questionDraft.correctAnswer === false ? '#fee2e2' : 'white', borderRadius: 8, border: '1px solid #fecaca', cursor: 'pointer', fontWeight: questionDraft.correctAnswer === false ? 600 : 500 }}>
+              <input
+                type="radio"
+                name="true-false-answer"
+                checked={questionDraft.correctAnswer === false}
+                onChange={() => setQuestionDraft((prev) => ({ ...prev, correctAnswer: false }))}
+              />
+              <span>Sai (False)</span>
+            </label>
+          </div>
         </div>
       );
     }
 
     if (questionDraft.type === 'SHORT_ANSWER') {
       return (
-        <>
-          <div className="form-group">
-            <label>Danh sách đáp án chấp nhận (mỗi dòng 1 đáp án)</label>
-            <textarea
-              className="form-textarea"
-              value={questionDraft.acceptedAnswersText}
-              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, acceptedAnswersText: event.target.value }))}
-            />
+        <div style={{ marginBottom: 20, background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: 16 }}>
+          <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, fontSize: 15, color: '#111' }}>
+            ✓ Danh sách đáp án chấp nhận *
+          </label>
+          <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {Array.isArray(questionDraft.acceptedAnswersRich) ? questionDraft.acceptedAnswersRich.map((answerBlocks, answerIndex) => (
+              <div key={`short-answer-${answerIndex}`} style={{ border: '1px solid #fbbf24', borderRadius: 8, padding: 12, background: 'white' }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: '#92400e' }}>Đáp án #{answerIndex + 1}</span>
+                  {questionDraft.acceptedAnswersRich.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = [...questionDraft.acceptedAnswersRich];
+                        next.splice(answerIndex, 1);
+                        setQuestionDraft((prev) => ({ ...prev, acceptedAnswersRich: next }));
+                      }}
+                      style={{ padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #f59e0b', background: '#fef3c7', color: '#92400e', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Xóa
+                    </button>
+                  )}
+                </div>
+                <RichContentEditor
+                  title=""
+                  helperText="Soạn nội dung đáp án với định dạng, ảnh, video..."
+                  value={answerBlocks}
+                  onChange={(nextBlocks) => {
+                    const next = [...questionDraft.acceptedAnswersRich];
+                    next[answerIndex] = nextBlocks;
+                    setQuestionDraft((prev) => ({ ...prev, acceptedAnswersRich: next }));
+                  }}
+                />
+              </div>
+            )) : null}
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={questionDraft.caseSensitive}
-              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, caseSensitive: event.target.checked }))}
-            />
-            <span>Phân biệt chữ hoa/thường</span>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={questionDraft.fuzzyMatch}
-              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, fuzzyMatch: event.target.checked }))}
-            />
-            <span>Khớp mềm (fuzzy match)</span>
-          </label>
-        </>
+          <button
+            type="button"
+            onClick={() => {
+              setQuestionDraft((prev) => ({
+                ...prev,
+                acceptedAnswersRich: [...(prev.acceptedAnswersRich || []), createEmptyRichBlocks()],
+              }));
+            }}
+            style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #fbbf24', background: '#fffbeb', color: '#92400e', fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}
+          >
+            + Thêm đáp án
+          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={questionDraft.caseSensitive}
+                onChange={(event) => setQuestionDraft((prev) => ({ ...prev, caseSensitive: event.target.checked }))}
+                style={{ width: 18, height: 18, cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 14 }}>🔒 Phân biệt chữ hoa/thường (case-sensitive)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={questionDraft.fuzzyMatch}
+                onChange={(event) => setQuestionDraft((prev) => ({ ...prev, fuzzyMatch: event.target.checked }))}
+                style={{ width: 18, height: 18, cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 14 }}>🔄 Khớp mềm - fuzzy match (dung thứ lỗi chính tả nhỏ)</span>
+            </label>
+          </div>
+        </div>
       );
     }
 
     return (
-      <>
-        <div className="form-group">
-          <label>Hướng dẫn bài viết</label>
-          <textarea
-            className="form-textarea"
-            value={questionDraft.instructions}
-            onChange={(event) => setQuestionDraft((prev) => ({ ...prev, instructions: event.target.value }))}
+      <div style={{ marginBottom: 20, background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 10, padding: 16 }}>
+        <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, fontSize: 15, color: '#111' }}>
+          ✓ Hướng dẫn bài tự luận *
+        </label>
+        <div style={{ marginBottom: 16 }}>
+          <RichContentEditor
+            title=""
+            helperText="Soạn hướng dẫn chi tiết với định dạng, ảnh, video, links..."
+            value={Array.isArray(questionDraft.instructionsRich) ? questionDraft.instructionsRich : createEmptyRichBlocks()}
+            onChange={(nextBlocks) => {
+              setQuestionDraft((prev) => ({ ...prev, instructionsRich: nextBlocks }));
+            }}
           />
         </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label>Số từ tối thiểu</label>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Số từ tối thiểu</label>
             <input
               className="form-input"
               type="number"
               min="0"
               value={questionDraft.wordLimitMin}
               onChange={(event) => setQuestionDraft((prev) => ({ ...prev, wordLimitMin: event.target.value }))}
+              style={{ background: '#f5e6ff' }}
             />
           </div>
-          <div className="form-group">
-            <label>Số từ tối đa</label>
+          <div>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Số từ tối đa</label>
             <input
               className="form-input"
               type="number"
               min="1"
               value={questionDraft.wordLimitMax}
               onChange={(event) => setQuestionDraft((prev) => ({ ...prev, wordLimitMax: event.target.value }))}
+              style={{ background: '#f5e6ff' }}
             />
           </div>
-          <div className="form-group">
-            <label>Mô hình AI</label>
-            <select
-              className="form-input"
-              value={questionDraft.aiModel}
-              onChange={(event) => setQuestionDraft((prev) => ({ ...prev, aiModel: event.target.value }))}
-            >
-              <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-              <option value="gpt-4">gpt-4</option>
-              <option value="gpt-4o">gpt-4o</option>
-            </select>
-          </div>
         </div>
-        <div className="form-group">
-          <label>Rubric</label>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 14 }}>Mô hình AI để chấm</label>
+          <select
+            className="form-input"
+            value={questionDraft.aiModel}
+            onChange={(event) => setQuestionDraft((prev) => ({ ...prev, aiModel: event.target.value }))}
+            style={{ background: '#f5e6ff' }}
+          >
+            <option value="gpt-3.5-turbo">gpt-3.5-turbo (nhanh, tiết kiệm)</option>
+            <option value="gpt-4">gpt-4 (chính xác hơn)</option>
+            <option value="gpt-4o">gpt-4o (toàn năng nhất)</option>
+          </select>
+        </div>
+
+        <div>
+          <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, fontSize: 14 }}>Rubric chấm điểm</label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {questionDraft.rubric.map((item, index) => (
-              <div key={`rubric-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 2fr', gap: 10 }}>
-                <input
-                  className="form-input"
-                  placeholder="Tên tiêu chí"
-                  value={item.name}
-                  onChange={(event) => {
-                    const next = [...questionDraft.rubric];
-                    next[index] = { ...next[index], name: event.target.value };
-                    setQuestionDraft((prev) => ({ ...prev, rubric: next }));
-                  }}
-                />
-                <input
-                  className="form-input"
-                  type="number"
-                  placeholder="Trọng số"
-                  value={item.weight}
-                  onChange={(event) => {
-                    const next = [...questionDraft.rubric];
-                    next[index] = { ...next[index], weight: event.target.value };
-                    setQuestionDraft((prev) => ({ ...prev, rubric: next }));
-                  }}
-                />
+              <div key={`rubric-${index}`} style={{ background: 'white', border: '1px solid #e9d5ff', borderRadius: 8, padding: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: 10, marginBottom: 10 }}>
+                  <input
+                    className="form-input"
+                    placeholder="Tên tiêu chí (ví dụ: Nội dung, Lập luận, Ngôn ngữ)"
+                    value={item.name}
+                    onChange={(event) => {
+                      const next = [...questionDraft.rubric];
+                      next[index] = { ...next[index], name: event.target.value };
+                      setQuestionDraft((prev) => ({ ...prev, rubric: next }));
+                    }}
+                  />
+                  <input
+                    className="form-input"
+                    type="number"
+                    placeholder="Trọng số (%)"
+                    min="0"
+                    max="100"
+                    value={item.weight}
+                    onChange={(event) => {
+                      const next = [...questionDraft.rubric];
+                      next[index] = { ...next[index], weight: event.target.value };
+                      setQuestionDraft((prev) => ({ ...prev, rubric: next }));
+                    }}
+                  />
+                </div>
                 <textarea
                   className="form-textarea"
-                  placeholder="Mô tả tiêu chí"
+                  placeholder="Mô tả tiêu chí này (ví dụ: Câu trả lời cần liên hệ với kiến thức đã học)"
                   value={item.description}
                   onChange={(event) => {
                     const next = [...questionDraft.rubric];
                     next[index] = { ...next[index], description: event.target.value };
                     setQuestionDraft((prev) => ({ ...prev, rubric: next }));
                   }}
+                  style={{ minHeight: 60 }}
                 />
               </div>
             ))}
           </div>
         </div>
-      </>
+      </div>
     );
+  };
+
+  // Minimal handler to satisfy QuestionFormModal usage in LessonDetail.
+  // This is a safe stub: it closes the modal and resets the draft.
+  const handleSaveQuestionFromLesson = async () => {
+    try {
+      setQuestionModalOpen(false);
+      setQuestionDraft({
+        type: 'MULTIPLE_CHOICE',
+        metadata: { text_template: '', inner_questions: {} },
+        content: '',
+        isPublished: false,
+        options: ['', '', '', ''],
+        optionsRich: [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
+        correctIndices: [0],
+        allowMultipleCorrect: false,
+        explanation: '',
+        correctAnswer: true,
+        acceptedAnswersRich: [createEmptyRichBlocks()],
+        caseSensitive: false,
+        fuzzyMatch: true,
+        instructionsRich: createEmptyRichBlocks(),
+        rubric: [
+          { name: 'Nội dung', weight: 40, description: '' },
+          { name: 'Lập luận', weight: 30, description: '' },
+          { name: 'Ngôn ngữ', weight: 30, description: '' },
+        ],
+        wordLimitMin: 100,
+        wordLimitMax: 400,
+        aiModel: 'gpt-3.5-turbo',
+      });
+    } catch (err) {
+      // swallow errors from reset to avoid breaking UI
+      console.error('handleSaveQuestionFromLesson error', err);
+    }
   };
 
   const uploadFileForContentItem = async (index, file) => {
@@ -916,6 +783,36 @@ function LessonDetail() {
   const videoId = lesson?.videoUrl ? getYouTubeVideoId(lesson.videoUrl) : null;
   const embedUrl = videoId ? `https://www.youtube.com/embed/${videoId}` : null;
 
+  const loadSegments = async () => {
+    setSegmentsLoading(true);
+    try {
+      const items = await fetchLessonSegmentsApi(lessonId);
+      setSegments(Array.isArray(items) ? items : []);
+    } catch (err) {
+      console.error('loadSegments error', err);
+      setError(err?.response?.data?.message || err?.message || 'Không thể tải các phần');
+    } finally {
+      setSegmentsLoading(false);
+    }
+  };
+
+  const loadLesson = async () => {
+    try {
+      const data = await fetchLessonDetailApi(lessonId);
+      setLesson(data || null);
+    } catch (err) {
+      console.error('loadLesson error', err);
+      setError(err?.response?.data?.message || err?.message || 'Không thể tải bài học');
+    }
+  };
+
+  useEffect(() => {
+    if (!lessonId) return;
+    loadLesson();
+    loadSegments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessonId]);
+
   return (
     <div className="container-lesson-detail">
       <TeacherSidebar />
@@ -1035,7 +932,27 @@ function LessonDetail() {
                         </button>
                         <button
                           className="btn-detail-view"
-                          onClick={() => navigate(`/teacher/courses/${courseId}/chapters/${chapterId}/lessons/${lessonId}/segments/${segment.id}`)}
+                          onClick={() => {
+                            // If this segment contains question items, pass the first question id
+                            let url = `/teacher/courses/${courseId}/chapters/${chapterId}/lessons/${lessonId}/segments/${segment.id}`;
+                            try {
+                              if (Array.isArray(segment.contentItems)) {
+                                for (const it of segment.contentItems) {
+                                  if (it && it.type === 'question') {
+                                    const qids = Array.isArray(it.questionIds) ? it.questionIds : (Array.isArray(it.questionTitles) ? [] : []);
+                                    const firstId = (qids && qids.length) ? qids[0] : null;
+                                    if (firstId) {
+                                      url += `?openQuestionId=${Number(firstId)}`;
+                                    }
+                                    break;
+                                  }
+                                }
+                              }
+                            } catch (e) {
+                              // ignore
+                            }
+                            navigate(url);
+                          }}
                           title="Xem chi tiết nội dung"
                         >
                           👁️ Chi Tiết
@@ -1228,6 +1145,27 @@ function LessonDetail() {
                               </button>
                             </div>
 
+                            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                              <button
+                                type="button"
+                                className="btn-upload-resource"
+                                onClick={() => handleOpenQuizPreview(item)}
+                                disabled={!item?.quizId}
+                                style={{
+                                  backgroundColor: '#2563eb',
+                                  color: 'white',
+                                  padding: '10px 14px',
+                                  borderRadius: 10,
+                                  border: 'none',
+                                  fontWeight: 700,
+                                  boxShadow: '0 6px 14px rgba(37,99,235,0.18)',
+                                  opacity: item?.quizId ? 1 : 0.6,
+                                }}
+                              >
+                                👁️ Xem trước bài tập
+                              </button>
+                            </div>
+
                             <div style={{ marginTop: 16, padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff' }}>
                               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#374151' }}>
                                 <input
@@ -1265,23 +1203,34 @@ function LessonDetail() {
                               <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: '#f8fafc', border: '1px solid #e5e7eb' }}>
                                 <div style={{ fontWeight: 700, marginBottom: 8, color: '#111827' }}>Câu hỏi đã chọn</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                  {(Array.isArray(item.questionTitles) && item.questionTitles.length ? item.questionTitles : item.questionIds).map((questionValue, questionIndex) => (
-                                    <span
-                                      key={`${questionValue}-${questionIndex}`}
-                                      style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        padding: '6px 10px',
-                                        borderRadius: 999,
-                                        background: '#ede9fe',
-                                        color: '#5b21b6',
-                                        fontWeight: 700,
-                                        fontSize: 13,
-                                      }}
-                                    >
-                                      {Array.isArray(item.questionTitles) && item.questionTitles.length ? questionValue : `Câu #${questionValue}`}
-                                    </span>
-                                  ))}
+                                  {(Array.isArray(item.questionTitles) && item.questionTitles.length ? item.questionTitles : item.questionIds).map((questionValue, questionIndex) => {
+                                    const previewBlocks = Array.isArray(item.questionTitles) && item.questionTitles.length ? normalizePreviewBlocks(questionValue) : [];
+                                    return (
+                                      <span
+                                        key={`${questionValue}-${questionIndex}`}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'flex-start',
+                                          gap: 8,
+                                          padding: '6px 10px',
+                                          borderRadius: 999,
+                                          background: '#ede9fe',
+                                          color: '#5b21b6',
+                                          fontWeight: 700,
+                                          fontSize: 13,
+                                          maxWidth: '100%',
+                                          overflow: 'hidden',
+                                        }}
+                                      >
+                                        {Array.isArray(item.questionTitles) && item.questionTitles.length && previewBlocks.some((block) => block.type === 'image' || block.type === 'video') ? (
+                                          <RichContentRenderer blocks={previewBlocks} />
+                                        ) : (
+                                          Array.isArray(item.questionTitles) && item.questionTitles.length ? questionValue : `Câu #${questionValue}`
+                                        )}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             ) : null}

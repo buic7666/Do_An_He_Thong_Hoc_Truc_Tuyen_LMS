@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const { Question } = require('../models');
 const { HttpError } = require('../utils/httpError');
+const { normalizeRichBlocks, richBlocksToPlainText } = require('../utils/richContent');
 
 const DIFFICULTY_MAP = {
   easy: 'EASY',
@@ -13,9 +14,45 @@ const ALLOWED_TYPES = [
   'TRUE_FALSE',
   'SHORT_ANSWER',
   'ESSAY',
+  'CLOZE',
 ];
 
-const ALLOWED_RICH_BLOCK_TYPES = ['text', 'image', 'video'];
+const getYouTubeEmbedUrl = (rawUrl) => {
+  if (!rawUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(String(rawUrl).trim());
+    const host = url.hostname.replace('www.', '').toLowerCase();
+
+    if (host === 'youtu.be') {
+      const id = url.pathname.slice(1).split(/[?&#]/)[0];
+      return id ? `https://www.youtube.com/watch?v=${id}` : null;
+    }
+
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      if (url.pathname === '/watch') {
+        const id = url.searchParams.get('v');
+        return id ? `https://www.youtube.com/watch?v=${id}` : null;
+      }
+
+      if (url.pathname.startsWith('/embed/')) {
+        const id = url.pathname.split('/embed/')[1]?.split(/[?&#]/)[0];
+        return id ? `https://www.youtube.com/watch?v=${id}` : null;
+      }
+
+      if (url.pathname.startsWith('/shorts/')) {
+        const id = url.pathname.split('/shorts/')[1]?.split(/[?&#]/)[0];
+        return id ? `https://www.youtube.com/watch?v=${id}` : null;
+      }
+    }
+  } catch (_error) {
+    return null;
+  }
+
+  return null;
+};
 
 const mapDifficultyToDb = (value) => {
   if (!value) {
@@ -40,81 +77,95 @@ const parseMetadata = (metadata) => {
   }
 
   if (typeof metadata === 'string') {
-    try {
-      return JSON.parse(metadata);
-    } catch (_error) {
-      return {};
+    let parsed = metadata;
+    // Attempt to parse up to two times to handle double-encoded JSON strings
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch (_err) {
+        break;
+      }
+      if (parsed == null || typeof parsed !== 'string') break;
     }
+
+    return (parsed && typeof parsed === 'object') ? parsed : (typeof parsed === 'string' ? (() => { try { return JSON.parse(parsed); } catch { return {}; } })() : {});
   }
 
   return metadata;
 };
 
-const normalizeRichBlock = (block) => {
-  if (!block || typeof block !== 'object') {
-    return null;
-  }
+const normalizeClozeInnerQuestions = (value) => {
+  const normalizeInnerQuestionItem = (item) => {
+    if (!item || typeof item !== 'object') {
+      return {};
+    }
 
-  const type = String(block.type || 'text').toLowerCase();
-  if (!ALLOWED_RICH_BLOCK_TYPES.includes(type)) {
-    return null;
-  }
-
-  if (type === 'text') {
-    const text = String(block.text ?? '').trim();
-    if (!text) return null;
-    return { type, text };
-  }
-
-  const url = String(block.url ?? '').trim();
-  if (!url) return null;
-
-  if (type === 'image') {
-    return {
+    const type = String(item.type || 'MULTIPLE_CHOICE').toUpperCase();
+    const normalized = {
+      ...item,
       type,
-      url,
-      alt: String(block.alt ?? '').trim(),
+      points: Number(item.points) || 1,
+      content: String(item.content || '').trim(),
+      contentBlocks: normalizeRichBlocks(item.contentBlocks),
+      explanation: String(item.explanation || '').trim(),
+      isPublished: Boolean(item.isPublished),
     };
-  }
 
-  return {
-    type,
-    url,
-    title: String(block.title ?? '').trim(),
+    if (type === 'MULTIPLE_CHOICE') {
+      normalized.options = Array.isArray(item.options) ? item.options : [];
+      normalized.correctIndices = Array.isArray(item.correctIndices)
+        ? item.correctIndices.map((indexValue) => Number(indexValue)).filter((indexValue) => Number.isFinite(indexValue))
+        : (item.correct != null && String(item.correct).trim() !== '' ? [String(item.correct).trim()] : []);
+      normalized.allowMultipleCorrect = Boolean(item.allowMultipleCorrect);
+    } else if (type === 'TRUE_FALSE') {
+      if (typeof item.correctAnswer === 'boolean') {
+        normalized.correctAnswer = item.correctAnswer;
+      } else if (item.correct != null) {
+        normalized.correctAnswer = item.correct === true || String(item.correct).toLowerCase() === 'true';
+      }
+    } else if (type === 'SHORT_ANSWER') {
+      normalized.acceptedAnswers = Array.isArray(item.acceptedAnswers) ? item.acceptedAnswers : (item.correct ? [item.correct] : []);
+      normalized.caseSensitive = Boolean(item.caseSensitive);
+      normalized.fuzzyMatch = item.fuzzyMatch != null ? Boolean(item.fuzzyMatch) : true;
+    } else if (type === 'NUMERICAL') {
+      normalized.correct = item.correct != null ? Number(item.correct) : null;
+      normalized.tolerance = Number.isFinite(Number(item.tolerance)) ? Number(item.tolerance) : 0;
+    } else if (type === 'ESSAY') {
+      normalized.instructions = String(item.instructions || '').trim();
+      normalized.rubric = Array.isArray(item.rubric) ? item.rubric : [];
+    }
+
+    return normalized;
   };
+
+  if (Array.isArray(value)) {
+    return value.reduce((accumulator, item, index) => {
+      accumulator[`q${index + 1}`] = normalizeInnerQuestionItem(item);
+      return accumulator;
+    }, {});
+  }
+
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+
+  return Object.entries(value).reduce((accumulator, [key, item], index) => {
+    const normalizedKey = String(key || '').trim() || `q${index + 1}`;
+    accumulator[normalizedKey] = normalizeInnerQuestionItem(item);
+    return accumulator;
+  }, {});
 };
-
-const normalizeRichBlocks = (value) => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.map(normalizeRichBlock).filter(Boolean);
-};
-
-const richBlocksToPlainText = (blocks = []) => blocks.map((block) => {
-  if (!block || typeof block !== 'object') {
-    return '';
-  }
-
-  if (block.type === 'text') {
-    return String(block.text || '').trim();
-  }
-
-  if (block.type === 'image') {
-    return `[Ảnh: ${String(block.alt || block.url || '').trim()}]`;
-  }
-
-  if (block.type === 'video') {
-    return `[Video: ${String(block.title || block.url || '').trim()}]`;
-  }
-
-  return '';
-}).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
 
 const buildMetadataForType = (type, payload = {}, current = {}) => {
   const questionType = String(type || 'MULTIPLE_CHOICE').toUpperCase();
-  const contentBlocks = normalizeRichBlocks(payload.contentBlocks ?? current.contentBlocks);
+  const incomingContentBlocks = normalizeRichBlocks(payload.contentBlocks ?? current.contentBlocks);
+  const contentFromPayload = String(payload.content || current.content || '').trim();
+  const contentUrl = getYouTubeEmbedUrl(contentFromPayload);
+  const contentBlocks = incomingContentBlocks.length > 0
+    ? incomingContentBlocks
+    : (contentUrl
+      ? [{ type: 'video', url: contentUrl, title: String(payload.title ?? current.title ?? '').trim() }]
+      : []);
 
   switch (questionType) {
     case 'MULTIPLE_CHOICE': {
@@ -165,6 +216,13 @@ const buildMetadataForType = (type, payload = {}, current = {}) => {
         aiModel: payload.aiModel ?? current.aiModel ?? null,
       };
 
+    case 'CLOZE':
+      return {
+        contentBlocks,
+        text_template: payload.metadata?.text_template ?? current.text_template ?? payload.content ?? '',
+        inner_questions: normalizeClozeInnerQuestions(payload.metadata?.inner_questions ?? current.inner_questions ?? {}),
+      };
+
     default:
       throw new HttpError(400, `Invalid question type: ${questionType}`);
   }
@@ -187,6 +245,8 @@ const normalizeQuestion = (question) => {
     isPublished: plain.isPublished || false,
     chapterId: metadata.chapterId != null ? Number(metadata.chapterId) : null,
     lectureId: plain.lectureId,
+    parentQuestionId: plain.parentQuestionId,
+    orderIndex: plain.orderIndex,
     segmentId: metadata.segmentId != null ? Number(metadata.segmentId) : null,
     courseId: plain.courseId,
     creator: plain.creator
@@ -200,7 +260,15 @@ const normalizeQuestion = (question) => {
     updatedAt: plain.updatedAt,
   };
 
-  normalized.contentBlocks = Array.isArray(metadata.contentBlocks) ? metadata.contentBlocks : [];
+  const resolvedBlocks = Array.isArray(metadata.contentBlocks)
+    ? metadata.contentBlocks
+    : Array.isArray(metadata.blocks)
+      ? metadata.blocks
+      : Array.isArray(metadata.richContent?.blocks)
+        ? metadata.richContent.blocks
+        : [];
+
+  normalized.contentBlocks = normalizeRichBlocks(resolvedBlocks);
 
   if (questionType === 'MULTIPLE_CHOICE') {
     const correctIndices = Array.isArray(metadata.correctIndices)
@@ -213,6 +281,12 @@ const normalizeQuestion = (question) => {
     normalized.correctIndices = correctIndices;
     normalized.correctIndex = correctIndices[0] ?? 0;
     normalized.explanation = metadata.explanation || null;
+  } else if (questionType === 'CLOZE') {
+    normalized.metadata = {
+      ...metadata,
+      inner_questions: normalizeClozeInnerQuestions(metadata.inner_questions || {}),
+    };
+    normalized.contentBlocks = Array.isArray(normalized.metadata.contentBlocks) ? normalized.metadata.contentBlocks : [];
   }
 
   return normalized;
@@ -223,9 +297,9 @@ const normalizeQuestion = (question) => {
  */
 const getQuestionsByCreator = async (creatorId) => {
   const questions = await Question.findAll({
-    where: { createdBy: creatorId },
+    where: { createdBy: creatorId, parentQuestionId: null },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   return questions.map(normalizeQuestion);
@@ -239,9 +313,10 @@ const getQuestionsByDifficulty = async (creatorId, difficulty) => {
     where: {
       createdBy: creatorId,
       difficulty: mapDifficultyToDb(difficulty),
+      parentQuestionId: null,
     },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   return questions.map(normalizeQuestion);
@@ -254,12 +329,13 @@ const searchQuestions = async (creatorId, searchText) => {
   const questions = await Question.findAll({
     where: {
       createdBy: creatorId,
+      parentQuestionId: null,
       content: {
         [Op.like]: `%${searchText}%`,
       },
     },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   return questions.map(normalizeQuestion);
@@ -270,9 +346,9 @@ const searchQuestions = async (creatorId, searchText) => {
  */
 const getQuestionsByLecture = async (lectureId) => {
   const questions = await Question.findAll({
-    where: { lectureId },
+    where: { lectureId, parentQuestionId: null },
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   return questions.map(normalizeQuestion);
@@ -282,7 +358,7 @@ const getQuestionsByLecture = async (lectureId) => {
  * Get questions by course with filters
  */
 const getQuestionsByCourse = async (courseId, filters = {}) => {
-  const where = { courseId };
+  const where = { courseId, parentQuestionId: null };
 
   if (filters.type) {
     where.type = String(filters.type).toUpperCase();
@@ -299,7 +375,7 @@ const getQuestionsByCourse = async (courseId, filters = {}) => {
   const questions = await Question.findAll({
     where,
     include: [{ association: 'creator', attributes: ['id', 'name', 'email'] }],
-    order: [['createdAt', 'DESC']],
+    order: [['parentQuestionId', 'ASC'], ['orderIndex', 'ASC'], ['createdAt', 'DESC']],
   });
 
   const normalizedQuestions = questions.map(normalizeQuestion);
@@ -350,8 +426,63 @@ const getQuestionById = async (questionId) => {
   if (!question) {
     throw new HttpError(404, 'Question not found', 'QUESTION_NOT_FOUND');
   }
+  // Normalize and defensively enrich contentBlocks from legacy metadata or raw HTML
+  const normalized = normalizeQuestion(question);
 
-  return normalizeQuestion(question);
+  try {
+    const plain = typeof question.toJSON === 'function' ? question.toJSON() : (question || {});
+    const metaRaw = plain.metadata;
+
+    const extractImageFromHtml = (html) => {
+      if (!html || typeof html !== 'string') return null;
+      try {
+        const m = html.match(/<img[^>]+src=["']?([^"' >]+)["']?[^>]*>/i);
+        if (m && m[1]) return m[1];
+      } catch (e) {}
+      return null;
+    };
+
+    const findFirstImageUrl = (text) => {
+      if (!text) return null;
+      const dataMatch = text.match(/(data:image\/[a-zA-Z0-9.+-]+;base64,[^\s"'>]+)/i);
+      if (dataMatch) return dataMatch[1];
+      const urlMatch = text.match(/(https?:\/\/[^\s"'>]+\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?[^\s"'>]*)?)/i);
+      if (urlMatch) return urlMatch[1];
+      const upMatch = text.match(/(\/uploads\/images\/[^\s"'>]+)/i);
+      if (upMatch) return upMatch[1].startsWith('/') ? (`http://localhost:5000${upMatch[1]}`) : upMatch[1];
+      return null;
+    };
+
+    if ((!Array.isArray(normalized.contentBlocks) || normalized.contentBlocks.length === 0)) {
+      let candidate = null;
+
+      const meta = (metaRaw && typeof metaRaw === 'object') ? metaRaw : (typeof metaRaw === 'string' ? (() => { try { return JSON.parse(metaRaw); } catch { return {}; } })() : {});
+
+      if (Array.isArray(meta.contentBlocks) && meta.contentBlocks.length > 0) {
+        normalized.contentBlocks = normalizeRichBlocks(meta.contentBlocks);
+      } else if (Array.isArray(meta.blocks) && meta.blocks.length > 0) {
+        normalized.contentBlocks = normalizeRichBlocks(meta.blocks);
+      } else if (meta.richContent && Array.isArray(meta.richContent.blocks) && meta.richContent.blocks.length > 0) {
+        normalized.contentBlocks = normalizeRichBlocks(meta.richContent.blocks);
+      } else {
+        if (typeof plain.metadata === 'string') {
+          candidate = extractImageFromHtml(plain.metadata) || findFirstImageUrl(plain.metadata);
+        }
+
+        if (!candidate && typeof plain.content === 'string') {
+          candidate = extractImageFromHtml(plain.content) || findFirstImageUrl(plain.content);
+        }
+
+        if (candidate) {
+          normalized.contentBlocks = normalizeRichBlocks([{ type: 'image', url: candidate, alt: '' }]);
+        }
+      }
+    }
+  } catch (e) {
+    // non-fatal
+  }
+
+  return normalized;
 };
 
 /**
@@ -380,6 +511,8 @@ const createQuestion = async (payload, creatorId) => {
     createdBy: creatorId,
     lectureId: payload.lectureId || null,
     courseId: payload.courseId || null,
+    parentQuestionId: payload.parentQuestionId || null,
+    orderIndex: payload.orderIndex || null,
     isPublished: payload.isPublished === true,
   });
 
@@ -435,6 +568,14 @@ const updateQuestion = async (questionId, payload, creatorId) => {
 
   if (payload.lectureId !== undefined) {
     question.lectureId = payload.lectureId;
+  }
+
+  if (payload.parentQuestionId !== undefined) {
+    question.parentQuestionId = payload.parentQuestionId;
+  }
+
+  if (payload.orderIndex !== undefined) {
+    question.orderIndex = payload.orderIndex;
   }
 
   if (payload.courseId !== undefined) {

@@ -15,9 +15,9 @@ const Question = sequelize.define(
       comment: 'Nội dung câu hỏi',
     },
     type: {
-      type: DataTypes.ENUM('MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY'),
+      type: DataTypes.ENUM('MULTIPLE_CHOICE', 'TRUE_FALSE', 'SHORT_ANSWER', 'ESSAY', 'CLOZE'),
       defaultValue: 'MULTIPLE_CHOICE',
-      comment: 'Loại câu hỏi: MULTIPLE_CHOICE (trắc nghiệm), TRUE_FALSE (đúng/sai), SHORT_ANSWER (trả lời ngắn), ESSAY (tự luận)',
+      comment: 'Loại câu hỏi: MULTIPLE_CHOICE (trắc nghiệm), TRUE_FALSE (đúng/sai), SHORT_ANSWER (trả lời ngắn), ESSAY (tự luận), CLOZE (câu hỏi bài đọc)',
     },
     difficulty: {
       type: DataTypes.ENUM('EASY', 'MEDIUM', 'HARD'),
@@ -49,6 +49,18 @@ const Question = sequelize.define(
       allowNull: true,
       field: 'lecture_id',
       comment: 'Bài giảng mà câu hỏi này thuộc về (tuỳ chọn)',
+    },
+    parentQuestionId: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: true,
+      field: 'parent_question_id',
+      comment: 'Câu hỏi cha nếu đây là câu hỏi con của bài đọc',
+    },
+    orderIndex: {
+      type: DataTypes.INTEGER.UNSIGNED,
+      allowNull: true,
+      field: 'order_index',
+      comment: 'Thứ tự hiển thị trong nhóm câu hỏi cha',
     },
     createdBy: {
       type: DataTypes.BIGINT.UNSIGNED,

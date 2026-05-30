@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-05-21T06:33:00Z",
+  "action": "repair_missing_question_refs",
+  "removedQuestionIds": [92, 93],
+  "updatedSegments": [
+    {
+      "id": 28,
+      "title": "Phần 1"
+    }
+  ],
+  "notes": "Repair script removed missing question IDs from segments. Re-run scanner returned no missing refs."
+}

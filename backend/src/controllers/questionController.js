@@ -76,9 +76,50 @@ const getQuestion = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const question = await questionService.getQuestionById(id);
+        let question = await questionService.getQuestionById(id);
 
-    return successResponse(res, 'Question retrieved', question, 200);
+        // Defensive enrichment: ensure `metadata` is parsed and `contentBlocks`/
+        // `options` are available on the returned object even if stored as a
+        // stringified JSON in the DB. This avoids clients receiving empty
+        // fields when legacy records exist.
+        try {
+          const { normalizeRichBlocks } = require('../utils/richContent');
+          const parse = (v) => {
+            if (v == null) return {};
+            if (typeof v === 'string') {
+              try { return JSON.parse(v); } catch (_) { return {}; }
+            }
+            return v;
+          };
+
+          const meta = parse(question.metadata || {});
+          question.metadata = meta;
+
+          if ((!Array.isArray(question.contentBlocks) || question.contentBlocks.length === 0)) {
+            const resolved = Array.isArray(meta.contentBlocks)
+              ? normalizeRichBlocks(meta.contentBlocks)
+              : Array.isArray(meta.blocks)
+                ? normalizeRichBlocks(meta.blocks)
+                : Array.isArray(meta.richContent?.blocks)
+                  ? normalizeRichBlocks(meta.richContent.blocks)
+                  : [];
+            question.contentBlocks = resolved;
+          }
+
+          if ((!Array.isArray(question.options) || question.options.length === 0) && Array.isArray(meta.options)) {
+            question.options = meta.options;
+          }
+
+          if ((!Array.isArray(question.optionsRich) || question.optionsRich.length === 0) && Array.isArray(meta.optionsRich)) {
+            question.optionsRich = meta.optionsRich;
+          }
+        } catch (e) {
+          // Non-fatal — return original question when enrichment fails
+          // eslint-disable-next-line no-console
+          console.warn('Failed to enrich question metadata defensively', e?.message || e);
+        }
+
+        return successResponse(res, 'Question retrieved', question, 200);
   } catch (error) {
     return next(error);
   }

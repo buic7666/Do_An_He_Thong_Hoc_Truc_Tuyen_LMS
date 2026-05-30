@@ -1,11 +1,119 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import RichContentEditor, { createEmptyRichBlocks, richContentToPlainText } from './RichContentEditor';
+import RichContentRenderer from './RichContentRenderer';
+import QuestionTypeFields from './QuestionTypeFields';
 
 const QUESTION_TYPE_LABELS = {
   MULTIPLE_CHOICE: 'Trắc nghiệm',
   TRUE_FALSE: 'Đúng/Sai',
   SHORT_ANSWER: 'Trả lời ngắn',
   ESSAY: 'Tự luận',
+  CLOZE: 'Câu hỏi bài đọc',
+};
+
+const isLikelyImageUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (/^(data:image\/[a-zA-Z0-9.+-]+;base64,)/i.test(raw)) return true;
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(raw)) return true;
+  return /\/(uploads\/images\/|uploads\/images\/)/i.test(raw);
+};
+
+const isYouTubeUrl = (value) => {
+  try {
+    const url = new URL(String(value || '').trim());
+    const host = url.hostname.replace('www.', '').toLowerCase();
+    return host === 'youtube.com' || host === 'youtu.be' || host === 'm.youtube.com';
+  } catch (_error) {
+    return false;
+  }
+};
+
+const normalizePreviewRichBlocks = (value) => {
+  if (Array.isArray(value)) {
+    return value.flatMap((block) => {
+      if (!block || typeof block !== 'object') return [];
+
+      if (block.type === 'image' || block.type === 'video') {
+        return [block];
+      }
+
+      const text = String(block.text || '').trim();
+      if (!text) return [];
+
+      if (isLikelyImageUrl(text)) {
+        return [{ type: 'image', url: text, alt: String(block.alt || '') }];
+      }
+
+      if (isYouTubeUrl(text)) {
+        return [{ type: 'video', url: text, title: String(block.title || 'YouTube video') }];
+      }
+
+      if (text.includes('<') && text.includes('>') && typeof DOMParser !== 'undefined') {
+        try {
+          const doc = new DOMParser().parseFromString(text, 'text/html');
+          const blocks = [];
+          const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+          if (plainText) {
+            blocks.push({ type: 'text', text: plainText });
+          }
+
+          Array.from(doc.querySelectorAll('img[src]')).forEach((img) => {
+            const src = String(img.getAttribute('src') || '').trim();
+            if (src) {
+              blocks.push({ type: 'image', url: src, alt: String(img.getAttribute('alt') || '').trim() });
+            }
+          });
+
+          Array.from(doc.querySelectorAll('iframe[src]')).forEach((iframe) => {
+            const src = String(iframe.getAttribute('src') || '').trim();
+            if (src) {
+              blocks.push({ type: 'video', url: src, title: String(iframe.getAttribute('title') || 'YouTube video').trim() });
+            }
+          });
+
+          if (blocks.length) return blocks;
+        } catch (_error) {
+          // fall through to plain text
+        }
+      }
+
+      return [{ type: 'text', text }];
+    });
+  }
+
+  if (typeof value === 'string') {
+    const raw = String(value || '').trim();
+    if (!raw) return [];
+    if (isLikelyImageUrl(raw)) return [{ type: 'image', url: raw, alt: '' }];
+    if (isYouTubeUrl(raw)) return [{ type: 'video', url: raw, title: 'YouTube video' }];
+
+    if (raw.includes('<') && raw.includes('>') && typeof DOMParser !== 'undefined') {
+      try {
+        const doc = new DOMParser().parseFromString(raw, 'text/html');
+        const blocks = [];
+        const plainText = String(doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+        const images = Array.from(doc.querySelectorAll('img[src]'));
+        const iframes = Array.from(doc.querySelectorAll('iframe[src]'));
+        if (plainText) blocks.push({ type: 'text', text: plainText });
+        images.forEach((img) => {
+          const src = String(img.getAttribute('src') || '').trim();
+          if (src) blocks.push({ type: 'image', url: src, alt: String(img.getAttribute('alt') || '').trim() });
+        });
+        iframes.forEach((iframe) => {
+          const src = String(iframe.getAttribute('src') || '').trim();
+          if (src) blocks.push({ type: 'video', url: src, title: String(iframe.getAttribute('title') || 'YouTube video').trim() });
+        });
+        if (blocks.length) return blocks;
+      } catch (_error) {
+        // ignore
+      }
+    }
+
+    return [{ type: 'text', text: raw }];
+  }
+
+  return [];
 };
 
 function QuestionFormModal({
@@ -21,14 +129,43 @@ function QuestionFormModal({
   chapterTitle,
   lectureTitle,
   segmentTitle,
+  mode = 'create',
 }) {
   const [step, setStep] = useState(1);
+  const contentBlocks = normalizePreviewRichBlocks(draft?.contentBlocks || draft?.content || []);
+  const modalInnerRef = useRef(null);
+  const isEditing = mode === 'edit';
 
   useEffect(() => {
     if (isOpen) {
       setStep(1);
     }
   }, [isOpen]);
+
+  // When modal opens or step changes, scroll modal content to top and focus first input
+  useEffect(() => {
+    if (!isOpen) return;
+    // allow layout to settle
+    const t = setTimeout(() => {
+      try {
+        const el = modalInnerRef.current;
+        if (el) {
+          el.scrollTop = 0;
+          const first = el.querySelector('textarea, input, [contenteditable="true"]');
+          if (first && typeof first.focus === 'function') {
+            first.focus();
+            if (first.select) {
+              try { first.select(); } catch (e) {}
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }, 50);
+
+    return () => clearTimeout(t);
+  }, [isOpen, step]);
 
   if (!isOpen) {
     return null;
@@ -40,6 +177,24 @@ function QuestionFormModal({
   const validateDraft = (d) => {
     const errors = [];
     const contentLength = (richContentToPlainText(d.contentBlocks) || String(d.content || '').trim()).length;
+
+    if (d.type === 'CLOZE') {
+      const clozeText = String(d.metadata?.text_template || d.content || '').trim();
+      const innerQuestions = d.metadata?.inner_questions && typeof d.metadata.inner_questions === 'object'
+        ? Object.values(d.metadata.inner_questions)
+        : [];
+
+      if (clozeText.length < 10) {
+        errors.push('Nội dung câu hỏi bài đọc cần ít nhất 10 ký tự.');
+      }
+
+      if (!innerQuestions.length) {
+        errors.push('Câu hỏi bài đọc cần ít nhất 1 câu hỏi nhỏ.');
+      }
+
+      return { ok: errors.length === 0, errors };
+    }
+
     if (contentLength < 10) {
       errors.push('Nội dung câu hỏi cần ít nhất 10 ký tự.');
     }
@@ -47,8 +202,10 @@ function QuestionFormModal({
     if (d.type === 'MULTIPLE_CHOICE') {
       const opts = Array.isArray(d.options) ? d.options.map((s) => String(s || '').trim()).filter(Boolean) : [];
       if (opts.length < 2) errors.push('Câu hỏi trắc nghiệm cần ít nhất 2 đáp án.');
-      const correct = Array.isArray(d.correctIndices) ? d.correctIndices.filter((n) => Number.isFinite(Number(n))) : [];
+      const correct = Array.isArray(d.correctIndices) ? d.correctIndices.map((n) => Number(n)).filter((n) => Number.isFinite(n)) : [];
+      const allowMulti = Boolean(d.allowMultipleCorrect);
       if (!correct.length) errors.push('Hãy chọn ít nhất 1 đáp án đúng.');
+      if (!allowMulti && correct.length > 1) errors.push('Chỉ được chọn 1 đáp án đúng khi không bật "Cho phép nhiều đáp án đúng".');
     }
 
     if (d.type === 'SHORT_ANSWER') {
@@ -87,13 +244,16 @@ function QuestionFormModal({
         height: '100%',
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         justifyContent: 'center',
+        overflowY: 'auto',
+        padding: '20px 0',
         zIndex: 9999,
       }}
       onClick={onCancel}
     >
       <div
+        ref={modalInnerRef}
         style={{
           backgroundColor: 'white',
           borderRadius: '8px',
@@ -103,13 +263,14 @@ function QuestionFormModal({
           maxHeight: '90vh',
           overflow: 'auto',
           padding: '32px',
+          marginTop: '0',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div style={{ marginBottom: '24px' }}>
           <h2 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: '600', color: '#111' }}>
-            Tạo Câu Hỏi Theo Từng Bước
+            {isEditing ? 'Sửa Câu Hỏi Theo Từng Bước' : 'Tạo Câu Hỏi Theo Từng Bước'}
           </h2>
           <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#666' }}>
             Loại câu hỏi: <strong>{QUESTION_TYPE_LABELS[draft.type] || draft.type}</strong>
@@ -144,7 +305,7 @@ function QuestionFormModal({
               fontWeight: 600,
               fontSize: 12,
             }}>
-              Bước 2: Xác nhận thêm câu hỏi
+              {isEditing ? 'Bước 2: Xác nhận chỉnh sửa' : 'Bước 2: Xác nhận thêm câu hỏi'}
             </span>
           </div>
 
@@ -168,6 +329,8 @@ function QuestionFormModal({
                   next = { ...next, acceptedAnswersText: next.acceptedAnswersText || '' };
                 } else if (newType === 'ESSAY') {
                   next = { ...next, rubric: next.rubric && next.rubric.length ? next.rubric : [{ name: 'Nội dung', weight: 100, description: '' }], instructions: next.instructions || '' };
+                } else if (newType === 'CLOZE') {
+                  next = { ...next, metadata: next.metadata || { text_template: '', inner_questions: {} } };
                 }
                 onDraftChange(next);
               }}
@@ -177,6 +340,7 @@ function QuestionFormModal({
               <option value="TRUE_FALSE">Đúng/Sai</option>
               <option value="SHORT_ANSWER">Trả lời ngắn</option>
               <option value="ESSAY">Tự luận</option>
+              <option value="CLOZE">Câu hỏi bài đọc</option>
             </select>
           </div>
         </div>
@@ -203,7 +367,7 @@ function QuestionFormModal({
             ) : null}
 
             <div style={{ marginBottom: '20px' }}>
-              {renderTypeSpecificForm()}
+              <QuestionTypeFields draft={draft} setDraft={onDraftChange} />
             </div>
 
             <div style={{ marginBottom: '20px' }}>
@@ -241,11 +405,39 @@ function QuestionFormModal({
             const result = validateDraft(draft);
             return (
               <div style={{ marginBottom: '24px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 8, padding: 16 }}>
-                <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>Xác nhận thông tin câu hỏi</h3>
+                <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 16 }}>
+                  {isEditing ? 'Xác nhận thông tin chỉnh sửa' : 'Xác nhận thông tin câu hỏi'}
+                </h3>
                 <p style={{ margin: '0 0 10px 0' }}><strong>Loại:</strong> {QUESTION_TYPE_LABELS[draft.type] || draft.type}</p>
                 <p style={{ margin: '0 0 10px 0' }}><strong>Công khai:</strong> {draft.isPublished ? 'Có' : 'Không'}</p>
                 <p style={{ margin: '0 0 6px 0' }}><strong>Nội dung câu hỏi:</strong></p>
-                <div style={{ whiteSpace: 'pre-wrap', color: '#111827' }}>{draft.content || '(Trống)'}</div>
+                <div style={{ marginBottom: 12 }}>
+                  {contentBlocks.length > 0 ? (
+                    <RichContentRenderer blocks={contentBlocks} />
+                  ) : (
+                    <div style={{ whiteSpace: 'pre-wrap', color: '#111827' }}>{draft.content || '(Trống)'}</div>
+                  )}
+                </div>
+
+                {draft.type === 'MULTIPLE_CHOICE' ? (
+                  <div style={{ marginTop: 12 }}>
+                    <p style={{ margin: '0 0 6px 0' }}><strong>Các đáp án:</strong></p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {Array.isArray(draft.optionsRich) ? draft.optionsRich.map((optionBlocks, index) => (
+                        <div key={`preview-option-${index}`} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, background: '#fff' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <span style={{ fontWeight: 700 }}>{String.fromCharCode(65 + index)}</span>
+                            <span style={{ fontSize: 13, color: '#6b7280' }}>
+                              {((Array.isArray(draft.correctIndices) ? draft.correctIndices.map(Number) : []).includes(index)) ? 'Đáp án đúng' : 'Đáp án'}
+                            </span>
+                          </div>
+                          <RichContentRenderer blocks={normalizePreviewRichBlocks(optionBlocks.length ? optionBlocks : draft.options?.[index] || '')} />
+                        </div>
+                      )) : null}
+                    </div>
+                  </div>
+                ) : null}
+
                 {result.errors && result.errors.length ? (
                   <div style={{ marginTop: 12, color: '#b91c1c' }}>
                     {result.errors.map((err, idx) => (
@@ -332,7 +524,7 @@ function QuestionFormModal({
                       }}
                       disabled={!result.ok}
                     >
-                      Xác nhận thêm câu hỏi
+                      {isEditing ? 'Lưu thay đổi' : 'Xác nhận thêm câu hỏi'}
                     </button>
                   );
                 })()}
