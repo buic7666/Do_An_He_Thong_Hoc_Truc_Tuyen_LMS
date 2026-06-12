@@ -1,0 +1,122 @@
+.teacher-shared-sidebar {
+  width: 260px;
+  background-color: #343a40; /* Moodle dark sidebar bg */
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+  box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+}
+
+.teacher-shared-brand {
+  padding: 24px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.teacher-shared-brand-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: #0f6cbf; /* Moodle primary */
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.teacher-shared-nav {
+  list-style: none;
+  padding: 20px 0;
+  flex: 1;
+}
+
+.teacher-shared-nav-button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  padding: 14px 24px;
+  color: #ced4da;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: 0;
+  border-left: 4px solid transparent;
+  margin-bottom: 5px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.teacher-shared-nav-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.teacher-shared-nav-button.is-active {
+  color: #ffffff;
+  border-left-color: #0f6cbf; /* Moodle primary */
+  background: rgba(15, 108, 191, 0.15);
+}
+
+.teacher-shared-logout {
+  width: 100%;
+  padding: 20px 24px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: #dc3545; /* Moodle danger */
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.teacher-shared-logout:hover {
+  background: rgba(220, 53, 69, 0.1);
+  color: #f8d7da;
+}
+
+@media (max-width: 900px) {
+  .teacher-shared-sidebar {
+    width: 70px;
+  }
+
+  .teacher-shared-brand span,
+  .teacher-shared-nav-button,
+  .teacher-shared-logout {
+    font-size: 0;
+  }
+
+  .teacher-shared-brand-icon {
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+  }
+
+  .teacher-shared-nav-button {
+    justify-content: center;
+    padding: 12px 8px;
+  }
+
+  .teacher-shared-nav-button::before {
+    content: '•';
+    font-size: 20px;
+    line-height: 1;
+    color: #ced4da;
+  }
+
+  .teacher-shared-logout::before {
+    content: '!';
+    font-size: 18px;
+    color: #dc3545;
+  }
+}

@@ -1,0 +1,205 @@
+:root {
+  --login-primary-color: #1a73e8;
+  --login-primary-hover: #1557b0;
+  --login-text-dark: #202124;
+  --login-text-gray: #5f6368;
+  --login-border-color: #dadce0;
+  --login-bg-white: #ffffff;
+  --login-bg-gray: #f8f9fa;
+  --login-border-radius: 12px;
+  --login-transition: all 0.3s ease;
+}
+
+.login-split-screen {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  background-color: var(--login-bg-gray);
+  color: var(--login-text-dark);
+}
+
+.login-left-panel {
+  flex: 1.2;
+  position: relative;
+  background: url('https://images.unsplash.com/photo-1522202176988-66273c2fd55f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80')
+    center / cover no-repeat;
+}
+
+.login-left-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(26, 115, 232, 0.2), rgba(0, 0, 0, 0.4));
+}
+
+.login-right-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--login-bg-white);
+  padding: 40px;
+}
+
+.login-form-wrapper {
+  width: 100%;
+  max-width: 420px;
+}
+
+.login-form-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--login-text-dark);
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.login-input-group {
+  margin-bottom: 20px;
+}
+
+.login-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.login-input-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--login-text-dark);
+}
+
+.login-input-label-spaced {
+  margin-bottom: 8px;
+}
+
+.login-forgot-link,
+.login-switch-auth a {
+  color: var(--login-primary-color);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: var(--login-transition);
+}
+
+.login-forgot-link:hover,
+.login-switch-auth a:hover {
+  color: var(--login-primary-hover);
+}
+
+.login-input-field {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 16px;
+  border: 1px solid var(--login-border-color);
+  border-radius: var(--login-border-radius);
+  background-color: var(--login-bg-white);
+  color: var(--login-text-dark);
+  outline: none;
+  transition: var(--login-transition);
+}
+
+.login-input-field:focus {
+  border-color: var(--login-primary-color);
+  box-shadow: 0 0 0 4px rgba(26, 115, 232, 0.15);
+}
+
+.login-btn-primary {
+  width: 100%;
+  padding: 14px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: var(--login-border-radius);
+  background-color: var(--login-primary-color);
+  color: var(--login-bg-white);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--login-transition);
+}
+
+.login-btn-primary:hover {
+  background-color: var(--login-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(26, 115, 232, 0.2);
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 25px 0;
+  color: var(--login-text-gray);
+  font-size: 14px;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--login-border-color);
+}
+
+.login-divider span {
+  padding: 0 15px;
+}
+
+.login-social-buttons {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.login-btn-social {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--login-border-color);
+  border-radius: var(--login-border-radius);
+  background-color: var(--login-bg-white);
+  color: var(--login-text-dark);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--login-transition);
+}
+
+.login-btn-social:hover {
+  background-color: var(--login-bg-gray);
+  border-color: #cdd1d5;
+}
+
+.login-btn-social svg {
+  width: 20px;
+  height: 20px;
+}
+
+.login-switch-auth {
+  text-align: center;
+  font-size: 15px;
+  color: var(--login-text-gray);
+}
+
+@media (max-width: 900px) {
+  .login-left-panel {
+    display: none;
+  }
+
+  .login-right-panel {
+    padding: 20px;
+  }
+
+  .login-form-wrapper {
+    max-width: 100%;
+    padding: 30px;
+    border-radius: var(--login-border-radius);
+    background: var(--login-bg-white);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+  }
+}

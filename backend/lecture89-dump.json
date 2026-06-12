@@ -1,0 +1,58 @@
+[
+  {
+    "id": 97,
+    "content": "câu lạc bộ gì",
+    "type": "MULTIPLE_CHOICE",
+    "imageUrls": [],
+    "blocks": []
+  },
+  {
+    "id": 98,
+    "content": "video hay k",
+    "type": "MULTIPLE_CHOICE",
+    "imageUrls": [],
+    "blocks": []
+  },
+  {
+    "id": 99,
+    "content": "https://www.youtube.com/watch?v=i7lTqDhz6Q8&list=RDi7lTqDhz6Q8&start_radio=1&pp=oAcB",
+    "type": "MULTIPLE_CHOICE",
+    "imageUrls": [],
+    "blocks": []
+  },
+  {
+    "id": 100,
+    "content": "đây là quả già",
+    "type": "MULTIPLE_CHOICE",
+    "imageUrls": [],
+    "blocks": []
+  },
+  {
+    "id": 101,
+    "content": "đây là cầu thủ nào : ×",
+    "type": "MULTIPLE_CHOICE",
+    "imageUrls": [],
+    "blocks": []
+  },
+  {
+    "id": 103,
+    "content": "đây là cầu thủ nước nào ×",
+    "type": "MULTIPLE_CHOICE",
+    "imageUrls": [],
+    "blocks": []
+  },
+  {
+    "id": 125,
+    "content": "Moises Caicedo chuyển đến Chelsea với mức giá kỷ lục. Anh nhanh chóng trở thành máy quét không thể thay thế ở tuyến giữa nhờ khả năng đánh chặn xuất sắc. Bên cạnh anh, Cole Palmer là ngôi sao gánh vác hàng công với biệt danh 'Cold Palmer'",
+    "type": "CLOZE",
+    "imageUrls": [],
+    "blocks": []
+  },
+  {
+    "id": 127,
+    "content": "cầu thủ nào đây ×",
+    "type": "MULTIPLE_CHOICE",
+    "imageUrls": [],
+    "blocks": []
+  }
+]

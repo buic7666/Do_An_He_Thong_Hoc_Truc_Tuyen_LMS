@@ -1,0 +1,131 @@
+.instructors-page {
+  min-height: 100vh;
+  padding: 40px 5%;
+  background: #f5f7fb;
+  color: #1f2937;
+}
+
+.instructors-page h1 {
+  margin-bottom: 8px;
+  font-size: 34px;
+}
+
+.instructors-subtitle {
+  margin-bottom: 28px;
+  color: #6b7280;
+}
+
+.instructors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.instructor-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 18px;
+  background: #ffffff;
+  text-decoration: none;
+  color: inherit;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.instructor-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.1);
+}
+
+.instructor-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #1d4ed8, #3b82f6);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.instructor-name {
+  margin-bottom: 6px;
+  font-size: 20px;
+}
+
+.instructor-email {
+  margin-bottom: 12px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.instructor-meta {
+  color: #374151;
+  font-size: 14px;
+}
+
+.instructor-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.instructor-detail-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #1d4ed8, #3b82f6);
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.instructor-detail-name {
+  margin-bottom: 4px;
+  font-size: 30px;
+}
+
+.instructor-detail-email {
+  color: #6b7280;
+}
+
+.instructor-course-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.instructor-course-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  background: #ffffff;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.05);
+}
+
+.instructor-course-thumb {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  background: #dbeafe;
+}
+
+.instructor-course-body {
+  padding: 14px 16px;
+}
+
+.instructor-course-title {
+  margin-bottom: 8px;
+  font-size: 18px;
+}
+
+.instructor-course-meta {
+  color: #4b5563;
+  font-size: 14px;
+}

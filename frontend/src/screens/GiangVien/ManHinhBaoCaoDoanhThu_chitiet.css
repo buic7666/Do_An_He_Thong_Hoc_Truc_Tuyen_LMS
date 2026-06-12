@@ -1,0 +1,330 @@
+:root {
+  --ird-bg: #f8fafc;
+  --ird-surface: #ffffff;
+  --ird-text: #0f172a;
+  --ird-muted: #64748b;
+  --ird-border: #e2e8f0;
+  --ird-primary: #1a73e8;
+  --ird-primary-soft: #e8f1ff;
+  --ird-success: #15803d;
+  --ird-success-soft: #dcfce7;
+  --ird-warning: #b45309;
+  --ird-warning-soft: #fef3c7;
+  --ird-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  --ird-radius: 14px;
+}
+
+.instructor-revenue-detail-page {
+  min-height: 100vh;
+  padding: 28px;
+  background: radial-gradient(circle at 15% -10%, #dbeafe 0, #eff6ff 35%, var(--ird-bg) 70%);
+  color: var(--ird-text);
+}
+
+.instructor-revenue-detail-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  margin-bottom: 22px;
+}
+
+.instructor-revenue-detail-kicker {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ird-muted);
+  margin-bottom: 6px;
+}
+
+.instructor-revenue-detail-header h1 {
+  font-size: 30px;
+  line-height: 1.2;
+}
+
+.instructor-revenue-detail-subtitle {
+  margin-top: 8px;
+  color: var(--ird-muted);
+}
+
+.instructor-revenue-detail-btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.instructor-revenue-detail-btn.primary {
+  background: var(--ird-primary);
+  color: #fff;
+  box-shadow: 0 10px 18px rgba(26, 115, 232, 0.25);
+}
+
+.instructor-revenue-detail-filter-bar {
+  display: flex;
+  align-items: end;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.instructor-revenue-detail-filter-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ird-muted);
+}
+
+.instructor-revenue-detail-filter-bar select {
+  min-width: 180px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--ird-border);
+  background: #fff;
+}
+
+.instructor-revenue-detail-range-chip {
+  margin-left: auto;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--ird-primary-soft);
+  color: var(--ird-primary);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.instructor-revenue-detail-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.instructor-revenue-detail-card {
+  background: var(--ird-surface);
+  border: 1px solid var(--ird-border);
+  border-radius: var(--ird-radius);
+  box-shadow: var(--ird-shadow);
+  padding: 16px;
+}
+
+.instructor-revenue-detail-card p {
+  color: var(--ird-muted);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.instructor-revenue-detail-card h3 {
+  font-size: 24px;
+}
+
+.instructor-revenue-detail-card.highlight {
+  border-color: #bfdbfe;
+  background: linear-gradient(135deg, #eff6ff, #ffffff);
+}
+
+.instructor-revenue-detail-layout-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.instructor-revenue-detail-panel {
+  background: var(--ird-surface);
+  border: 1px solid var(--ird-border);
+  border-radius: var(--ird-radius);
+  box-shadow: var(--ird-shadow);
+  padding: 16px;
+}
+
+.instructor-revenue-detail-panel.full {
+  padding-bottom: 6px;
+}
+
+.instructor-revenue-detail-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.instructor-revenue-detail-panel-head h2 {
+  font-size: 18px;
+}
+
+.instructor-revenue-detail-panel-head span {
+  font-size: 13px;
+  color: var(--ird-muted);
+}
+
+.instructor-revenue-detail-course-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.instructor-revenue-detail-course-item {
+  border: 1px solid var(--ird-border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.instructor-revenue-detail-course-item h4 {
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.instructor-revenue-detail-course-item p {
+  color: var(--ird-muted);
+  font-size: 13px;
+}
+
+.instructor-revenue-detail-course-values {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.instructor-revenue-detail-course-values .gross {
+  font-weight: 700;
+}
+
+.instructor-revenue-detail-course-values .net {
+  font-size: 12px;
+  color: var(--ird-muted);
+}
+
+.instructor-revenue-detail-donut-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.instructor-revenue-detail-donut {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: conic-gradient(#1a73e8 0 50%, #3b82f6 50% 80%, #93c5fd 80% 100%);
+  position: relative;
+}
+
+.instructor-revenue-detail-donut::after {
+  content: '';
+  position: absolute;
+  inset: 34px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.instructor-revenue-detail-donut-wrap ul {
+  list-style: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ird-muted);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.dot-a { background: #1a73e8; }
+.dot-b { background: #3b82f6; }
+.dot-c { background: #93c5fd; }
+
+.instructor-revenue-detail-table-wrap {
+  overflow-x: auto;
+}
+
+.instructor-revenue-detail-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.instructor-revenue-detail-table-wrap th,
+.instructor-revenue-detail-table-wrap td {
+  text-align: left;
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--ird-border);
+  font-size: 14px;
+}
+
+.instructor-revenue-detail-table-wrap th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ird-muted);
+}
+
+.instructor-revenue-detail-table-wrap td.amount {
+  font-weight: 700;
+}
+
+.status {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status.success {
+  color: var(--ird-success);
+  background: var(--ird-success-soft);
+}
+
+.status.pending {
+  color: var(--ird-warning);
+  background: var(--ird-warning-soft);
+}
+
+@media (max-width: 1100px) {
+  .instructor-revenue-detail-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .instructor-revenue-detail-layout-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .instructor-revenue-detail-page {
+    padding: 18px;
+  }
+
+  .instructor-revenue-detail-header {
+    flex-direction: column;
+  }
+
+  .instructor-revenue-detail-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .instructor-revenue-detail-filter-bar select {
+    width: 100%;
+  }
+
+  .instructor-revenue-detail-range-chip {
+    margin-left: 0;
+  }
+
+  .instructor-revenue-detail-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}

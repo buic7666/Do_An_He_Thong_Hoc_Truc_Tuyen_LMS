@@ -1,0 +1,1 @@
+const fs = require('fs'); let content = fs.readFileSync('frontend/src/screens/Admin/QuanLyNguoiDung.jsx', 'utf8'); content = content.replace('Qun tr? ciên', 'Qu?n tr? viên').replace('Gi?ng viån', 'Gi?ng viên'); fs.writeFileSync('frontend/src/screens/Admin/QuanLyNguoiDung.jsx', content, 'utf8');

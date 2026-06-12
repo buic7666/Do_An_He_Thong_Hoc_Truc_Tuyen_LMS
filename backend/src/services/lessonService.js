@@ -1,0 +1,1084 @@
+const lessonRepository = require('../repositories/lessonRepository');
+const enrollmentRepository = require('../repositories/enrollmentRepository');
+const { sequelize } = require('../config/database');
+const { Op } = require('sequelize');
+const { Course, Chapter, Lesson, LessonSegment, LessonLabel, Question, Quiz, QuizQuestion } = require('../models');
+const { HttpError } = require('../utils/httpError');
+const { normalizeRichBlocks } = require('../utils/richContent');
+
+const SEGMENT_ITEM_TYPES = new Set(['text', 'document', 'question', 'quiz', 'videoClip']);
+
+const parseId = (value, fieldName) => {
+  const id = Number(value);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new HttpError(400, `${fieldName} must be a positive integer`, 'VALIDATION_ERROR');
+  }
+
+  return id;
+};
+const assertCourseOwnerOrAdmin = (course, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  if (
+    currentUser.role !== 'admin'
+    && Number(course?.instructorId) !== Number(currentUser.id)
+  ) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+};
+const mapLessonSegment = (segment) => {
+  const plain = segment.toJSON ? segment.toJSON() : segment;
+  const contentItems = coerceSegmentContentItems(plain.contentItems);
+
+  return {
+    id: plain.id,
+    lessonId: plain.lessonId,
+    startTime: plain.startTime,  // Now nullable - times managed at content item level
+    endTime: plain.endTime,      // Now nullable - times managed at content item level
+    duration: plain.duration,    // Now nullable
+    title: plain.title,
+    orderIndex: Number(plain.orderIndex || 1),
+    contentItems: normalizeSegmentContentItems(contentItems),
+    createdAt: plain.createdAt,
+    updatedAt: plain.updatedAt,
+  };
+};
+
+const coerceSegmentContentItems = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (value == null) {
+    return [];
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      if (parsed && typeof parsed === 'object' && parsed.type) {
+        return [parsed];
+      }
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  if (typeof value === 'object') {
+    if (Array.isArray(value.items)) {
+      return value.items;
+    }
+
+    if (value.type) {
+      return [value];
+    }
+
+    return Object.values(value).filter((item) => item && typeof item === 'object');
+  }
+
+  return [];
+};
+
+const assertSegmentRange = (startTime, endTime) => {
+  if (!Number.isInteger(startTime) || !Number.isInteger(endTime)) {
+    throw new HttpError(400, 'Segment times must be integers', 'INVALID_SEGMENT_RANGE');
+  }
+
+  if (startTime < 0 || endTime <= startTime) {
+    throw new HttpError(400, 'endTime must be greater than startTime', 'INVALID_SEGMENT_RANGE');
+  }
+};
+
+const normalizeSegmentContentItems = (items = []) => {
+  const normalizedInput = coerceSegmentContentItems(items);
+
+  const toNullableInteger = (value) => {
+    if (value == null || value === '') {
+      return null;
+    }
+
+    const numericValue = Number(value);
+    return Number.isInteger(numericValue) ? numericValue : null;
+  };
+
+  let questionItemSeen = false;
+  const normalizedItems = normalizedInput
+    .map((item, index) => {
+      const type = String(item?.type || '').trim();
+
+      if (!SEGMENT_ITEM_TYPES.has(type)) {
+        throw new HttpError(400, `Invalid content item type at index ${index}`, 'INVALID_SEGMENT_CONTENT_ITEMS');
+      }
+
+      const textBlocks = Array.isArray(item?.contentBlocks)
+        ? item.contentBlocks.filter((block) => block && typeof block === 'object' && block.type === 'text')
+        : [];
+      const rawTextHtml = textBlocks.map((block) => String(block?.text || '')).join('').trim();
+
+      const payload = {
+        type,
+        title: type === 'question'
+          ? 'Câu hỏi'
+          : (item?.title ? String(item.title).trim() : null),
+        content: item?.content ? String(item.content).trim() : (rawTextHtml || null),
+        contentBlocks: Array.isArray(item?.contentBlocks) && item.contentBlocks.length
+          ? item.contentBlocks
+          : undefined,
+        resourceUrl: item?.resourceUrl ? String(item.resourceUrl).trim() : null,
+        startTime: toNullableInteger(item?.startTime),
+        endTime: toNullableInteger(item?.endTime),
+        orderIndex: Number.isInteger(Number(item?.orderIndex)) && Number(item.orderIndex) > 0
+          ? Number(item.orderIndex)
+          : index + 1,
+      };
+
+      if (payload.type === 'videoClip') {
+        const hasStart = Number.isInteger(payload.startTime);
+        const hasEnd = Number.isInteger(payload.endTime);
+
+        if (!hasStart && !hasEnd) {
+          payload.startTime = null;
+          payload.endTime = null;
+        } else if (!hasStart || !hasEnd || payload.endTime <= payload.startTime) {
+          throw new HttpError(400, 'videoClip requires valid startTime/endTime', 'INVALID_SEGMENT_CONTENT_ITEMS');
+        }
+      }
+
+      if (type === 'quiz') {
+        payload.quizId = Number.isInteger(Number(item?.quizId)) && Number(item.quizId) > 0
+          ? Number(item.quizId)
+          : null;
+        payload.questionIds = Array.isArray(item?.questionIds)
+          ? item.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+          : [];
+        payload.questionTitles = Array.isArray(item?.questionTitles)
+          ? item.questionTitles.map((title) => String(title || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
+          : [];
+        payload.randomize = Boolean(item?.randomize);
+        payload.randomCount = toNullableInteger(item?.randomCount) || null;
+      }
+
+      if (type === 'question') {
+        if (questionItemSeen) {
+          return null;
+        }
+        questionItemSeen = true;
+      }
+
+      return payload;
+    })
+    .filter(Boolean);
+
+  if (!questionItemSeen) {
+    normalizedItems.push({
+      type: 'question',
+      title: 'Câu hỏi',
+      content: null,
+      resourceUrl: null,
+      startTime: null,
+      endTime: null,
+      orderIndex: normalizedItems.length + 1,
+    });
+  }
+
+  return normalizedItems
+    .sort((left, right) => left.orderIndex - right.orderIndex)
+    .map((item, index) => ({
+      ...item,
+      orderIndex: index + 1,
+    }));
+};
+
+const parseQuestionMetadata = (value) => {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch (_error) {
+      return {};
+    }
+  }
+  return value;
+};
+
+const shuffleArray = (items = []) => {
+  const copied = [...items];
+  for (let index = copied.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copied[index], copied[swapIndex]] = [copied[swapIndex], copied[index]];
+  }
+  return copied;
+};
+
+const syncQuizContentItems = async (segment, normalizedItems, currentUser) => {
+  if (!segment?.lessonId || !Array.isArray(normalizedItems) || normalizedItems.length === 0) {
+    return normalizedItems;
+  }
+
+  const lesson = segment.lesson || await Lesson.findByPk(segment.lessonId);
+  if (!lesson) {
+    return normalizedItems;
+  }
+
+  const questionPool = await Question.findAll({
+    where: {
+      courseId: lesson.courseId,
+      lectureId: lesson.id,
+    },
+    attributes: ['id', 'metadata'],
+  });
+
+  let bySegmentQuestionIds = questionPool
+    .filter((question) => {
+      const metadata = parseQuestionMetadata(question.metadata);
+      return Number(metadata.segmentId || 0) === Number(segment.id);
+    })
+    .map((question) => Number(question.id));
+
+  try {
+    console.debug('[lessonService] questionPool sizes', {
+      totalQuestionsInPool: questionPool.length,
+      bySegmentQuestionIdsLength: bySegmentQuestionIds.length,
+      bySegmentSample: bySegmentQuestionIds.slice(0, 10),
+    });
+  } catch (_e) {
+    // ignore
+  }
+
+  // Fallback: if no questions are explicitly tagged to this segment, use all questions from lesson
+  if (!bySegmentQuestionIds.length) {
+    try {
+      console.warn(`[lessonService] No questions found for segment ${segment.id}. Falling back to lesson-level question pool (${questionPool.length} items).`);
+    } catch (_e) {
+      // ignore
+    }
+    bySegmentQuestionIds = questionPool.map((q) => Number(q.id));
+  }
+
+  return Promise.all(normalizedItems.map(async (item) => {
+    if (item.type !== 'quiz') {
+      return item;
+    }
+
+    const explicitQuestionIds = Array.isArray(item.questionIds)
+      ? item.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+      : [];
+
+    const selectedQuestionIds = item.randomize
+      ? shuffleArray(bySegmentQuestionIds).slice(0, Math.max(0, Number(item.randomCount || 0)))
+      : explicitQuestionIds;
+
+    let quiz = null;
+    if (Number.isInteger(Number(item.quizId)) && Number(item.quizId) > 0) {
+      quiz = await Quiz.findOne({
+        where: {
+          id: Number(item.quizId),
+          lessonId: lesson.id,
+          courseId: lesson.courseId,
+        },
+      });
+    }
+
+    if (!quiz) {
+      quiz = await Quiz.create({
+        courseId: lesson.courseId,
+        chapterId: lesson.chapterId || null,
+        lessonId: lesson.id,
+        title: item.title || `Bài kiểm tra - Phần ${segment.orderIndex || segment.id}`,
+        description: item.content || null,
+        duration: 30,
+        passScore: 70,
+        maxAttempts: 0,
+        isPublished: true,
+        createdBy: currentUser.id,
+      });
+    } else {
+      quiz.title = item.title || quiz.title;
+      quiz.description = item.content || quiz.description;
+      quiz.isPublished = true;
+      await quiz.save();
+    }
+
+    // Log debug info to help diagnose random-selection issues
+    try {
+      console.debug('[lessonService] syncQuizContentItems', {
+        segmentId: segment.id,
+        quizItemTitle: item.title,
+        randomize: item.randomize,
+        randomCount: item.randomCount,
+        explicitQuestionIdsLength: explicitQuestionIds.length,
+        selectedQuestionIdsLength: selectedQuestionIds.length,
+        quizId: quiz?.id,
+      });
+    } catch (_e) {
+      // ignore logging errors
+    }
+
+    await QuizQuestion.destroy({ where: { quizId: quiz.id } });
+    if (selectedQuestionIds.length > 0) {
+      // Validate that referenced question IDs actually exist to avoid FK violations
+      const existingQuestions = await Question.findAll({
+        where: { id: selectedQuestionIds },
+        attributes: ['id', 'type', 'content', 'metadata'],
+      });
+      const existingIds = existingQuestions.map((q) => Number(q.id));
+      const validQuestionIds = selectedQuestionIds.filter((id) => existingIds.includes(Number(id)));
+      const questionPreviewMap = new Map(existingQuestions.map((q) => {
+        const plain = q.toJSON();
+        const metadata = parseQuestionMetadata(plain.metadata);
+        return [Number(plain.id), {
+          id: Number(plain.id),
+          type: plain.type,
+          content: String(plain.content || metadata.questionText || metadata.title || '').trim(),
+          contentBlocks: Array.isArray(metadata.contentBlocks) ? normalizeRichBlocks(metadata.contentBlocks) : [],
+        }];
+      }));
+
+      if (validQuestionIds.length !== selectedQuestionIds.length) {
+        try {
+          console.warn('[lessonService] syncQuizContentItems: Some questionIds do not exist', {
+            segmentId: segment.id,
+            quizId: quiz.id,
+            requested: selectedQuestionIds,
+            existing: existingIds,
+          });
+        } catch (_e) {
+          // ignore logging errors
+        }
+      }
+      quiz.questionPreviews = validQuestionIds
+        .map((questionId) => questionPreviewMap.get(Number(questionId)))
+        .filter(Boolean);
+
+
+      if (validQuestionIds.length > 0) {
+        await QuizQuestion.bulkCreate(
+          validQuestionIds.map((questionId, index) => ({
+            quizId: quiz.id,
+            questionId,
+            order: index + 1,
+            points: 1,
+          })),
+        );
+      }
+    }
+
+    return {
+      ...item,
+      quizId: quiz.id,
+      questionIds: selectedQuestionIds,
+    };
+  }));
+};
+
+const ensureSegmentOwnership = async (segmentId, currentUser) => {
+  const parsedSegmentId = parseId(segmentId, 'segmentId');
+  const segment = await LessonSegment.findByPk(parsedSegmentId, {
+    include: [
+      {
+        association: 'lesson',
+        include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+      },
+    ],
+  });
+
+  if (!segment) {
+    throw new HttpError(404, 'Segment not found', 'SEGMENT_NOT_FOUND');
+  }
+
+  if (
+    currentUser.role !== 'admin'
+    && Number(segment.lesson?.course?.instructorId) !== Number(currentUser.id)
+  ) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  return segment;
+};
+
+const mapLessonLabel = (label) => {
+  const plain = label.toJSON ? label.toJSON() : label;
+  return {
+    id: plain.id,
+    lessonId: plain.lessonId,
+    teacherId: plain.teacherId,
+    content: plain.content,
+    labelType: plain.labelType || 'note',
+    createdAt: plain.createdAt,
+    updatedAt: plain.updatedAt,
+  };
+};
+
+const getLessonsByCourse = async (courseId) => {
+  const parsedCourseId = parseId(courseId, 'courseId');
+  const lessons = await lessonRepository.findByCourseId(parsedCourseId);
+
+  return lessons.map((lesson) => {
+    const plain = lesson.toJSON();
+    return {
+      id: plain.id,
+      courseId: plain.courseId,
+      title: plain.title,
+      videoUrl: plain.videoUrl,
+      content: plain.content,
+      orderIndex: plain.orderIndex,
+      chapterId: plain.chapterId,
+      createdAt: plain.createdAt,
+    };
+  });
+};
+
+const getLessonDetail = async (lessonId, currentUser) => {
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [
+      {
+        association: 'course',
+        attributes: ['id', 'title', 'description'],
+      },
+      {
+        association: 'segments',
+        attributes: ['id', 'startTime', 'endTime', 'duration', 'title', 'orderIndex', 'contentItems'],
+        order: [['orderIndex', 'ASC'], ['startTime', 'ASC']],
+      },
+    ],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  const plain = lesson.toJSON();
+
+  if (currentUser?.role === 'student') {
+    const enrollment = await enrollmentRepository.isUserEnrolledActive(currentUser.id, plain.courseId);
+
+    if (!enrollment) {
+      throw new HttpError(403, 'You are not enrolled in this course', 'NOT_ENROLLED');
+    }
+  }
+
+  return {
+    id: plain.id,
+    courseId: plain.courseId,
+    title: plain.title,
+    videoUrl: plain.videoUrl,
+    content: plain.content,
+    orderIndex: plain.orderIndex,
+    chapterId: plain.chapterId,
+    segments: Array.isArray(plain.segments)
+      ? plain.segments.map((segment) => ({
+          id: segment.id,
+          startTime: segment.startTime,
+          endTime: segment.endTime,
+          duration: segment.duration,
+          title: segment.title,
+          orderIndex: Number(segment.orderIndex || 1),
+          contentItems: normalizeSegmentContentItems(segment.contentItems || []),
+        }))
+      : [],
+    createdAt: plain.createdAt,
+    course: plain.course
+      ? {
+          id: plain.course.id,
+          title: plain.course.title,
+          description: plain.course.description,
+        }
+      : null,
+  };
+};
+
+const createLesson = async (courseId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedCourseId = parseId(courseId, 'courseId');
+
+  const course = await Course.findByPk(parsedCourseId, {
+    attributes: ['id', 'instructorId', 'approvalStatus', 'status', 'isPublished'],
+  });
+
+  if (!course) {
+    throw new HttpError(404, 'Course not found', 'COURSE_NOT_FOUND');
+  }
+
+  /**
+   * QUAN TRỌNG:
+   * Giáo viên chỉ được tạo bài học trong khóa học của chính mình.
+   * Admin thì được phép tạo bài học cho mọi khóa học.
+   */
+  if (currentUser.role !== 'admin' && Number(course.instructorId) !== Number(currentUser.id)) {
+    throw new HttpError(403, 'Bạn chỉ được tạo bài học trong khóa học của chính mình', 'FORBIDDEN');
+  }
+
+  /**
+   * Nếu có chapterId thì phải kiểm tra chương đó thuộc đúng khóa học hiện tại.
+   * Tránh trường hợp giáo viên truyền chapterId của khóa học khác.
+   */
+  if (payload.chapterId) {
+    const chapter = await Chapter.findOne({
+      where: {
+        id: payload.chapterId,
+        courseId: parsedCourseId,
+      },
+      attributes: ['id', 'courseId'],
+    });
+
+    if (!chapter) {
+      throw new HttpError(400, 'Chương không thuộc khóa học này', 'INVALID_CHAPTER');
+    }
+  }
+
+  const existingAtOrder = await lessonRepository.findByCourseIdAndOrderIndex(parsedCourseId, payload.orderIndex);
+
+  if (existingAtOrder) {
+    throw new HttpError(409, 'Lesson order already exists in this course', 'LESSON_ORDER_EXISTS');
+  }
+
+  const created = await lessonRepository.createLesson({
+    courseId: parsedCourseId,
+    chapterId: payload.chapterId || null,
+    title: payload.title,
+    videoUrl: payload.videoUrl || null,
+    content: payload.content || null,
+    orderIndex: payload.orderIndex,
+  });
+
+  /**
+   * Giáo viên thêm bài học mới thì khóa học cần chờ admin duyệt lại.
+   * Admin thêm bài học thì không ép về pending.
+   */
+  if (currentUser.role === 'teacher') {
+    await course.update({
+      approvalStatus: 'PENDING',
+      status: 'pending',
+      isPublished: false,
+    });
+  }
+
+  const plain = created.toJSON();
+
+  return {
+    id: plain.id,
+    courseId: plain.courseId,
+    title: plain.title,
+    videoUrl: plain.videoUrl,
+    content: plain.content,
+    orderIndex: plain.orderIndex,
+    chapterId: plain.chapterId,
+    createdAt: plain.createdAt,
+  };
+};
+
+const updateLesson = async (lessonId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  if (payload.orderIndex) {
+    const duplicate = await lessonRepository.findByCourseIdAndOrderIndex(lesson.courseId, payload.orderIndex);
+    if (duplicate && Number(duplicate.id) !== Number(lesson.id)) {
+      throw new HttpError(409, 'Lesson order already exists in this course', 'LESSON_ORDER_EXISTS');
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'chapterId')) {
+    lesson.chapterId = payload.chapterId || null;
+  }
+
+  lesson.title = payload.title ?? lesson.title;
+  lesson.videoUrl = payload.videoUrl ?? lesson.videoUrl;
+  lesson.content = payload.content ?? lesson.content;
+  lesson.orderIndex = payload.orderIndex ?? lesson.orderIndex;
+
+  await lesson.save();
+
+  const plain = lesson.toJSON();
+  return {
+    id: plain.id,
+    courseId: plain.courseId,
+    chapterId: plain.chapterId,
+    title: plain.title,
+    videoUrl: plain.videoUrl,
+    content: plain.content,
+    orderIndex: plain.orderIndex,
+    createdAt: plain.createdAt,
+    updatedAt: plain.updatedAt,
+  };
+};
+
+const deleteLesson = async (lessonId, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  await lesson.destroy();
+  return { id: parsedLessonId, deleted: true };
+};
+
+const createLessonSegment = async (lessonId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const maxOrderIndex = Number(
+    (await LessonSegment.max('orderIndex', {
+      where: { lessonId: parsedLessonId },
+    })) || 0,
+  );
+
+  const requestedOrderIndex = Number(payload.orderIndex || maxOrderIndex + 1);
+  const orderIndex = Number.isInteger(requestedOrderIndex) && requestedOrderIndex > 0
+    ? Math.min(requestedOrderIndex, maxOrderIndex + 1)
+    : maxOrderIndex + 1;
+
+  const normalizedItems = normalizeSegmentContentItems(payload.contentItems || []);
+
+  const created = await sequelize.transaction(async (transaction) => {
+    if (orderIndex <= maxOrderIndex) {
+      await LessonSegment.increment(
+        { orderIndex: 1 },
+        {
+          where: {
+            lessonId: parsedLessonId,
+            orderIndex: { [Op.gte]: orderIndex },
+          },
+          transaction,
+        },
+      );
+    }
+
+    const segment = await LessonSegment.create({
+      lessonId: parsedLessonId,
+      title: payload.title?.trim() || null,
+      orderIndex,
+      contentItems: normalizedItems,
+      // startTime, endTime, duration are now managed at content item level (videoClip)
+    }, { transaction });
+
+    segment.contentItems = await syncQuizContentItems(segment, normalizedItems, currentUser);
+    await segment.save({ transaction });
+
+    return segment;
+  });
+
+  return mapLessonSegment(created);
+};
+
+const updateLessonSegment = async (segmentId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const segment = await ensureSegmentOwnership(segmentId, currentUser);
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'contentItems')) {
+    const normalizedContentItems = normalizeSegmentContentItems(payload.contentItems || []);
+    segment.contentItems = await syncQuizContentItems(segment, normalizedContentItems, currentUser);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'title')) {
+    segment.title = payload.title?.trim() || null;
+  }
+
+  // Note: startTime, endTime are now managed at content item level (videoClip items)
+  if (Object.prototype.hasOwnProperty.call(payload, 'orderIndex')) {
+    const requestedOrderIndex = Number(payload.orderIndex);
+    if (!Number.isInteger(requestedOrderIndex) || requestedOrderIndex <= 0) {
+      throw new HttpError(400, 'orderIndex must be a positive integer', 'INVALID_SEGMENT_ORDER');
+    }
+
+    const lessonId = segment.lessonId;
+
+    await sequelize.transaction(async (transaction) => {
+      const maxOrderIndex = Number(
+        (await LessonSegment.max('orderIndex', {
+          where: { lessonId },
+          transaction,
+        })) || 0,
+      );
+
+      const oldOrderIndex = Number(segment.orderIndex || 1);
+      const targetOrderIndex = Math.max(1, Math.min(requestedOrderIndex, maxOrderIndex));
+
+      if (targetOrderIndex !== oldOrderIndex) {
+        if (targetOrderIndex > oldOrderIndex) {
+          await LessonSegment.increment(
+            { orderIndex: -1 },
+            {
+              where: {
+                lessonId,
+                id: { [Op.ne]: segment.id },
+                orderIndex: {
+                  [Op.gt]: oldOrderIndex,
+                  [Op.lte]: targetOrderIndex,
+                },
+              },
+              transaction,
+            },
+          );
+        } else {
+          await LessonSegment.increment(
+            { orderIndex: 1 },
+            {
+              where: {
+                lessonId,
+                id: { [Op.ne]: segment.id },
+                orderIndex: {
+                  [Op.gte]: targetOrderIndex,
+                  [Op.lt]: oldOrderIndex,
+                },
+              },
+              transaction,
+            },
+          );
+        }
+
+        segment.orderIndex = targetOrderIndex;
+      }
+
+      await segment.save({ transaction });
+    });
+
+    await segment.reload();
+    return mapLessonSegment(segment);
+  }
+
+  await segment.save();
+  return mapLessonSegment(segment);
+};
+
+const createLessonSegmentsBulk = async (lessonId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  if (!Array.isArray(payload.segments) || payload.segments.length === 0) {
+    throw new HttpError(400, 'segments must be a non-empty array', 'INVALID_SEGMENT_RANGE');
+  }
+
+  const normalizedSegments = payload.segments
+    .map((segment, index) => {
+      return {
+        lessonId: parsedLessonId,
+        orderIndex: index + 1,
+        title: segment.title?.trim() || `Segment ${index + 1}`,
+        contentItems: normalizeSegmentContentItems(segment.contentItems || []),
+        // startTime, endTime, duration are now managed at content item level (videoClip)
+      };
+    });
+
+  const createdSegments = await sequelize.transaction(async (transaction) => {
+    const segments = await LessonSegment.bulkCreate(normalizedSegments, { transaction });
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const normalizedContentItems = normalizedSegments[index]?.contentItems || [];
+      segment.contentItems = await syncQuizContentItems(segment, normalizedContentItems, currentUser);
+      await segment.save({ transaction });
+    }
+
+    return segments;
+  });
+
+  return createdSegments.map((segment) => mapLessonSegment(segment));
+};
+
+const getLessonSegments = async (lessonId) => {
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+
+  const segments = await LessonSegment.findAll({
+    where: { lessonId: parsedLessonId },
+    order: [['orderIndex', 'ASC']],
+  });
+
+  return segments.map((segment) => mapLessonSegment(segment));
+};
+
+const getLessonSegmentById = async (lessonId, segmentId) => {
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const parsedSegmentId = parseId(segmentId, 'segmentId');
+
+  const segment = await LessonSegment.findOne({
+    where: { id: parsedSegmentId, lessonId: parsedLessonId },
+  });
+
+  if (!segment) {
+    throw new HttpError(404, 'Segment not found', 'SEGMENT_NOT_FOUND');
+  }
+
+  return mapLessonSegment(segment);
+};
+
+const deleteLessonSegment = async (segmentId, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const segment = await ensureSegmentOwnership(segmentId, currentUser);
+  const parsedSegmentId = Number(segment.id);
+  const oldOrderIndex = Number(segment.orderIndex || 1);
+
+  await sequelize.transaction(async (transaction) => {
+    await segment.destroy({ transaction });
+    await LessonSegment.increment(
+      { orderIndex: -1 },
+      {
+        where: {
+          lessonId: segment.lessonId,
+          orderIndex: { [Op.gt]: oldOrderIndex },
+        },
+        transaction,
+      },
+    );
+  });
+
+  return { id: parsedSegmentId, deleted: true };
+};
+
+const reorderLessonSegments = async (lessonId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const segmentIds = Array.isArray(payload.segmentIds)
+    ? payload.segmentIds.map((id) => parseId(id, 'segmentId'))
+    : [];
+
+  if (!segmentIds.length) {
+    throw new HttpError(400, 'segmentIds must be a non-empty array', 'INVALID_SEGMENT_ORDER');
+  }
+
+  const segments = await LessonSegment.findAll({
+    where: { lessonId: parsedLessonId },
+    attributes: ['id'],
+  });
+
+  if (segments.length !== segmentIds.length) {
+    throw new HttpError(400, 'segmentIds must contain all lesson segments exactly once', 'INVALID_SEGMENT_ORDER');
+  }
+
+  const existingIdSet = new Set(segments.map((segment) => Number(segment.id)));
+  const payloadIdSet = new Set(segmentIds);
+
+  if (existingIdSet.size !== payloadIdSet.size) {
+    throw new HttpError(400, 'segmentIds contains duplicates', 'INVALID_SEGMENT_ORDER');
+  }
+
+  for (const id of payloadIdSet) {
+    if (!existingIdSet.has(id)) {
+      throw new HttpError(400, 'segmentIds contains invalid segment', 'INVALID_SEGMENT_ORDER');
+    }
+  }
+
+  await sequelize.transaction(async (transaction) => {
+    for (let index = 0; index < segmentIds.length; index += 1) {
+      await LessonSegment.update(
+        { orderIndex: index + 1 },
+        {
+          where: { id: segmentIds[index], lessonId: parsedLessonId },
+          transaction,
+        },
+      );
+    }
+  });
+
+  return getLessonSegments(parsedLessonId);
+};
+
+const getLessonLabels = async (lessonId, currentUser) => {
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (currentUser?.role === 'teacher' && lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const labels = await LessonLabel.findAll({
+    where: { lessonId: parsedLessonId },
+    order: [['createdAt', 'DESC']],
+  });
+
+  return labels.map((item) => mapLessonLabel(item));
+};
+
+const createLessonLabel = async (lessonId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLessonId = parseId(lessonId, 'lessonId');
+  const lesson = await Lesson.findByPk(parsedLessonId, {
+    include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+  });
+
+  if (!lesson) {
+    throw new HttpError(404, 'Lesson not found', 'LESSON_NOT_FOUND');
+  }
+
+  if (currentUser.role !== 'admin' && lesson.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  const created = await LessonLabel.create({
+    lessonId: parsedLessonId,
+    teacherId: currentUser.id,
+    content: payload.content.trim(),
+    labelType: payload.labelType || 'note',
+  });
+
+  return mapLessonLabel(created);
+};
+
+const updateLessonLabel = async (labelId, payload, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLabelId = parseId(labelId, 'labelId');
+  const label = await LessonLabel.findByPk(parsedLabelId, {
+    include: [
+      {
+        association: 'lesson',
+        include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+      },
+    ],
+  });
+
+  if (!label) {
+    throw new HttpError(404, 'Lesson label not found', 'LESSON_LABEL_NOT_FOUND');
+  }
+
+  if (currentUser.role !== 'admin' && label.lesson?.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  label.content = payload.content.trim();
+  label.labelType = payload.labelType || label.labelType || 'note';
+  await label.save();
+  return mapLessonLabel(label);
+};
+
+const deleteLessonLabel = async (labelId, currentUser) => {
+  if (!currentUser?.id) {
+    throw new HttpError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsedLabelId = parseId(labelId, 'labelId');
+  const label = await LessonLabel.findByPk(parsedLabelId, {
+    include: [
+      {
+        association: 'lesson',
+        include: [{ association: 'course', attributes: ['id', 'instructorId'] }],
+      },
+    ],
+  });
+
+  if (!label) {
+    throw new HttpError(404, 'Lesson label not found', 'LESSON_LABEL_NOT_FOUND');
+  }
+
+  if (currentUser.role !== 'admin' && label.lesson?.course?.instructorId !== currentUser.id) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+
+  await label.destroy();
+  return { id: parsedLabelId, deleted: true };
+};
+
+module.exports = {
+  getLessonsByCourse,
+  getLessonDetail,
+  createLesson,
+  updateLesson,
+  deleteLesson,
+  createLessonSegment,
+  updateLessonSegment,
+  createLessonSegmentsBulk,
+  getLessonSegments,
+  getLessonSegmentById,
+  deleteLessonSegment,
+  reorderLessonSegments,
+  getLessonLabels,
+  createLessonLabel,
+  updateLessonLabel,
+  deleteLessonLabel,
+};
