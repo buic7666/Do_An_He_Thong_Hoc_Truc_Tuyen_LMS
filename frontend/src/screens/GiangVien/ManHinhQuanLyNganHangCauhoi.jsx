@@ -140,7 +140,388 @@ const createEmptyQuizDraft = () => ({
   shortAnswerCount: '3',
   essayCount: '1',
 });
+const bankDetailParseJson = (value, fallback = {}) => {
+  if (value == null) return fallback;
 
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch (_error) {
+      return fallback;
+    }
+  }
+
+  return value && typeof value === 'object' ? value : fallback;
+};
+
+const bankDetailNormalizeType = (value) => {
+  const type = String(value || 'MULTIPLE_CHOICE').toUpperCase();
+  return type === 'MULTICHOICE' ? 'MULTIPLE_CHOICE' : type;
+};
+
+const bankDetailNormalizeBlocks = (value) => {
+  if (Array.isArray(value)) return value;
+
+  const parsed = bankDetailParseJson(value, null);
+
+  if (Array.isArray(parsed)) return parsed;
+
+  if (parsed && typeof parsed === 'object') {
+    if (Array.isArray(parsed.contentBlocks)) return parsed.contentBlocks;
+    if (Array.isArray(parsed.blocks)) return parsed.blocks;
+    if (Array.isArray(parsed.richContent?.blocks)) return parsed.richContent.blocks;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    return [{ type: 'text', text: value.trim() }];
+  }
+
+  return [];
+};
+
+const bankDetailBlocksToText = (blocks) => {
+  if (!Array.isArray(blocks)) return '';
+
+  return blocks
+    .map((block) => {
+      if (!block) return '';
+      if (block.type === 'text') return block.text || '';
+      if (block.type === 'image') return block.alt || block.url || '[Ảnh]';
+      if (block.type === 'video') return block.title || block.url || '[Video]';
+      return block.text || block.content || '';
+    })
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const bankDetailNormalizeIndex = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+  if (typeof value === 'string') {
+    const text = value.trim().toUpperCase();
+
+    if (/^[A-Z]$/.test(text)) {
+      return text.charCodeAt(0) - 65;
+    }
+
+    const numberValue = Number(text);
+    if (Number.isFinite(numberValue)) return numberValue;
+  }
+
+  return null;
+};
+
+const bankDetailGetCorrectIndices = (question, metadata) => {
+  const raw = Array.isArray(metadata?.correctIndices)
+    ? metadata.correctIndices
+    : Array.isArray(question?.correctIndices)
+      ? question.correctIndices
+      : metadata?.correctIndex != null
+        ? [metadata.correctIndex]
+        : question?.correctIndex != null
+          ? [question.correctIndex]
+          : metadata?.answerIndex != null
+            ? [metadata.answerIndex]
+            : question?.answerIndex != null
+              ? [question.answerIndex]
+              : [];
+
+  return raw
+    .map((item) => bankDetailNormalizeIndex(item))
+    .filter((item) => Number.isFinite(item) && item >= 0);
+};
+
+const bankDetailGetOptions = (question, metadata) => {
+  const rawOptions = Array.isArray(metadata?.options)
+    ? metadata.options
+    : Array.isArray(question?.options)
+      ? question.options
+      : [];
+
+  const rawOptionsRich = Array.isArray(metadata?.optionsRich)
+    ? metadata.optionsRich
+    : Array.isArray(question?.optionsRich)
+      ? question.optionsRich
+      : [];
+
+  const length = Math.max(rawOptions.length, rawOptionsRich.length);
+
+  return Array.from({ length }).map((_, index) => {
+    const richSource = rawOptionsRich[index];
+    const rawSource = rawOptions[index];
+
+    const blocks = bankDetailNormalizeBlocks(
+      richSource?.contentBlocks
+      || richSource?.blocks
+      || richSource?.richContent?.blocks
+      || richSource
+    );
+
+    const text = bankDetailBlocksToText(blocks) || String(rawSource?.text || rawSource || '').trim();
+
+    return {
+      index,
+      label: String.fromCharCode(65 + index),
+      blocks,
+      text,
+    };
+  });
+};
+
+const QuestionFullAnswerDetail = ({ question }) => {
+  if (!question) return null;
+
+  const metadata = bankDetailParseJson(question.metadata, {});
+  const type = bankDetailNormalizeType(question.type || metadata.type);
+  const correctIndices = bankDetailGetCorrectIndices(question, metadata);
+
+  if (type === 'MULTIPLE_CHOICE') {
+    const options = bankDetailGetOptions(question, metadata);
+
+    return (
+      <div className="question-detail-answer-section">
+        <h4>✅ Đáp án của câu hỏi</h4>
+
+        {options.length === 0 ? (
+          <p className="question-detail-empty">Chưa có danh sách đáp án.</p>
+        ) : (
+          <div className="question-detail-options">
+            {options.map((option) => {
+              const isCorrect = correctIndices.includes(option.index);
+
+              return (
+                <div
+                  key={`answer-${option.index}`}
+                  className={`question-detail-option ${isCorrect ? 'is-correct' : ''}`}
+                >
+                  <div className="question-detail-option-label">
+                    {option.label}
+                  </div>
+
+                  <div className="question-detail-option-content">
+                    {option.blocks.length > 0 ? (
+                      <RichContentRenderer blocks={option.blocks} />
+                    ) : (
+                      <p>{option.text || `Đáp án ${option.label}`}</p>
+                    )}
+                  </div>
+
+                  {isCorrect ? (
+                    <div className="question-detail-correct-badge">
+                      Đáp án đúng
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="question-detail-correct-text">
+          <strong>Đáp án đúng:</strong>{' '}
+          {correctIndices.length
+            ? correctIndices.map((index) => String.fromCharCode(65 + index)).join(', ')
+            : 'Chưa chọn'}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'TRUE_FALSE') {
+    const correctAnswer =
+      typeof metadata.correctAnswer === 'boolean'
+        ? metadata.correctAnswer
+        : typeof question.correctAnswer === 'boolean'
+          ? question.correctAnswer
+          : true;
+
+    return (
+      <div className="question-detail-answer-section">
+        <h4>✅ Đáp án Đúng/Sai</h4>
+        <div className="question-detail-correct-text">
+          <strong>Đáp án đúng:</strong> {correctAnswer ? 'Đúng' : 'Sai'}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'SHORT_ANSWER') {
+    const acceptedAnswers = Array.isArray(metadata.acceptedAnswers)
+      ? metadata.acceptedAnswers
+      : Array.isArray(question.acceptedAnswers)
+        ? question.acceptedAnswers
+        : [];
+
+    return (
+      <div className="question-detail-answer-section">
+        <h4>✅ Các câu trả lời chấp nhận</h4>
+
+        {acceptedAnswers.length ? (
+          <div className="question-detail-short-answers">
+            {acceptedAnswers.map((answer, index) => (
+              <span key={`short-answer-${index}`}>
+                {String(answer)}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="question-detail-empty">Chưa có đáp án chấp nhận.</p>
+        )}
+
+        <div className="question-detail-correct-text">
+          <strong>Phân biệt hoa/thường:</strong>{' '}
+          {metadata.caseSensitive || question.caseSensitive ? 'Có' : 'Không'}
+          {' · '}
+          <strong>Khớp mềm:</strong>{' '}
+          {metadata.fuzzyMatch === false || question.fuzzyMatch === false ? 'Không' : 'Có'}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'ESSAY') {
+    const rubric = Array.isArray(metadata.rubric)
+      ? metadata.rubric
+      : Array.isArray(question.rubric)
+        ? question.rubric
+        : [];
+
+    return (
+      <div className="question-detail-answer-section">
+        <h4>✅ Hướng dẫn chấm tự luận</h4>
+
+        <p>
+          <strong>Hướng dẫn:</strong>{' '}
+          {metadata.instructions || question.instructions || 'Chưa có'}
+        </p>
+
+        {rubric.length ? (
+          <div className="question-detail-rubric-list">
+            {rubric.map((item, index) => (
+              <div key={`rubric-${index}`} className="question-detail-rubric-item">
+                <strong>{item.name || `Tiêu chí ${index + 1}`}</strong>
+                <span>{Number(item.weight || 0)}%</span>
+                <p>{item.description || 'Chưa có mô tả'}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="question-detail-empty">Chưa có rubric.</p>
+        )}
+      </div>
+    );
+  }
+
+  if (type === 'CLOZE') {
+    const innerQuestions = metadata.inner_questions && typeof metadata.inner_questions === 'object'
+      ? Object.entries(metadata.inner_questions)
+      : [];
+
+    return (
+      <div className="question-detail-answer-section">
+        <h4>✅ Câu hỏi nhỏ trong bài đọc</h4>
+
+        {innerQuestions.length ? (
+          <div className="question-detail-inner-list">
+            {innerQuestions.map(([key, item], index) => {
+              const innerType = bankDetailNormalizeType(item?.type);
+              const innerMetadata = bankDetailParseJson(item?.metadata, item || {});
+              const innerCorrectIndices = bankDetailGetCorrectIndices(item, innerMetadata);
+              const innerOptions = bankDetailGetOptions(item, innerMetadata);
+
+              return (
+                <div key={key || index} className="question-detail-inner-item">
+                  <h5>
+                    {index + 1}. {item?.content || item?.questionText || key}
+                  </h5>
+
+                  <p>
+                    <strong>Loại:</strong>{' '}
+                    {QUESTION_TYPE_LABELS?.[innerType] || innerType}
+                  </p>
+
+                  {innerType === 'MULTIPLE_CHOICE' ? (
+                    <>
+                      <div className="question-detail-options">
+                        {innerOptions.map((option) => {
+                          const isCorrect = innerCorrectIndices.includes(option.index);
+
+                          return (
+                            <div
+                              key={`inner-option-${option.index}`}
+                              className={`question-detail-option ${isCorrect ? 'is-correct' : ''}`}
+                            >
+                              <div className="question-detail-option-label">
+                                {option.label}
+                              </div>
+                              <div className="question-detail-option-content">
+                                {option.blocks.length > 0 ? (
+                                  <RichContentRenderer blocks={option.blocks} />
+                                ) : (
+                                  <p>{option.text || `Đáp án ${option.label}`}</p>
+                                )}
+                              </div>
+                              {isCorrect ? (
+                                <div className="question-detail-correct-badge">
+                                  Đáp án đúng
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <p>
+                        <strong>Đáp án đúng:</strong>{' '}
+                        {innerCorrectIndices.length
+                          ? innerCorrectIndices.map((i) => String.fromCharCode(65 + i)).join(', ')
+                          : 'Chưa chọn'}
+                      </p>
+                    </>
+                  ) : null}
+
+                  {innerType === 'TRUE_FALSE' ? (
+                    <p>
+                      <strong>Đáp án đúng:</strong>{' '}
+                      {item?.correctAnswer === false ? 'Sai' : 'Đúng'}
+                    </p>
+                  ) : null}
+
+                  {innerType === 'SHORT_ANSWER' ? (
+                    <p>
+                      <strong>Đáp án chấp nhận:</strong>{' '}
+                      {Array.isArray(item?.acceptedAnswers) && item.acceptedAnswers.length
+                        ? item.acceptedAnswers.join(' | ')
+                        : 'Chưa có'}
+                    </p>
+                  ) : null}
+
+                  {innerType === 'ESSAY' ? (
+                    <p>
+                      <strong>Hướng dẫn:</strong>{' '}
+                      {item?.instructions || 'Chưa có'}
+                    </p>
+                  ) : null}
+
+                  {item?.explanation ? (
+                    <p>
+                      <strong>Giải thích:</strong> {item.explanation}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="question-detail-empty">Chưa có câu hỏi nhỏ.</p>
+        )}
+      </div>
+    );
+  }
+
+  return null;
+};
 function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
   const navigate = useNavigate();
   const { courseId: routeCourseId } = useParams();
@@ -447,20 +828,26 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
   };
 
   const createQuestionPayload = () => {
-    const content = richContentToPlainText(draft.contentBlocks) || draft.content.trim();
+    const content = richContentToPlainText(draft.contentBlocks) || String(draft.content || '').trim();
     if (!content) {
       throw new Error('Vui lòng nhập nội dung câu hỏi.');
     }
-    if (!selectedCourseId) {
+
+    const payloadCourseId = selectedCourseId || draft.courseId;
+    const payloadChapterId = selectedChapterId || draft.chapterId;
+    const payloadLessonId = selectedLessonId || draft.lectureId || draft.lessonId;
+    const payloadSegmentId = selectedSegmentId || draft.segmentId;
+
+    if (!payloadCourseId) {
       throw new Error('Vui lòng chọn khóa học trước khi tạo câu hỏi.');
     }
-    if (!selectedChapterId) {
+    if (!payloadChapterId) {
       throw new Error('Vui lòng chọn chương trước khi tạo câu hỏi.');
     }
-    if (!selectedLessonId) {
+    if (!payloadLessonId) {
       throw new Error('Vui lòng chọn bài giảng trước khi tạo câu hỏi.');
     }
-    if (!selectedSegmentId) {
+    if (!payloadSegmentId) {
       throw new Error('Vui lòng chọn phần bài giảng trước khi tạo câu hỏi.');
     }
 
@@ -468,10 +855,10 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
       type: draft.type,
       content,
       contentBlocks: draft.contentBlocks,
-      courseId: Number(selectedCourseId),
-      chapterId: selectedChapterId ? Number(selectedChapterId) : undefined,
-      lectureId: selectedLessonId ? Number(selectedLessonId) : undefined,
-      segmentId: selectedSegmentId ? Number(selectedSegmentId) : undefined,
+      courseId: Number(payloadCourseId),
+      chapterId: payloadChapterId ? Number(payloadChapterId) : undefined,
+      lectureId: payloadLessonId ? Number(payloadLessonId) : undefined,
+      segmentId: payloadSegmentId ? Number(payloadSegmentId) : undefined,
       isPublished: draft.isPublished,
     };
 
@@ -535,6 +922,31 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
         caseSensitive: draft.caseSensitive,
         fuzzyMatch: draft.fuzzyMatch,
         explanation: draft.explanation.trim() || undefined,
+      };
+    }
+
+    if (draft.type === 'CLOZE') {
+      const metadata = draft.metadata && typeof draft.metadata === 'object'
+        ? draft.metadata
+        : { text_template: draft.content, inner_questions: {} };
+
+      const textTemplate = String(metadata.text_template || draft.content || '').trim();
+
+      if (!textTemplate) {
+        throw new Error('Câu hỏi bài đọc cần có nội dung đọc hợp lệ.');
+      }
+
+      return {
+        ...base,
+        content: textTemplate,
+        metadata: {
+          ...metadata,
+          text_template: textTemplate,
+          inner_questions:
+            metadata.inner_questions && typeof metadata.inner_questions === 'object'
+              ? metadata.inner_questions
+              : {},
+        },
       };
     }
 
@@ -703,54 +1115,32 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
   };
 
   const startEditQuestion = async (id) => {
-    const question = questions.find((item) => item.id === id);
+    const question = questions.find((item) => Number(item.id) === Number(id));
+
     if (!question) {
+      alert('Không tìm thấy câu hỏi cần sửa.');
       return;
     }
 
-    const metadata = parseJson(question.metadata, {});
-    const type = QUESTION_TYPES.includes(question.type) ? question.type : 'MULTIPLE_CHOICE';
+    const nextDraft = buildQuestionDraftForEdit(question);
 
-    setEditingId(id);
-    if (question.courseId) {
-      setSelectedCourseId(String(question.courseId));
-      await loadChapters(question.courseId);
+    setEditingId(question.id);
+    setDraft(nextDraft);
+
+    if (nextDraft.courseId) {
+      setSelectedCourseId(String(nextDraft.courseId));
     }
-    if (question.chapterId != null) {
-      setSelectedChapterId(String(question.chapterId));
+    if (nextDraft.chapterId) {
+      setSelectedChapterId(String(nextDraft.chapterId));
+    }
+    if (nextDraft.lectureId || nextDraft.lessonId) {
+      setSelectedLessonId(String(nextDraft.lectureId || nextDraft.lessonId));
+    }
+    if (nextDraft.segmentId) {
+      setSelectedSegmentId(String(nextDraft.segmentId));
     }
 
-    setDraft({
-      ...createEmptyDraft(),
-      type,
-      content: question.content || question.questionText || '',
-      contentBlocks: Array.isArray(metadata.contentBlocks) && metadata.contentBlocks.length ? metadata.contentBlocks : createEmptyDraft().contentBlocks,
-      isPublished: Boolean(question.isPublished),
-      options: metadata.options || question.options || ['', '', '', ''],
-      optionsRich: Array.isArray(metadata.optionsRich) && metadata.optionsRich.length ? metadata.optionsRich : createEmptyDraft().optionsRich,
-      correctIndices: metadata.correctIndices || (Number.isInteger(question.correctIndex) ? [question.correctIndex] : [0]),
-      allowMultipleCorrect: Boolean(metadata.allowMultipleCorrect),
-      explanation: metadata.explanation || question.explanation || '',
-      correctAnswer: metadata.correctAnswer === true,
-      acceptedAnswersText: Array.isArray(metadata.acceptedAnswers) ? metadata.acceptedAnswers.join('\n') : '',
-      caseSensitive: metadata.caseSensitive === true,
-      fuzzyMatch: metadata.fuzzyMatch !== false,
-      instructions: metadata.instructions || '',
-      rubric: Array.isArray(metadata.rubric) && metadata.rubric.length ? metadata.rubric : createEmptyDraft().rubric,
-      wordLimitMin: Number(metadata.wordLimit?.min ?? 100),
-      wordLimitMax: Number(metadata.wordLimit?.max ?? 400),
-      aiModel: metadata.aiModel || 'gpt-3.5-turbo',
-      gradingMethod: metadata.gradingMethod || 'ai',
-      externalApiUrl: metadata.externalApiUrl || '',
-      externalApiAuthHeader: metadata.externalApiAuthHeader || '',
-    });
-
-    if (question.lectureId != null) {
-      setSelectedLessonId(String(question.lectureId));
-    }
-    if (metadata.segmentId != null) {
-      setSelectedSegmentId(String(metadata.segmentId));
-    }
+    setIsModalOpen(true);
   };
 
   const deleteQuestion = async (id) => {
@@ -966,68 +1356,16 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
             
 
 
-          {!editingId ? (
-            <>
-
-              <QuestionFormModal
-                isOpen={isModalOpen}
-                draft={draft}
-                onDraftChange={setDraft}
-                onConfirm={addOrUpdateQuestion}
-                onCancel={() => {
-                  resetDraft();
-                  setIsModalOpen(false);
-                }}
-                renderTypeSpecificForm={renderTypeSpecificForm}
-              />
-            </>
-          ) : (
-            <>
-              <div className="instructor-question-bank-form-group">
-                <label className="instructor-question-bank-form-label" htmlFor="question-content">Nội dung câu hỏi</label>
-                <RichContentEditor
-                  title=""
-                  helperText="Có thể thêm văn bản, ảnh hoặc video cho nội dung câu hỏi."
-                  value={draft.contentBlocks}
-                  onChange={(nextBlocks) => setDraft((prev) => ({
-                    ...prev,
-                    contentBlocks: nextBlocks,
-                    content: richContentToPlainText(nextBlocks),
-                  }))}
-                />
-              </div>
-
-              {renderTypeSpecificForm()}
-
-              <div className="instructor-question-bank-form-group">
-                <label className="instructor-question-bank-form-label" htmlFor="question-explanation">Giải thích (không bắt buộc)</label>
-                <textarea
-                  className="instructor-question-bank-form-control"
-                  id="question-explanation"
-                  onChange={(event) => setDraft((prev) => ({ ...prev, explanation: event.target.value }))}
-                  value={draft.explanation}
-                />
-              </div>
-
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                <input
-                  type="checkbox"
-                  checked={draft.isPublished}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, isPublished: event.target.checked }))}
-                />
-                <span>Công khai câu hỏi ngay sau khi lưu</span>
-              </label>
-
-              <div className="instructor-question-bank-actions">
-                <button className="instructor-question-bank-btn instructor-question-bank-btn-success" onClick={addOrUpdateQuestion} type="button">
-                  Cập nhật câu hỏi
-                </button>
-                <button className="instructor-question-bank-btn instructor-question-bank-btn-primary" onClick={resetDraft} type="button">
-                  Hủy sửa
-                </button>
-              </div>
-            </>
-          )}
+          <QuestionFormModal
+            key={editingId ? `edit-${editingId}` : 'create-question'}
+            isOpen={isModalOpen}
+            draft={draft}
+            onDraftChange={setDraft}
+            onConfirm={addOrUpdateQuestion}
+            onCancel={resetDraft}
+            renderTypeSpecificForm={renderTypeSpecificForm}
+            mode={editingId ? 'edit' : 'create'}
+          />
 
         <section className="instructor-question-bank-card">
           <div className="instructor-question-bank-list-header">
@@ -1141,12 +1479,276 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
                   </div>
 
                   {expandedQuestionId === question.id ? (
-                    <div className="question-bank-card-body">
-                      {metadata.explanation ? <p><strong>Giải thích:</strong> {metadata.explanation}</p> : null}
-                      {type === 'SHORT_ANSWER' ? <p><strong>Đáp án chấp nhận:</strong> {(metadata.acceptedAnswers || []).join(' | ') || 'Chưa có'}</p> : null}
-                      {type === 'ESSAY' ? <p><strong>Rubric:</strong> {(metadata.rubric || []).map((item) => item.name).join(', ') || 'Chưa có'}</p> : null}
+  <div className="question-bank-card-body">
+    {(() => {
+      const getBlocks = (value) => {
+        if (Array.isArray(value)) return value;
+
+        if (typeof value === 'string') {
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) return parsed;
+            if (Array.isArray(parsed?.contentBlocks)) return parsed.contentBlocks;
+            if (Array.isArray(parsed?.blocks)) return parsed.blocks;
+          } catch (_error) {
+            return value.trim() ? [{ type: 'text', text: value.trim() }] : [];
+          }
+
+          return value.trim() ? [{ type: 'text', text: value.trim() }] : [];
+        }
+
+        if (value && typeof value === 'object') {
+          if (Array.isArray(value.contentBlocks)) return value.contentBlocks;
+          if (Array.isArray(value.blocks)) return value.blocks;
+          if (Array.isArray(value.richContent?.blocks)) return value.richContent.blocks;
+          if (value.text) return [{ type: 'text', text: String(value.text) }];
+        }
+
+        return [];
+      };
+
+      const blocksToText = (blocks) => {
+        if (!Array.isArray(blocks)) return '';
+
+        return blocks
+          .map((block) => {
+            if (!block) return '';
+            if (block.type === 'text') return block.text || '';
+            if (block.type === 'image') return block.alt || block.url || '[Ảnh]';
+            if (block.type === 'video') return block.title || block.url || '[Video]';
+            return block.text || block.content || '';
+          })
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
+      const normalizeIndex = (value) => {
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+        if (typeof value === 'string') {
+          const text = value.trim().toUpperCase();
+
+          if (/^[A-Z]$/.test(text)) {
+            return text.charCodeAt(0) - 65;
+          }
+
+          const numberValue = Number(text);
+          if (Number.isFinite(numberValue)) return numberValue;
+        }
+
+        return null;
+      };
+
+      const correctIndices = (
+        Array.isArray(metadata.correctIndices)
+          ? metadata.correctIndices
+          : Array.isArray(question.correctIndices)
+            ? question.correctIndices
+            : metadata.correctIndex != null
+              ? [metadata.correctIndex]
+              : question.correctIndex != null
+                ? [question.correctIndex]
+                : metadata.answerIndex != null
+                  ? [metadata.answerIndex]
+                  : question.answerIndex != null
+                    ? [question.answerIndex]
+                    : []
+      )
+        .map((item) => normalizeIndex(item))
+        .filter((item) => Number.isFinite(item) && item >= 0);
+
+      const rawOptions = Array.isArray(metadata.options)
+        ? metadata.options
+        : Array.isArray(question.options)
+          ? question.options
+          : [];
+
+      const rawOptionsRich = Array.isArray(metadata.optionsRich)
+        ? metadata.optionsRich
+        : Array.isArray(question.optionsRich)
+          ? question.optionsRich
+          : [];
+
+      const optionLength = Math.max(rawOptions.length, rawOptionsRich.length);
+
+      const options = Array.from({ length: optionLength }).map((_, index) => {
+        const richSource = rawOptionsRich[index];
+        const rawSource = rawOptions[index];
+
+        const blocks = getBlocks(
+          richSource?.contentBlocks
+          || richSource?.blocks
+          || richSource?.richContent?.blocks
+          || richSource
+        );
+
+        const text = blocksToText(blocks) || String(rawSource?.text || rawSource || '').trim();
+
+        return {
+          index,
+          label: String.fromCharCode(65 + index),
+          blocks,
+          text,
+          isCorrect: correctIndices.includes(index),
+        };
+      });
+
+      if (type === 'MULTIPLE_CHOICE') {
+        return (
+          <div className="question-detail-answer-section">
+            <h4>✅ Danh sách đáp án</h4>
+
+            {options.length > 0 ? (
+              <div className="question-detail-options">
+                {options.map((option) => (
+                  <div
+                    key={`option-${question.id}-${option.index}`}
+                    className={`question-detail-option ${option.isCorrect ? 'is-correct' : ''}`}
+                  >
+                    <div className="question-detail-option-label">
+                      {option.label}
                     </div>
-                  ) : null}
+
+                    <div className="question-detail-option-content">
+                      {option.blocks.length > 0 ? (
+                        <RichContentRenderer blocks={option.blocks} />
+                      ) : (
+                        <p>{option.text || `Đáp án ${option.label}`}</p>
+                      )}
+                    </div>
+
+                    {option.isCorrect ? (
+                      <span className="question-detail-correct-badge">
+                        Đáp án đúng
+                      </span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="question-detail-empty">Chưa có danh sách đáp án.</p>
+            )}
+
+            <p className="question-detail-correct-text">
+              <strong>Đáp án đúng:</strong>{' '}
+              {correctIndices.length
+                ? correctIndices.map((index) => String.fromCharCode(65 + index)).join(', ')
+                : 'Chưa chọn'}
+            </p>
+
+            {metadata.explanation ? (
+              <p className="question-detail-correct-text">
+                <strong>Giải thích:</strong> {metadata.explanation}
+              </p>
+            ) : null}
+          </div>
+        );
+      }
+
+      if (type === 'TRUE_FALSE') {
+        const correctAnswer =
+          typeof metadata.correctAnswer === 'boolean'
+            ? metadata.correctAnswer
+            : typeof question.correctAnswer === 'boolean'
+              ? question.correctAnswer
+              : true;
+
+        return (
+          <div className="question-detail-answer-section">
+            <h4>✅ Đáp án Đúng/Sai</h4>
+            <p><strong>Đáp án đúng:</strong> {correctAnswer ? 'Đúng' : 'Sai'}</p>
+            {metadata.explanation ? <p><strong>Giải thích:</strong> {metadata.explanation}</p> : null}
+          </div>
+        );
+      }
+
+      if (type === 'SHORT_ANSWER') {
+        const acceptedAnswers = Array.isArray(metadata.acceptedAnswers)
+          ? metadata.acceptedAnswers
+          : Array.isArray(question.acceptedAnswers)
+            ? question.acceptedAnswers
+            : [];
+
+        return (
+          <div className="question-detail-answer-section">
+            <h4>✅ Đáp án chấp nhận</h4>
+            {acceptedAnswers.length ? (
+              <div className="question-detail-short-answers">
+                {acceptedAnswers.map((answer, index) => (
+                  <span key={`answer-${question.id}-${index}`}>
+                    {String(answer)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="question-detail-empty">Chưa có đáp án chấp nhận.</p>
+            )}
+            {metadata.explanation ? <p><strong>Giải thích:</strong> {metadata.explanation}</p> : null}
+          </div>
+        );
+      }
+
+      if (type === 'ESSAY') {
+        const rubric = Array.isArray(metadata.rubric)
+          ? metadata.rubric
+          : Array.isArray(question.rubric)
+            ? question.rubric
+            : [];
+
+        return (
+          <div className="question-detail-answer-section">
+            <h4>✅ Hướng dẫn chấm tự luận</h4>
+            <p><strong>Hướng dẫn:</strong> {metadata.instructions || question.instructions || 'Chưa có'}</p>
+
+            {rubric.length ? (
+              <div className="question-detail-rubric-list">
+                {rubric.map((item, index) => (
+                  <div key={`rubric-${question.id}-${index}`} className="question-detail-rubric-item">
+                    <strong>{item.name || `Tiêu chí ${index + 1}`}</strong>
+                    <span>{Number(item.weight || 0)}%</span>
+                    <p>{item.description || 'Chưa có mô tả'}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="question-detail-empty">Chưa có rubric.</p>
+            )}
+          </div>
+        );
+      }
+
+      if (type === 'CLOZE') {
+        const innerQuestions = metadata.inner_questions && typeof metadata.inner_questions === 'object'
+          ? Object.entries(metadata.inner_questions)
+          : [];
+
+        return (
+          <div className="question-detail-answer-section">
+            <h4>✅ Câu hỏi nhỏ trong bài đọc</h4>
+
+            {innerQuestions.length ? (
+              <div className="question-detail-inner-list">
+                {innerQuestions.map(([key, item], index) => (
+                  <div key={key || index} className="question-detail-inner-item">
+                    <h5>{index + 1}. {item?.content || item?.questionText || key}</h5>
+                    <p><strong>Loại:</strong> {item?.type || 'Chưa có'}</p>
+                    <p><strong>Đáp án:</strong> {item?.correctAnswer ?? item?.correct ?? item?.acceptedAnswers?.join?.(', ') ?? 'Chưa có'}</p>
+                    {item?.explanation ? <p><strong>Giải thích:</strong> {item.explanation}</p> : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="question-detail-empty">Chưa có câu hỏi nhỏ.</p>
+            )}
+          </div>
+        );
+      }
+
+      return null;
+    })()}
+  </div>
+) : null}
                 </article>
               );
             })}

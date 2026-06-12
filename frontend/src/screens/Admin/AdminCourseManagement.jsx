@@ -88,7 +88,6 @@ function AdminCourseManagement() {
   };
 
   // 2. XỬ LÝ PHÊ DUYỆT / TỪ CHỐI BÀI HỌC CỤ THỂ
-  // 2. XỬ LÝ PHÊ DUYỆT / TỪ CHỐI BÀI HỌC CỤ THỂ
   const handleApproveLesson = async (lessonId, newStatus) => {
     try {
       // 1. Bắn request lên Backend Router đã bỏ đuôi /status
@@ -208,7 +207,7 @@ function AdminCourseManagement() {
   // Hàm render giao diện chi tiết của bài học (cột bên phải)
   const renderLessonDetails = () => {
     const lessonId = selectedReviewItem.id;
-// Ép kiểu cả 2 vế về Number khi .find() để tránh bug ngầm của React
+    // Ép kiểu cả 2 vế về Number khi .find() để tránh bug ngầm của React
     const lesson = courseLessons.find(l => Number(l.id) === Number(lessonId));
     
     if (!lesson) return <div>Không tìm thấy bài học</div>;

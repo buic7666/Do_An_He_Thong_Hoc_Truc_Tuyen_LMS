@@ -899,51 +899,184 @@ function SegmentDetailView() {
     }
   };
 
+  const normalizeQuestionTypeForEdit = (value) => {
+    const type = String(value || 'MULTIPLE_CHOICE').toUpperCase();
+    if (type === 'MULTICHOICE') return 'MULTIPLE_CHOICE';
+    return QUESTION_TYPES.includes(type) ? type : 'MULTIPLE_CHOICE';
+  };
+
+  const normalizeBooleanForEdit = (value, fallback = false) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true') return true;
+      if (normalized === 'false') return false;
+    }
+    return fallback;
+  };
+
+  const normalizeCorrectIndexForEdit = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim().toUpperCase();
+
+      if (/^[A-Z]$/.test(trimmed)) {
+        return trimmed.charCodeAt(0) - 65;
+      }
+
+      const numberValue = Number(trimmed);
+      if (Number.isFinite(numberValue)) {
+        return numberValue;
+      }
+    }
+
+    return null;
+  };
+
+  const buildQuestionDraftFromQuestion = (question) => {
+    const emptyDraft = createEmptyQuestionDraft();
+    const metadata = parseJson(question?.metadata, {});
+    const type = normalizeQuestionTypeForEdit(question?.type || metadata?.type);
+
+    const rawContentBlocks = normalizeRichBlocksValue(
+      question?.contentBlocks
+        || metadata?.contentBlocks
+        || metadata?.blocks
+        || metadata?.richContent?.blocks
+        || [],
+    );
+
+    const textContent = String(
+      type === 'CLOZE'
+        ? metadata?.text_template || question?.content || question?.questionText || ''
+        : question?.content || question?.questionText || metadata?.questionText || metadata?.title || '',
+    ).trim();
+
+    const contentBlocks = rawContentBlocks.length > 0
+      ? rawContentBlocks
+      : (textContent ? [{ type: 'text', text: textContent }] : createEmptyRichBlocks());
+
+    const metadataOptions = Array.isArray(metadata?.options) ? metadata.options : [];
+    const questionOptions = Array.isArray(question?.options) ? question.options : [];
+    const rawOptions = metadataOptions.length ? metadataOptions : questionOptions;
+
+    const metadataOptionsRich = Array.isArray(metadata?.optionsRich) ? metadata.optionsRich : [];
+    const questionOptionsRich = Array.isArray(question?.optionsRich) ? question.optionsRich : [];
+    const rawOptionsRich = metadataOptionsRich.length ? metadataOptionsRich : questionOptionsRich;
+
+    const optionCount = Math.max(
+      rawOptions.length,
+      rawOptionsRich.length,
+      type === 'MULTIPLE_CHOICE' ? 4 : 0,
+    );
+
+    const optionsRich = Array.from({ length: optionCount }).map((_, index) => {
+      const richBlocks = normalizeRichBlocksValue(rawOptionsRich[index]);
+
+      if (richBlocks.length > 0) {
+        return richBlocks;
+      }
+
+      return [{ type: 'text', text: String(rawOptions[index] || '') }];
+    });
+
+    const options = optionsRich.map((blocks, index) => (
+      richContentToPlainText(blocks) || String(rawOptions[index] || '').trim()
+    ));
+
+    const rawCorrectIndices = Array.isArray(metadata?.correctIndices)
+      ? metadata.correctIndices
+      : Array.isArray(question?.correctIndices)
+        ? question.correctIndices
+        : metadata?.correctIndex != null
+          ? [metadata.correctIndex]
+          : question?.correctIndex != null
+            ? [question.correctIndex]
+            : metadata?.answerIndex != null
+              ? [metadata.answerIndex]
+              : [0];
+
+    const correctIndices = rawCorrectIndices
+      .map((item) => normalizeCorrectIndexForEdit(item))
+      .filter((item) => Number.isFinite(item) && item >= 0 && item < Math.max(optionCount, 1));
+
+    const acceptedAnswers = Array.isArray(metadata?.acceptedAnswers)
+      ? metadata.acceptedAnswers
+      : Array.isArray(question?.acceptedAnswers)
+        ? question.acceptedAnswers
+        : Array.isArray(metadata?.answers)
+          ? metadata.answers
+          : [];
+
+    const wordLimit = metadata?.wordLimit || question?.wordLimit || {};
+
+    const clozeMetadata = {
+      ...metadata,
+      text_template: String(metadata?.text_template || textContent || '').trim(),
+      inner_questions:
+        metadata?.inner_questions && typeof metadata.inner_questions === 'object'
+          ? metadata.inner_questions
+          : {},
+    };
+
+    return {
+      ...emptyDraft,
+      type,
+      metadata: type === 'CLOZE' ? clozeMetadata : metadata,
+
+      content: type === 'CLOZE' ? clozeMetadata.text_template : textContent,
+      contentBlocks,
+
+      isPublished: Boolean(question?.isPublished),
+
+      options: options.length ? options : emptyDraft.options,
+      optionsRich: optionsRich.length ? optionsRich : emptyDraft.optionsRich,
+      correctIndices: correctIndices.length ? correctIndices : [0],
+      allowMultipleCorrect: Boolean(metadata?.allowMultipleCorrect || question?.allowMultipleCorrect),
+
+      explanation: String(metadata?.explanation || question?.explanation || ''),
+
+      correctAnswer: normalizeBooleanForEdit(
+        metadata?.correctAnswer ?? question?.correctAnswer,
+        true,
+      ),
+
+      acceptedAnswersText: acceptedAnswers.map((item) => String(item || '').trim()).filter(Boolean).join('\n'),
+      caseSensitive: normalizeBooleanForEdit(metadata?.caseSensitive ?? question?.caseSensitive, false),
+      fuzzyMatch: normalizeBooleanForEdit(metadata?.fuzzyMatch ?? question?.fuzzyMatch, true),
+
+      instructions: String(metadata?.instructions || question?.instructions || ''),
+      rubric:
+        Array.isArray(metadata?.rubric) && metadata.rubric.length
+          ? metadata.rubric
+          : Array.isArray(question?.rubric) && question.rubric.length
+            ? question.rubric
+            : emptyDraft.rubric,
+
+      wordLimitMin: Number(wordLimit?.min ?? metadata?.wordLimitMin ?? question?.wordLimitMin ?? 100),
+      wordLimitMax: Number(wordLimit?.max ?? metadata?.wordLimitMax ?? question?.wordLimitMax ?? 400),
+
+      aiModel: metadata?.aiModel || question?.aiModel || 'gpt-3.5-turbo',
+      gradingMethod: metadata?.gradingMethod || question?.gradingMethod || 'ai',
+      externalApiUrl: metadata?.externalApiUrl || question?.externalApiUrl || '',
+      externalApiAuthHeader: metadata?.externalApiAuthHeader || question?.externalApiAuthHeader || '',
+    };
+  };
+
   const startEditQuestion = (questionId) => {
-    const question = questions.find((item) => item.id === questionId);
+    const question = questions.find((item) => Number(item.id) === Number(questionId));
+
     if (!question) {
+      alert('Không tìm thấy câu hỏi cần sửa.');
       return;
     }
 
-    const metadata = parseJson(question.metadata, {});
-    const type = QUESTION_TYPES.includes(question.type) ? question.type : 'MULTIPLE_CHOICE';
-    const contentBlocks = normalizeRichBlocksValue(question.contentBlocks || metadata.contentBlocks || metadata.blocks || metadata.richContent?.blocks);
-    const optionsRichSource = Array.isArray(question.optionsRich) && question.optionsRich.length
-      ? question.optionsRich
-      : (Array.isArray(metadata.optionsRich) && metadata.optionsRich.length ? metadata.optionsRich : []);
-    const optionsRich = optionsRichSource.length
-      ? optionsRichSource.map((blocks, index) => normalizeRichBlocksValue(blocks).length ? normalizeRichBlocksValue(blocks) : [{ type: 'text', text: String(metadata.options?.[index] || question.options?.[index] || '') }])
-      : (Array.isArray(metadata.options) || Array.isArray(question.options)
-        ? (metadata.options || question.options || []).map((item) => ([{ type: 'text', text: String(item || '') }]))
-        : [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()]);
-
-    const normalizedOptions = optionsRich.map((blocks, index) => richContentToPlainText(blocks) || String(metadata.options?.[index] || question.options?.[index] || '').trim());
-
-    setQuestionEditingId(questionId);
-    setQuestionDraft({
-      ...createEmptyQuestionDraft(),
-      type,
-      content: contentBlocks.length ? richContentToPlainText(contentBlocks) : (question.content || question.questionText || ''),
-      contentBlocks,
-      isPublished: Boolean(question.isPublished),
-      options: normalizedOptions.length ? normalizedOptions : (metadata.options || question.options || ['', '', '', '']),
-      optionsRich,
-      correctIndices: metadata.correctIndices || (Number.isInteger(question.correctIndex) ? [question.correctIndex] : [0]),
-      allowMultipleCorrect: Boolean(metadata.allowMultipleCorrect),
-      explanation: metadata.explanation || question.explanation || '',
-      correctAnswer: metadata.correctAnswer === true,
-      acceptedAnswersText: Array.isArray(metadata.acceptedAnswers) ? metadata.acceptedAnswers.join('\n') : '',
-      caseSensitive: metadata.caseSensitive === true,
-      fuzzyMatch: metadata.fuzzyMatch !== false,
-      instructions: metadata.instructions || question.instructions || '',
-      rubric: Array.isArray(metadata.rubric) && metadata.rubric.length ? metadata.rubric : createEmptyQuestionDraft().rubric,
-      wordLimitMin: Number(metadata.wordLimit?.min ?? 100),
-      wordLimitMax: Number(metadata.wordLimit?.max ?? 400),
-      aiModel: metadata.aiModel || 'gpt-3.5-turbo',
-      gradingMethod: metadata.gradingMethod || 'ai',
-      externalApiUrl: metadata.externalApiUrl || '',
-      externalApiAuthHeader: metadata.externalApiAuthHeader || '',
-    });
+    setViewQuestion(null);
+    setQuestionEditingId(question.id);
+    setQuestionDraft(buildQuestionDraftFromQuestion(question));
     setQuestionModalOpen(true);
   };
 
@@ -1851,33 +1984,32 @@ function SegmentDetailView() {
                                       <p className="question-bank-card-preview">{answerPreview}</p>
                                     </div>
                                     <div className="question-bank-card-actions">
-                                      <button
-                                        type="button"
-                                        className="btn-prev-item"
-                                        onClick={() => {
-                                          console.debug('open view modal', { id: question.id });
-                                          setViewQuestion(question);
-                                          try { window.__lastViewedQuestionId = question.id; } catch (e) {}
-                                        }}
-                                      >
-                                        Xem chi tiết
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn-save-all"
-                                        onClick={() => startEditQuestion(question.id)}
-                                      >
-                                        Sửa
-                                      </button>
+  <button
+    type="button"
+    className="btn-prev-item"
+    onClick={() => {
+      setViewQuestion(question);
+    }}
+  >
+    Xem chi tiết
+  </button>
 
-                                      <button
-                                        type="button"
-                                        className="btn-delete-item"
-                                        onClick={() => handleDeleteQuestion(question.id)}
-                                      >
-                                        Xóa
-                                      </button>
-                                    </div>
+  <button
+    type="button"
+    className="btn-save-all"
+    onClick={() => startEditQuestion(question.id)}
+  >
+    Sửa
+  </button>
+
+  <button
+    type="button"
+    className="btn-delete-item"
+    onClick={() => handleDeleteQuestion(question.id)}
+  >
+    Xóa
+  </button>
+</div>
                                   </div>
 
                                   {isExpanded ? (
