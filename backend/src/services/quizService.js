@@ -521,32 +521,74 @@ const submitQuiz = async (quizId, studentId, answers = {}) => {
       continue;
     }
 
-    try {
-      // Gọi GradingService để chấm
-      const gradingResult = await gradeAnswer(
-        studentAnswer.value,
-        questionMetadata,
-        question.type,
-        question.content
-      );
+try {
+  const normalizedType = normalizeQuestionType(question.type);
+  const gradingMethod = String(
+    questionMetadata.gradingMethod || 'ai'
+  ).toLowerCase();
 
-      if (typeof gradingResult.score === 'number') {
-        scores.push(gradingResult.score);
-      }
+  let gradingResult;
 
-      // Tạo StudentAnswer record
-      const sa = await StudentAnswer.create({
-        attemptId: attempt.id,
-        questionId: question.id,
-        answerType: question.type,
-        answerValue: studentAnswer.value,
-        score: typeof gradingResult.score === 'number' ? gradingResult.score : null,
-        gradingDetails: gradingResult.details || null,
-        aiFeedback: gradingResult.aiFeedback?.overallFeedback || null,
-      });
+  if (normalizedType === 'ESSAY' && gradingMethod === 'external_api') {
+    const externalResult = await gradeEssayWithExternalApiConfig({
+      question: {
+        id: question.id,
+        content: question.content,
+        type: question.type,
+        metadata: questionMetadata,
+      },
+      answerText: String(
+        typeof studentAnswer.value === 'object'
+          ? studentAnswer.value?.text
+            || studentAnswer.value?.answer
+            || studentAnswer.value?.content
+            || studentAnswer.value?.value
+            || JSON.stringify(studentAnswer.value)
+          : studentAnswer.value || ''
+      ),
+      student: {
+        id: studentId,
+      },
+      attempt,
+    });
 
-      studentAnswers.push(sa);
-    } catch (error) {
+    gradingResult = {
+      score: externalResult.score,
+      details: {
+        method: 'external_api',
+        raw: externalResult.raw,
+      },
+      aiFeedback: {
+        overallFeedback: externalResult.feedback,
+      },
+    };
+  } else {
+    // Gọi GradingService để chấm các loại câu hỏi còn lại
+    gradingResult = await gradeAnswer(
+      studentAnswer.value,
+      questionMetadata,
+      question.type,
+      question.content
+    );
+  }
+
+  if (typeof gradingResult.score === 'number') {
+    scores.push(gradingResult.score);
+  }
+
+  // Tạo StudentAnswer record
+  const sa = await StudentAnswer.create({
+    attemptId: attempt.id,
+    questionId: question.id,
+    answerType: question.type,
+    answerValue: studentAnswer.value,
+    score: typeof gradingResult.score === 'number' ? gradingResult.score : null,
+    gradingDetails: gradingResult.details || null,
+    aiFeedback: gradingResult.aiFeedback?.overallFeedback || null,
+  });
+
+  studentAnswers.push(sa);
+} catch (error) {
       console.error(`Error grading question ${question.id}:`, error);
       // Nếu lỗi, lưu điểm 0
       const sa = await StudentAnswer.create({

@@ -35,7 +35,10 @@ const generateToken = (user) => {
 };
 
 const register = async (payload) => {
-  const { name, email, password, role = 'student' } = payload;
+  const { name, email, password } = payload;
+
+  const requestedRole = String(payload.role || 'student').toLowerCase();
+  const role = requestedRole === 'teacher' ? 'teacher' : 'student';
 
   if (!name || !email || !password) {
     throw new HttpError(400, 'name, email, and password are required', 'VALIDATION_ERROR');

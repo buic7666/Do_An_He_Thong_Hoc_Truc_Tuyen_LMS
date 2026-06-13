@@ -41,7 +41,7 @@ const getCourseProgress = async (req, res, next) => {
 const createCourse = async (req, res, next) => {
   try {
     const result = await courseService.createCourse(req.body, req.user);
-    return successResponse(res, 'Course created successfully', result, 201);
+    return successResponse(res, 'Khóa học được tạo thành công', result, 201);
   } catch (error) {
     return next(error);
   }
@@ -49,7 +49,7 @@ const createCourse = async (req, res, next) => {
 const updateCourse = async (req, res, next) => {
   try {
     const result = await courseService.updateCourse(req.params.id, req.body, req.user);
-    return successResponse(res, 'Course updated successfully', result, 200);
+    return successResponse(res, 'Khóa học được cập nhật thành công', result, 200);
   } catch (error) {
     return next(error);
   }
@@ -57,7 +57,7 @@ const updateCourse = async (req, res, next) => {
 const deleteCourse = async (req, res, next) => {
   try {
     const result = await courseService.deleteCourse(req.params.id, req.user);
-    return successResponse(res, 'Course deleted successfully', result, 200);
+    return successResponse(res, 'Khóa học được xóa thành công', result, 200);
   } catch (error) {
     return next(error);
   }

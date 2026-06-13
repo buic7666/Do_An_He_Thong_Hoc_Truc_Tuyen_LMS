@@ -173,31 +173,12 @@ function QuestionTypeFields({ draft, setDraft }) {
       ) : null}
 
       {(draft.gradingMethod || 'ai') === 'external_api' ? (
-        <>
-          <div className="instructor-question-bank-form-group">
-            <label className="instructor-question-bank-form-label" htmlFor="essay-external-api-url">URL API chấm điểm</label>
-            <input
-              className="instructor-question-bank-form-control"
-              id="essay-external-api-url"
-              type="url"
-              placeholder="https://grading.example.com/api/essay"
-              value={draft.externalApiUrl || ''}
-              onChange={(event) => updateDraft({ externalApiUrl: event.target.value })}
-            />
-          </div>
-          <div className="instructor-question-bank-form-group">
-            <label className="instructor-question-bank-form-label" htmlFor="essay-external-api-auth">Giá trị header xác thực</label>
-            <input
-              className="instructor-question-bank-form-control"
-              id="essay-external-api-auth"
-              type="text"
-              placeholder="Bearer <token> hoặc X-API-Key: <value>"
-              value={draft.externalApiAuthHeader || ''}
-              onChange={(event) => updateDraft({ externalApiAuthHeader: event.target.value })}
-            />
-            <small style={{ color: '#6b7280' }}>Trường này sẽ được lưu cùng metadata của câu hỏi.</small>
-          </div>
-        </>
+        <div className="instructor-question-bank-form-group">
+         <p style={{ color: '#64748b', margin: 0 }}>
+            Hệ thống sẽ sử dụng API chấm tự luận ngoài do admin cấu hình.
+             Giảng viên không cần nhập URL hoặc token API.
+         </p>
+       </div>
       ) : null}
 
       <div className="instructor-question-bank-form-group">

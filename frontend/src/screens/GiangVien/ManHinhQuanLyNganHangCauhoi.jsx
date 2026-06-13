@@ -955,19 +955,17 @@ const resetQuizDraft = () => {
             .filter((item) => item.name && item.description && Number.isFinite(item.weight))
         : [];
 
-      return {
-        ...base,
-        instructions: String(innerQuestion.instructions || '').trim(),
-        rubric,
-        wordLimit: {
-          min: Number(innerQuestion.wordLimitMin || 0),
-          max: Number(innerQuestion.wordLimitMax || 0) || 5000,
-        },
-        aiModel: innerQuestion.aiModel || 'gpt-3.5-turbo',
-        gradingMethod: innerQuestion.gradingMethod || 'ai',
-        externalApiUrl: String(innerQuestion.externalApiUrl || '').trim() || null,
-        externalApiAuthHeader: String(innerQuestion.externalApiAuthHeader || '').trim() || null,
-      };
+     return {
+  ...base,
+  instructions: String(innerQuestion.instructions || '').trim(),
+  rubric,
+  wordLimit: {
+    min: Number(innerQuestion.wordLimitMin || 0),
+    max: Number(innerQuestion.wordLimitMax || 0) || 5000,
+  },
+  aiModel: innerQuestion.aiModel || 'gpt-3.5-turbo',
+  gradingMethod: innerQuestion.gradingMethod || 'ai',
+};
     }
 
     return base;

@@ -229,19 +229,6 @@ function QuestionFormModal({
         });
         if (Math.round(total) !== 100) errors.push('Tổng trọng số rubric phải bằng 100.');
       }
-
-      if ((String(d.gradingMethod || 'ai')) === 'external_api') {
-        const externalApiUrl = String(d.externalApiUrl || '').trim();
-        if (!externalApiUrl) {
-          errors.push('Cần nhập URL API chấm điểm khi chọn chấm bằng API.');
-        } else {
-          try {
-            new URL(externalApiUrl);
-          } catch (_error) {
-            errors.push('URL API chấm điểm không hợp lệ.');
-          }
-        }
-      }
     }
 
     return { ok: errors.length === 0, errors };
@@ -346,8 +333,6 @@ function QuestionFormModal({
                     rubric: next.rubric && next.rubric.length ? next.rubric : [{ name: 'Nội dung', weight: 100, description: '' }],
                     instructions: next.instructions || '',
                     gradingMethod: next.gradingMethod || 'ai',
-                    externalApiUrl: next.externalApiUrl || '',
-                    externalApiAuthHeader: next.externalApiAuthHeader || '',
                   };
                 } else if (newType === 'CLOZE') {
                   next = { ...next, metadata: next.metadata || { text_template: '', inner_questions: {} } };
