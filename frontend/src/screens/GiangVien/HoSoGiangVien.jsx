@@ -106,7 +106,7 @@ function HoSoGiangVien() {
 
               <div className="instructor-profile-form-group">
                 <label className="instructor-profile-form-label" htmlFor="title">
-                  Chuc danh chuyen mon
+                  Chức danh chuyên môn
                 </label>
                 <input
                   className="instructor-profile-form-control"
@@ -119,7 +119,7 @@ function HoSoGiangVien() {
 
               <div className="instructor-profile-form-group full-width">
                 <label className="instructor-profile-form-label" htmlFor="bio">
-                  Tieu su / Kinh nghiem lam viec (Bio)
+                  Tiêu sử / kinh nghiệm giảng dạy / chuyên môn (hiển thị trên trang công khai của giảng viên)
                 </label>
                 <textarea
                   className="instructor-profile-form-control"
@@ -132,7 +132,7 @@ function HoSoGiangVien() {
 
               <div className="instructor-profile-form-group">
                 <label className="instructor-profile-form-label" htmlFor="linkedin">
-                  Lien ket LinkedIn
+                  liên kết LinkedIn
                 </label>
                 <input
                   className="instructor-profile-form-control"
@@ -146,7 +146,7 @@ function HoSoGiangVien() {
 
               <div className="instructor-profile-form-group">
                 <label className="instructor-profile-form-label" htmlFor="facebook">
-                  Lien ket Facebook
+                  liên kết Facebook
                 </label>
                 <input
                   className="instructor-profile-form-control"
@@ -161,16 +161,16 @@ function HoSoGiangVien() {
           </section>
 
           <section className="instructor-profile-card">
-            <h2 className="instructor-profile-card-title">Cai dat thanh toan (Nhan tien hoa hong)</h2>
+            <h2 className="instructor-profile-card-title">Cài đặt thanh toán (Nhận tiền hoa hồng)</h2>
 
             <p className="instructor-profile-payment-note">
-              Vui long cung cap thong tin tai khoan ngan hang chinh xac de he thong tu dong chuyen tien doanh thu ban khoa hoc hang thang.
+              Vui lòng cung cấp thông tin tài khoản ngân hàng chính xác để hệ thống tự động chuyển tiền doanh thu bán khóa học hàng tháng.
             </p>
 
             <div className="instructor-profile-form-grid">
               <div className="instructor-profile-form-group full-width">
                 <label className="instructor-profile-form-label" htmlFor="bankName">
-                  Ten Ngan hang
+                  Tên ngân hàng
                 </label>
                 <input
                   className="instructor-profile-form-control"
@@ -184,13 +184,13 @@ function HoSoGiangVien() {
 
               <div className="instructor-profile-form-group">
                 <label className="instructor-profile-form-label" htmlFor="bankAccount">
-                  So tai khoan
+                  Số tài khoản
                 </label>
                 <input
                   className="instructor-profile-form-control"
                   id="bankAccount"
                   onChange={handleFieldChange('bankAccount')}
-                  placeholder="Nhap so tai khoan"
+                  placeholder="Nhập số tài khoản"
                   type="text"
                   value={form.bankAccount}
                 />
@@ -198,13 +198,13 @@ function HoSoGiangVien() {
 
               <div className="instructor-profile-form-group">
                 <label className="instructor-profile-form-label" htmlFor="bankOwner">
-                  Ten chu tai khoan
+                  Tên chủ tài khoản
                 </label>
                 <input
                   className="instructor-profile-form-control"
                   id="bankOwner"
                   onChange={handleFieldChange('bankOwner')}
-                  placeholder="NHAP TIENG VIET KHONG DAU"
+                  placeholder="Nhập tên chủ tài khoản"
                   type="text"
                   value={form.bankOwner}
                 />
@@ -214,7 +214,7 @@ function HoSoGiangVien() {
 
           <div className="instructor-profile-form-actions">
             <button className="instructor-profile-btn instructor-profile-btn-primary" disabled={isSaving} onClick={handleSave} type="button">
-              {isSaving ? 'Dang luu...' : 'Luu tat ca thay doi'}
+              {isSaving ? 'Đang lưu...' : 'Lưu tất cả thay đổi'}
             </button>
           </div>
         </div>

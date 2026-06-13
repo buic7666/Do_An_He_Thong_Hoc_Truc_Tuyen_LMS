@@ -83,33 +83,33 @@ function ManHinhBaoCaoDoanhthu() {
       <TeacherSidebar />
 
       <main className="instructor-finance-main-content">
-        <h1 className="instructor-finance-page-title">Quan ly Tai chinh</h1>
+        <h1 className="instructor-finance-page-title">Quản lý tài chính</h1>
 
         <section className="instructor-finance-card instructor-finance-balance-card">
           <div className="instructor-finance-balance-info">
-            <span className="instructor-finance-balance-label">So du kha dung (VND)</span>
+            <span className="instructor-finance-balance-label">Số dư khả dụng (VND)</span>
             <span className="instructor-finance-balance-amount">{formatCurrency(dashboardData?.stats?.totalRevenueCurrentMonth || 0)}</span>
           </div>
 
           <button className="instructor-finance-btn instructor-finance-btn-primary" onClick={handleWithdrawRequest} type="button">
-            Yeu cau rut tien
+            Yêu cầu rút tiền
           </button>
         </section>
 
         <section className="instructor-finance-split-layout">
           <article className="instructor-finance-card">
-            <h2 className="instructor-finance-card-title">Lich su ban khoa hoc</h2>
+            <h2 className="instructor-finance-card-title">Lịch sử bán khóa học</h2>
 
             <div className="instructor-finance-table-responsive">
               <table className="instructor-finance-data-table">
                 <thead>
                   <tr>
-                    <th>Ngay ban</th>
-                    <th>Khoa hoc</th>
-                    <th>Hoc vien</th>
-                    <th className="col-money">Gia ban</th>
-                    <th className="col-money">Phi nen tang (20%)</th>
-                    <th className="col-money">Thuc nhan</th>
+                    <th>Ngày bán</th>
+                    <th>Khóa học</th>
+                    <th>Học viên</th>
+                    <th className="col-money">Giá bán</th>
+                    <th className="col-money">Phí nền tảng (20%)</th>
+                    <th className="col-money">Thực nhận</th>
                   </tr>
                 </thead>
 
@@ -126,7 +126,7 @@ function ManHinhBaoCaoDoanhthu() {
                   ))}
                   {!courseSales.length ? (
                     <tr>
-                      <td colSpan={6}>Chua co giao dich ban khoa hoc.</td>
+                      <td colSpan={6}>Chưa có giao dịch bán khóa học nào.</td>
                     </tr>
                   ) : null}
                 </tbody>
@@ -135,17 +135,17 @@ function ManHinhBaoCaoDoanhthu() {
           </article>
 
           <article className="instructor-finance-card">
-            <h2 className="instructor-finance-card-title">Lich su rut tien</h2>
+            <h2 className="instructor-finance-card-title">Lịch sử rút tiền</h2>
 
             <div className="instructor-finance-table-responsive">
               <table className="instructor-finance-data-table">
                 <thead>
                   <tr>
-                    <th>Ma GD</th>
-                    <th>Ngay yeu cau</th>
-                    <th>Ngan hang nhan</th>
-                    <th className="col-money">So tien rut</th>
-                    <th className="align-right">Trang thai</th>
+                    <th>Mã GD</th>
+                    <th>Ngày yêu cầu</th>
+                    <th>Ngân hàng nhận</th>
+                    <th className="col-money">Số tiền rút</th>
+                    <th className="align-right">Trạng thái</th>
                   </tr>
                 </thead>
 

@@ -57,33 +57,33 @@ function ManHinhBaoCaoDoanhThuChiTiet() {
     <div className="instructor-revenue-detail-page">
       <header className="instructor-revenue-detail-header">
         <div>
-          <p className="instructor-revenue-detail-kicker">Bao cao doanh thu</p>
-          <h1>Chi tiet doanh thu giang vien</h1>
-          <p className="instructor-revenue-detail-subtitle">Tong hop doanh thu, phi nen tang va lich su giao dich theo tung khoa hoc.</p>
+          <p className="instructor-revenue-detail-kicker">Báo cáo doanh thu chi tiết</p>
+          <h1>Chi tiết doanh thu</h1>
+          <p className="instructor-revenue-detail-subtitle">Tổng hợp doanh thu, phí nền tảng và lịch sử giao dịch theo từng khóa học.</p>
         </div>
 
         <button className="instructor-revenue-detail-btn primary" onClick={handleExport} type="button">
-          Xuat bao cao
+          Xuất báo cáo
         </button>
       </header>
 
       <section className="instructor-revenue-detail-filter-bar">
         <label>
-          Khoang thoi gian
+          Khoảng thời gian
           <select onChange={(event) => setDateRange(event.target.value)} value={dateRange}>
-            <option value="7days">7 ngay</option>
-            <option value="30days">30 ngay</option>
-            <option value="90days">90 ngay</option>
-            <option value="year">Nam hien tai</option>
+            <option value="7days">7 ngày</option>
+            <option value="30days">30 ngày</option>
+            <option value="90days">90 ngày</option>
+            <option value="year">năm hiện tại</option>
           </select>
         </label>
 
         <label>
-          Trang thai giao dich
+          Trạng thái giao dịch
           <select onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
-            <option value="all">Tat ca</option>
-            <option value="success">Thanh cong</option>
-            <option value="pending">Dang doi soat</option>
+            <option value="all">Tất cả</option>
+            <option value="success">Thành công</option>
+            <option value="pending">Đang đợi soát</option>
           </select>
         </label>
 
@@ -92,19 +92,19 @@ function ManHinhBaoCaoDoanhThuChiTiet() {
 
       <section className="instructor-revenue-detail-summary-grid">
         <article className="instructor-revenue-detail-card">
-          <p>Tong doanh thu</p>
+          <p>Tổng doanh thu</p>
           <h3>{formatCurrency(summarySeed.totalRevenue)}</h3>
         </article>
         <article className="instructor-revenue-detail-card">
-          <p>Phi nen tang</p>
+          <p>Phí nền tảng</p>
           <h3>{formatCurrency(summarySeed.platformFee)}</h3>
         </article>
         <article className="instructor-revenue-detail-card highlight">
-          <p>Thu nhap thuc nhan</p>
+          <p>Thu nhập thực nhận</p>
           <h3>{formatCurrency(summarySeed.netPayout)}</h3>
         </article>
         <article className="instructor-revenue-detail-card">
-          <p>Tong don hang</p>
+          <p>Tổng đơn hàng</p>
           <h3>{summarySeed.totalOrders.toLocaleString('vi-VN')}</h3>
         </article>
       </section>
@@ -112,8 +112,8 @@ function ManHinhBaoCaoDoanhThuChiTiet() {
       <section className="instructor-revenue-detail-layout-grid">
         <article className="instructor-revenue-detail-panel">
           <div className="instructor-revenue-detail-panel-head">
-            <h2>Doanh thu theo khoa hoc</h2>
-            <span>Top 3 khoa hoc</span>
+            <h2>Doanh thu theo khóa học</h2>
+            <span>Top 3 khóa học</span>
           </div>
 
           <div className="instructor-revenue-detail-course-list">
@@ -121,12 +121,12 @@ function ManHinhBaoCaoDoanhThuChiTiet() {
               <div className="instructor-revenue-detail-course-item" key={course.id}>
                 <div>
                   <h4>{course.courseName}</h4>
-                  <p>{course.enrollments.toLocaleString('vi-VN')} hoc vien</p>
+                  <p>{course.enrollments.toLocaleString('vi-VN')} học viên</p>
                 </div>
 
                 <div className="instructor-revenue-detail-course-values">
                   <span className="gross">{formatCurrency(course.grossRevenue)}</span>
-                  <span className="net">Thuc nhan: {formatCurrency(course.netRevenue)}</span>
+                  <span className="net">Thực nhận: {formatCurrency(course.netRevenue)}</span>
                 </div>
               </div>
             ))}
@@ -135,8 +135,8 @@ function ManHinhBaoCaoDoanhThuChiTiet() {
 
         <article className="instructor-revenue-detail-panel">
           <div className="instructor-revenue-detail-panel-head">
-            <h2>Ti le doanh thu</h2>
-            <span>Minh hoa</span>
+            <h2>Tỷ lệ doanh thu</h2>
+            <span>Minh họa</span>
           </div>
 
           <div className="instructor-revenue-detail-donut-wrap">
@@ -158,20 +158,20 @@ function ManHinhBaoCaoDoanhThuChiTiet() {
 
       <section className="instructor-revenue-detail-panel full">
         <div className="instructor-revenue-detail-panel-head">
-          <h2>Lich su giao dich</h2>
-          <span>{filteredTransactions.length} giao dich</span>
+          <h2>ịch sử giao dịch</h2>
+          <span>{filteredTransactions.length} giao dịch</span>
         </div>
 
         <div className="instructor-revenue-detail-table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Ma GD</th>
-                <th>Ngay</th>
-                <th>Hoc vien</th>
-                <th>Khoa hoc</th>
-                <th>So tien</th>
-                <th>Trang thai</th>
+                <th>Mã GD</th>
+                <th>Ngày</th>
+                <th>học viên</th>
+                <th>Khóa học</th>
+                <th>Số tiền</th>
+                <th>Trạng thái</th>
               </tr>
             </thead>
             <tbody>
