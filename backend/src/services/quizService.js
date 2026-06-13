@@ -6,6 +6,9 @@ const {
   StudentAnswer,
   Course,
 } = require('../models');
+const {
+  gradeEssayWithExternalApiConfig,
+} = require('./externalEssayGradingService');
 const questionService = require('./questionService');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
@@ -873,13 +876,85 @@ const normalizeQuizAttempt = (attempt) => {
 
 // ===== TEACHER MANAGEMENT FUNCTIONS =====
 
+const buildManualQuizQuestions = async (payload, transaction) => {
+  const selectedQuestionIds = Array.isArray(payload.questionIds)
+    ? [...new Set(payload.questionIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
+    : [];
+  const randomCount = payload.randomize === true || Number(payload.randomCount || 0) > 0
+    ? Number(payload.randomCount || 0)
+    : 0;
+
+  if (selectedQuestionIds.length + randomCount <= 0) {
+    throw new HttpError(400, 'Hãy chọn ít nhất 1 câu hỏi hoặc nhập số câu random', 'QUIZ_QUESTION_REQUIRED');
+  }
+
+  const selectedQuestions = selectedQuestionIds.length
+    ? await Question.findAll({
+        where: {
+          id: { [Op.in]: selectedQuestionIds },
+          courseId: payload.courseId,
+          isPublished: true,
+        },
+        transaction,
+      })
+    : [];
+
+  const selectedPlain = selectedQuestions.map((item) => item.toJSON());
+  const foundIds = new Set(selectedPlain.map((item) => Number(item.id)));
+  const missingIds = selectedQuestionIds.filter((id) => !foundIds.has(Number(id)));
+
+  if (missingIds.length) {
+    throw new HttpError(400, 'Một số câu hỏi đã chọn không tồn tại hoặc chưa xuất bản', 'INVALID_SELECTED_QUESTIONS');
+  }
+
+  const selectedWrongChapter = selectedPlain.filter((question) => Number(getQuestionChapterId(question)) !== Number(payload.chapterId));
+  if (selectedWrongChapter.length) {
+    throw new HttpError(400, 'Một số câu hỏi đã chọn không thuộc chương này', 'QUESTION_CHAPTER_MISMATCH');
+  }
+
+  let randomPlain = [];
+
+  if (randomCount > 0) {
+    const allChapterQuestions = await Question.findAll({
+      where: {
+        courseId: payload.courseId,
+        isPublished: true,
+      },
+      transaction,
+    });
+
+    const selectedIdSet = new Set(selectedQuestionIds.map((id) => Number(id)));
+    const randomPool = allChapterQuestions
+      .map((item) => item.toJSON())
+      .filter((question) => Number(getQuestionChapterId(question)) === Number(payload.chapterId))
+      .filter((question) => !selectedIdSet.has(Number(question.id)));
+
+    if (randomPool.length < randomCount) {
+      throw new HttpError(
+        400,
+        `Không đủ câu hỏi để random. Cần ${randomCount}, hiện có ${randomPool.length}.`,
+        'NOT_ENOUGH_RANDOM_QUESTIONS',
+      );
+    }
+
+    randomPlain = shuffleArray(randomPool).slice(0, randomCount);
+  }
+
+  const selectedOrdered = selectedQuestionIds
+    .map((id) => selectedPlain.find((question) => Number(question.id) === Number(id)))
+    .filter(Boolean);
+
+  return [...selectedOrdered, ...randomPlain];
+};
+
 /**
  * Create quiz by teacher
  */
 const createQuizByTeacher = async (payload, user) => {
   const courseId = payload.courseId;
   const chapterId = payload.chapterId || null;
-  const questionQuotas = resolveQuizQuestionQuotas(payload);
+  const useManualQuestions = Array.isArray(payload.questionIds) || Number(payload.randomCount || 0) > 0;
+  const questionQuotas = useManualQuestions ? null : resolveQuizQuestionQuotas(payload);
 
   const course = await Course.findOne({ where: { id: courseId } });
   if (!course) {
@@ -904,7 +979,21 @@ const createQuizByTeacher = async (payload, user) => {
       createdBy: user.id,
     }, { transaction });
 
-    await autoPopulateQuizQuestions(quiz, transaction, questionQuotas);
+    if (useManualQuestions) {
+      const selectedQuestions = await buildManualQuizQuestions(payload, transaction);
+
+      await QuizQuestion.bulkCreate(
+        selectedQuestions.map((item, index) => ({
+          quizId: quiz.id,
+          questionId: item.id,
+          order: index + 1,
+          points: 1,
+        })),
+        { transaction },
+      );
+    } else {
+      await autoPopulateQuizQuestions(quiz, transaction, questionQuotas);
+    }
 
     return quiz;
   });

@@ -1,5 +1,10 @@
 const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const { Question } = require('../models');
+const {
+  collectLocalUploadFiles,
+  deleteLocalUploadFiles,
+} = require('../utils/uploadCleanup');
 const { HttpError } = require('../utils/httpError');
 const { normalizeRichBlocks, richBlocksToPlainText } = require('../utils/richContent');
 
@@ -607,7 +612,50 @@ const updateQuestion = async (questionId, payload, creatorId) => {
 
   return getQuestionById(question.id);
 };
+const isUploadFileUsedByOtherQuestions = async (relativePath, questionId) => {
+  const pattern = `%${relativePath}%`;
 
+  const reusedQuestion = await Question.findOne({
+    where: {
+      id: {
+        [Op.ne]: questionId,
+      },
+      [Op.or]: [
+        {
+          content: {
+            [Op.like]: pattern,
+          },
+        },
+        sequelize.where(
+          sequelize.cast(sequelize.col('metadata'), 'CHAR'),
+          {
+            [Op.like]: pattern,
+          },
+        ),
+      ],
+    },
+    attributes: ['id'],
+  });
+
+  return Boolean(reusedQuestion);
+};
+
+const deleteUnusedQuestionUploadFiles = async (files, questionId) => {
+  const unusedFiles = [];
+
+  for (const file of files) {
+    const isUsed = await isUploadFileUsedByOtherQuestions(
+      file.relativePath,
+      questionId,
+    );
+
+    if (!isUsed) {
+      unusedFiles.push(file);
+    }
+  }
+
+  return deleteLocalUploadFiles(unusedFiles);
+};
 /**
  * Delete question
  */
@@ -624,8 +672,27 @@ const deleteQuestion = async (questionId, creatorId) => {
     );
   }
 
+  const plainQuestion = typeof question.toJSON === 'function'
+    ? question.toJSON()
+    : question;
+
+  const uploadFiles = collectLocalUploadFiles(
+    plainQuestion.content,
+    plainQuestion.metadata,
+    plainQuestion.tags,
+  );
+
   await question.destroy();
-  return true;
+
+  const deletedFiles = await deleteUnusedQuestionUploadFiles(
+    uploadFiles,
+    question.id,
+  );
+
+  return {
+    deleted: true,
+    deletedFiles,
+  };
 };
 
 module.exports = {

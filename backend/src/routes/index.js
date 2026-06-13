@@ -16,6 +16,7 @@ const youtubeRoutes = require('./youtubeRoutes');
 const reviewRoutes = require('./reviewRoutes');
 const commentRoutes = require('./commentRoutes');
 const adminApprovalRoutes = require('./adminApprovalRoutes');
+const questionTypeConfigRoutes = require('./questionTypeConfigRoutes');
 
 const router = express.Router();
 
@@ -33,7 +34,8 @@ router.use('/quiz-manager', quizManagementRoutes);
 router.use('/youtube', youtubeRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/comments', commentRoutes);
-router.use('/', quizRoutes);
+router.use('/quiz', quizRoutes);
 router.use('/admin/approvals', adminApprovalRoutes);
+router.use('/admin/question-types', questionTypeConfigRoutes);
 
 module.exports = router;

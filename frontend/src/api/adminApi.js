@@ -66,3 +66,12 @@ export const deleteSystemCategoryApi = async (categoryId) => {
   const response = await httpClient.delete(`/admin/system-config/categories/${categoryId}`);
   return unwrap(response);
 };
+export const fetchQuestionTypeConfigsApi = async () => {
+  const response = await httpClient.get('/admin/question-types');
+  return response?.data?.data || response?.data || [];
+};
+
+export const updateQuestionTypeConfigApi = async (code, payload) => {
+  const response = await httpClient.put(`/admin/question-types/${code}`, payload);
+  return response?.data?.data || response?.data;
+};

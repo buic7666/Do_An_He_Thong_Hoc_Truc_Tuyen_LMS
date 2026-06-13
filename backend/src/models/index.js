@@ -19,7 +19,7 @@ const StudentAnswer = require('./studentAnswer.model');
 const Comment = require('./comment.model');
 const SystemSetting = require('./systemSetting.model');
 const SystemCategory = require('./systemCategory.model');
-
+const QuestionTypeConfig = require('./QuestionTypeConfig');
 // ===== User & Course Relationships =====
 Course.belongsTo(User, {
   as: 'instructor',
@@ -402,4 +402,5 @@ module.exports = {
   Comment,
   SystemSetting,
   SystemCategory,
+  QuestionTypeConfig,
 };

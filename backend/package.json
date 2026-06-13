@@ -14,6 +14,7 @@
     "seed:quizzes": "node src/scripts/seedQuestionsAndQuizzes.js",
     "seed:lesson-segments": "node src/scripts/seedLessonSegments.js",
     "seed:chapters": "node src/scripts/seedChapters.js",
+    "seed:question-types": "node src/scripts/seedQuestionTypeConfigs.js",
     "test": "jest --runInBand",
     "test:unit": "jest --runInBand tests/unit",
     "test:integration": "jest --runInBand tests/integration",

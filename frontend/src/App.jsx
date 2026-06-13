@@ -41,7 +41,7 @@ import ManHinhxemThubaiGiang from './screens/KhachVangLai/ManHinhxemThubaiGiang'
 import FacebookOAuthCallback from './screens/Public/FacebookOAuthCallback';
 import { getAuthenticatedHomePath, getCurrentUserSafely, getRoleHomePath } from './utils/authRedirect';
 import { clearAuthSession, isAccessTokenValid } from './utils/authSession';
-
+import QuestionTypeConfigManagement from './screens/Admin/QuestionTypeConfigManagement';
 function PublicOnlyRoute({ children }) {
   const token = sessionStorage.getItem('accessToken');
   const user = getCurrentUserSafely();
@@ -312,6 +312,10 @@ function App() {
             <QuanLyGiaoDich />
           </ProtectedRoute>
         }
+      />
+      <Route
+        path="/admin/question-types"
+        element={<QuestionTypeConfigManagement />}
       />
       <Route path="/guest/course/:id" element={<ManHinhchitietKhoaHoc />} />
       <Route path="/guest/news" element={<ManHinhTinTuc_Sk />} />

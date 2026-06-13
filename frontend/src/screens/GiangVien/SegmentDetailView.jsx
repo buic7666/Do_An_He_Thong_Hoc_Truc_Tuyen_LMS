@@ -113,8 +113,6 @@ const createEmptyQuestionDraft = () => ({
   wordLimitMax: 400,
   aiModel: 'gpt-3.5-turbo',
   gradingMethod: 'ai',
-  externalApiUrl: '',
-  externalApiAuthHeader: '',
 });
 
 const parseJson = (value, fallback = {}) => {
@@ -1061,8 +1059,6 @@ function SegmentDetailView() {
 
       aiModel: metadata?.aiModel || question?.aiModel || 'gpt-3.5-turbo',
       gradingMethod: metadata?.gradingMethod || question?.gradingMethod || 'ai',
-      externalApiUrl: metadata?.externalApiUrl || question?.externalApiUrl || '',
-      externalApiAuthHeader: metadata?.externalApiAuthHeader || question?.externalApiAuthHeader || '',
     };
   };
 
@@ -1196,28 +1192,17 @@ function SegmentDetailView() {
     if (totalWeight !== 100) {
       throw new Error('Tổng trọng số rubric của ESSAY phải bằng 100.');
     }
-
-    if ((String(questionDraft.gradingMethod || 'ai')) === 'external_api') {
-      const externalApiUrl = String(questionDraft.externalApiUrl || '').trim();
-      if (!externalApiUrl) {
-        throw new Error('Cần nhập URL API chấm điểm khi chọn chấm bằng API.');
-      }
-      new URL(externalApiUrl);
-    }
-
-    return {
-      ...base,
-      instructions: questionDraft.instructions.trim(),
-      rubric,
-      wordLimit: {
-        min: Number(questionDraft.wordLimitMin),
-        max: Number(questionDraft.wordLimitMax),
-      },
-      aiModel: questionDraft.aiModel,
-      gradingMethod: questionDraft.gradingMethod || 'ai',
-      externalApiUrl: (questionDraft.gradingMethod || 'ai') === 'external_api' ? String(questionDraft.externalApiUrl || '').trim() || null : null,
-      externalApiAuthHeader: (questionDraft.gradingMethod || 'ai') === 'external_api' ? String(questionDraft.externalApiAuthHeader || '').trim() || null : null,
-    };
+   return {
+  ...base,
+  instructions: questionDraft.instructions.trim(),
+  rubric,
+  wordLimit: {
+    min: Number(questionDraft.wordLimitMin),
+    max: Number(questionDraft.wordLimitMax),
+  },
+  aiModel: questionDraft.aiModel,
+  gradingMethod: questionDraft.gradingMethod || 'ai',
+};
   };
 
   const buildNormalQuestionPayloadFromInner = (innerQuestion, parentQuestionId, orderIndex) => {
@@ -1301,19 +1286,17 @@ function SegmentDetailView() {
             .filter((item) => item.name && item.description && Number.isFinite(item.weight))
         : [];
 
-      return {
-        ...base,
-        instructions: String(innerQuestion.instructions || '').trim(),
-        rubric,
-        wordLimit: {
-          min: Number(innerQuestion.wordLimitMin || 0),
-          max: Number(innerQuestion.wordLimitMax || 0) || 5000,
-        },
-        aiModel: innerQuestion.aiModel || 'gpt-3.5-turbo',
-        gradingMethod: innerQuestion.gradingMethod || 'ai',
-        externalApiUrl: String(innerQuestion.externalApiUrl || '').trim() || null,
-        externalApiAuthHeader: String(innerQuestion.externalApiAuthHeader || '').trim() || null,
-      };
+    return {
+  ...base,
+  instructions: String(innerQuestion.instructions || '').trim(),
+  rubric,
+  wordLimit: {
+    min: Number(innerQuestion.wordLimitMin || 0),
+    max: Number(innerQuestion.wordLimitMax || 0) || 5000,
+  },
+  aiModel: innerQuestion.aiModel || 'gpt-3.5-turbo',
+  gradingMethod: innerQuestion.gradingMethod || 'ai',
+};
     }
 
     return base;

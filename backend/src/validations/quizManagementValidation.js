@@ -17,11 +17,24 @@ const createQuizBodySchema = z
     courseId: z.coerce.number().int().positive(),
     chapterId: z.coerce.number().int().positive(),
     lessonId: z.coerce.number().int().positive().optional(),
+
     title: z.string().trim().min(3).max(255),
     description: z.string().trim().max(2000).optional(),
+
     duration: z.coerce.number().int().min(1).optional(),
     passScore: z.coerce.number().int().min(0).max(100).optional(),
     maxAttempts: z.coerce.number().int().min(0).optional(),
+
+    // Cách tạo quiz mới: giáo viên chọn câu hỏi trực tiếp
+    questionIds: z
+      .array(z.coerce.number().int().positive())
+      .optional(),
+
+    // Nếu có random câu hỏi
+    randomize: z.boolean().optional(),
+    randomCount: z.coerce.number().int().min(0).optional(),
+
+    // Giữ lại để không làm hỏng flow quota cũ nếu còn dùng
     questionQuotas: z
       .object({
         multipleChoice: z.coerce.number().int().min(0).optional(),
@@ -40,6 +53,13 @@ const updateQuizBodySchema = z
     duration: z.coerce.number().int().min(1).optional(),
     passScore: z.coerce.number().int().min(0).max(100).optional(),
     maxAttempts: z.coerce.number().int().min(0).optional(),
+
+    questionIds: z
+      .array(z.coerce.number().int().positive())
+      .optional(),
+
+    randomize: z.boolean().optional(),
+    randomCount: z.coerce.number().int().min(0).optional(),
   })
   .strict();
 

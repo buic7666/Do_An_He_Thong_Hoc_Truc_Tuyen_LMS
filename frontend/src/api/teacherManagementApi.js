@@ -156,6 +156,20 @@ export const fetchTeacherQuizzesApi = async () => {
   const response = await httpClient.get('/quiz-manager/my-quizzes');
   return response?.data?.data || response?.data || [];
 };
+export const getTeacherQuizDetailApi = async (quizId) => {
+  const response = await httpClient.get(`/quiz-manager/${quizId}`);
+  return response?.data?.data || response?.data;
+};
+
+export const updateTeacherQuizApi = async (quizId, payload) => {
+  const response = await httpClient.put(`/quiz-manager/${quizId}`, payload);
+  return response?.data?.data || response?.data;
+};
+
+export const deleteTeacherQuizApi = async (quizId) => {
+  const response = await httpClient.delete(`/quiz-manager/${quizId}`);
+  return response?.data?.data || response?.data;
+};
 
 export const createSurveyApi = async (payload) => {
   const response = await httpClient.post('/surveys', payload);

@@ -322,7 +322,16 @@ function ClozeQuestionForm({
         } else if (item.type === 'TRUE_FALSE') {
           normalized.correctAnswer = Boolean(item.correctAnswer);
         } else if (item.type === 'SHORT_ANSWER') {
-          normalized.correct = String(item.correct || '').trim();
+          const acceptedAnswers = String(item.acceptedAnswersText || item.correct || '')
+            .split('\n')
+            .map((answer) => answer.trim())
+            .filter(Boolean);
+
+          normalized.acceptedAnswersText = acceptedAnswers.join('\n');
+          normalized.acceptedAnswers = acceptedAnswers;
+          normalized.correct = acceptedAnswers[0] || String(item.correct || '').trim();
+          normalized.caseSensitive = Boolean(item.caseSensitive);
+          normalized.fuzzyMatch = item.fuzzyMatch !== false;
         } else if (item.type === 'NUMERICAL') {
           normalized.correct = Number(item.correct);
           normalized.tolerance = Number.isFinite(Number(item.tolerance)) ? Number(item.tolerance) : 0;
@@ -848,10 +857,10 @@ function ClozeQuestionForm({
 
   return (
     <div className="w-full rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-5">
+      <div className="border-b border-slate-200 px-6 py-5">
         <h2 className="text-xl font-semibold text-slate-900">Câu hỏi bài đọc</h2>
         <p className="mt-1 text-sm text-slate-500">
-              Tạo câu hỏi bài đọc bằng nội dung đọc/media ở trên và các câu hỏi nhỏ ở phía dưới.
+          Tạo câu hỏi bài đọc bằng nội dung đọc/media ở trên và các câu hỏi nhỏ ở phía dưới.
         </p>
       </div>
 
@@ -1003,330 +1012,330 @@ function ClozeQuestionForm({
           })}
         </div>
       ) : (
-      <div className="space-y-2.5 border-t border-slate-200 px-6 py-4">
-        {innerQuestions.map((item, index) => {
-          const cardErrors = validation.byKey[item.key] || [];
+        <div className="space-y-2.5 border-t border-slate-200 px-6 py-4">
+          {innerQuestions.map((item, index) => {
+            const cardErrors = validation.byKey[item.key] || [];
 
-          return (
-            <div key={item.key || index} className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h4 className="text-base font-semibold text-slate-900">Câu hỏi nhỏ {index + 1}</h4>
-                </div>
-                {innerQuestions.length > 1 ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => removeInnerQuestion(index)}
-                      className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50"
-                    >
-                      Xóa
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="mt-2.5 grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">Loại câu hỏi</label>
-                  <select
-                    value={item.type}
-                    onChange={(event) => {
-                      const nextType = event.target.value;
-                      const paddedOptions = [...cloneOptions(item.options), '', '', '', ''].slice(0, 4);
-                      const paddedOptionsRich = [...(Array.isArray(item.optionsRich) && item.optionsRich.length ? item.optionsRich : []), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()].slice(0, 4);
-                      updateInnerQuestion(index, {
-                        type: nextType,
-                        options: nextType === 'MULTICHOICE' ? paddedOptions : [''],
-                        optionsRich: nextType === 'MULTICHOICE' ? paddedOptionsRich : item.optionsRich,
-                        correctIndices: nextType === 'MULTICHOICE' ? (Array.isArray(item.correctIndices) && item.correctIndices.length ? item.correctIndices : [0]) : item.correctIndices,
-                        acceptedAnswersText: nextType === 'SHORT_ANSWER' ? String(item.acceptedAnswersText || '') : item.acceptedAnswersText,
-                        correct: nextType === 'NUMERICAL' || nextType === 'MULTICHOICE' || nextType === 'SHORT_ANSWER' ? item.correct : '',
-                        tolerance: nextType === 'NUMERICAL' ? Number(item.tolerance) || 0 : item.tolerance,
-                        instructions: nextType === 'ESSAY' ? String(item.instructions || '') : item.instructions,
-                        rubric: nextType === 'ESSAY' ? (Array.isArray(item.rubric) && item.rubric.length ? item.rubric : [{ name: 'Nội dung', weight: 100, description: '' }]) : item.rubric,
-                      });
-                    }}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                  >
-                    {QUESTION_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">Số điểm</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={item.points}
-                    onChange={(event) => updateInnerQuestion(index, { points: event.target.value })}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                  />
-                </div>
-
-                {item.type === 'NUMERICAL' ? (
+            return (
+              <div key={item.key || index} className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">Tolerance</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.tolerance}
-                      onChange={(event) => updateInnerQuestion(index, { tolerance: event.target.value })}
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                    />
+                    <h4 className="text-base font-semibold text-slate-900">Câu hỏi nhỏ {index + 1}</h4>
                   </div>
-                ) : (
-                  <div className="xl:col-span-1" />
-                )}
-              </div>
-
-              <div className="mt-2.5">
-                <label className="mb-2 block text-sm font-medium text-slate-700">Nội dung câu hỏi *</label>
-                <RichContentEditor
-                  title=""
-                  helperText="Có thể thêm nhiều khối văn bản, ảnh hoặc video cho nội dung câu hỏi."
-                  value={Array.isArray(item.contentBlocks) ? item.contentBlocks : createEmptyRichBlocks()}
-                  onChange={(nextBlocks) => {
-                    updateInnerQuestion(index, {
-                      contentBlocks: nextBlocks,
-                      content: richContentToPlainText(nextBlocks),
-                    });
-                  }}
-                />
-              </div>
-
-              {item.type === 'MULTICHOICE' ? (
-                <div className="mt-2.5 space-y-2.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <h5 className="text-sm font-semibold text-slate-900">Danh sách tùy chọn</h5>
+                  {innerQuestions.length > 1 ? (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-500">Tối thiểu 2 đáp án</span>
-                      {((Array.isArray(item.options) ? item.options.length : (Array.isArray(item.optionsRich) ? item.optionsRich.length : 0)) < 6) ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const nextOptions = Array.isArray(item.options) ? [...item.options] : (Array.isArray(item.optionsRich) ? item.optionsRich.map(() => '') : ['', '']);
-                            const nextOptionsRich = Array.isArray(item.optionsRich) ? [...item.optionsRich] : (Array.isArray(item.options) ? item.options.map(() => createEmptyRichBlocks()) : [createEmptyRichBlocks(), createEmptyRichBlocks()]);
-                            nextOptions.push('');
-                            nextOptionsRich.push(createEmptyRichBlocks());
-                            updateInnerQuestion(index, { options: nextOptions, optionsRich: nextOptionsRich });
-                          }}
-                          className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                        >
-                          + Thêm
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    {(() => {
-                      const richArray = (Array.isArray(item.optionsRich) && item.optionsRich.length) ? item.optionsRich : (Array.isArray(item.options) && item.options.length ? item.options.map(() => createEmptyRichBlocks()) : [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()]);
-                      const optCount = Math.max(2, (Array.isArray(item.options) && item.options.length) ? item.options.length : richArray.length);
-                      return richArray.slice(0, optCount).map((optionBlocks, optionIndex) => (
-                        <div key={`${item.key}-option-${optionIndex}`} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                          <div className="flex items-center justify-between gap-3">
-                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                              <input
-                                type="checkbox"
-                                checked={Array.isArray(item.correctIndices) && item.correctIndices.includes(optionIndex)}
-                                onChange={(event) => {
-                                  const nextCorrect = Array.isArray(item.correctIndices) ? [...item.correctIndices] : [];
-                                  if (event.target.checked) {
-                                    if (!nextCorrect.includes(optionIndex)) {
-                                      nextCorrect.push(optionIndex);
-                                    }
-                                  } else {
-                                    const filtered = nextCorrect.filter((currentIndex) => currentIndex !== optionIndex);
-                                    nextCorrect.length = 0;
-                                    nextCorrect.push(...filtered);
-                                  }
-                                  updateInnerQuestion(index, { correctIndices: nextCorrect.sort((a, b) => a - b) });
-                                }}
-                              />
-                              <span>Đáp án {String.fromCharCode(65 + optionIndex)}</span>
-                            </label>
-                            {((Array.isArray(item.options) ? item.options.length : optCount) > 2) ? (
-                              <button
-                                type="button"
-                                onClick={() => removeInnerOption(index, optionIndex)}
-                                className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                                title="Xóa đáp án này"
-                              >
-                                −
-                              </button>
-                            ) : null}
-                          </div>
-                          <RichContentEditor
-                            title=""
-                            helperText="Có thể dùng văn bản, ảnh hoặc video cho đáp án này."
-                            value={optionBlocks}
-                            onChange={(nextBlocks) => {
-                              const nextRich = Array.isArray(item.optionsRich) && item.optionsRich.length ? [...item.optionsRich] : richArray.slice(0, optCount);
-                              nextRich[optionIndex] = nextBlocks;
-                              const nextOptions = Array.isArray(item.options) ? [...item.options] : richArray.slice(0, optCount).map((b) => richContentToPlainText(b));
-                              nextOptions[optionIndex] = richContentToPlainText(nextBlocks);
-                              updateInnerQuestion(index, { optionsRich: nextRich, options: nextOptions });
-                            }}
-                          />
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                </div>
-              ) : null}
-
-              {item.type === 'TRUE_FALSE' ? (
-                <div className="mt-2.5 rounded-xl border border-sky-200 bg-sky-50 p-3.5">
-                  <label className="mb-3 block text-sm font-medium text-slate-700">Đáp án đúng</label>
-                  <div className="flex gap-3 flex-wrap">
-                    <label className="flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-4 py-3 cursor-pointer font-medium">
-                      <input
-                        type="radio"
-                        name={`inner-question-${item.key}-true-false`}
-                        checked={item.correctAnswer === true}
-                        onChange={() => updateInnerQuestion(index, { correctAnswer: true })}
-                      />
-                      <span>Đúng (True)</span>
-                    </label>
-                    <label className="flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-3 cursor-pointer font-medium">
-                      <input
-                        type="radio"
-                        name={`inner-question-${item.key}-true-false`}
-                        checked={item.correctAnswer === false}
-                        onChange={() => updateInnerQuestion(index, { correctAnswer: false })}
-                      />
-                      <span>Sai (False)</span>
-                    </label>
-                  </div>
-                </div>
-              ) : null}
-
-              {item.type === 'SHORT_ANSWER' ? (
-                <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
-                  <label className="mb-2 block text-sm font-medium text-slate-700">Danh sách đáp án chấp nhận (mỗi dòng 1 đáp án)</label>
-                  <textarea
-                    value={item.acceptedAnswersText}
-                    onChange={(event) => updateInnerQuestion(index, { acceptedAnswersText: event.target.value })}
-                    placeholder="Nhập mỗi đáp án trên một dòng"
-                    rows={4}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                  />
-                  <div className="mt-3 flex flex-wrap gap-3">
-                    <label className="inline-flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(item.caseSensitive)}
-                        onChange={(event) => updateInnerQuestion(index, { caseSensitive: event.target.checked })}
-                      />
-                      <span className="text-sm">Phân biệt chữ hoa/thường</span>
-                    </label>
-                    <label className="inline-flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={item.fuzzyMatch !== false}
-                        onChange={(event) => updateInnerQuestion(index, { fuzzyMatch: event.target.checked })}
-                      />
-                      <span className="text-sm">Khớp mềm (fuzzy match)</span>
-                    </label>
-                  </div>
-                </div>
-              ) : null}
-
-              {item.type === 'ESSAY' ? (
-                <div className="mt-2.5 space-y-2.5 rounded-xl border border-purple-200 bg-purple-50 p-3.5">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700">Hướng dẫn bài tự luận</label>
-                    <textarea
-                      value={item.instructions}
-                      onChange={(event) => updateInnerQuestion(index, { instructions: event.target.value })}
-                      placeholder="Nhập hướng dẫn cho câu hỏi tự luận"
-                      rows={4}
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <label className="block text-sm font-medium text-slate-700">Rubric chấm điểm</label>
                       <button
                         type="button"
-                        onClick={() => addInnerRubricRow(index)}
-                        className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        onClick={() => removeInnerQuestion(index)}
+                        className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50"
                       >
-                        + Thêm tiêu chí
+                        Xóa
                       </button>
-                    </div>
-
-                    <div className="space-y-3">
-                      {(Array.isArray(item.rubric) ? item.rubric : []).map((rubricItem, rubricIndex) => (
-                        <div key={`${item.key}-rubric-${rubricIndex}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="grid gap-3 md:grid-cols-[1fr_120px]">
-                            <input
-                              value={rubricItem.name}
-                              onChange={(event) => updateInnerRubric(index, rubricIndex, { name: event.target.value })}
-                              placeholder="Tên tiêu chí"
-                              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={rubricItem.weight}
-                              onChange={(event) => updateInnerRubric(index, rubricIndex, { weight: event.target.value })}
-                              placeholder="Trọng số"
-                              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                            />
-                          </div>
-                          <div className="mt-3 flex items-start gap-3">
-                            <textarea
-                              value={rubricItem.description}
-                              onChange={(event) => updateInnerRubric(index, rubricIndex, { description: event.target.value })}
-                              placeholder="Mô tả tiêu chí"
-                              rows={3}
-                              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeInnerRubricRow(index, rubricIndex)}
-                              className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50"
-                            >
-                              Xóa
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {item.type === 'NUMERICAL' ? (
-                <div className="mt-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5">
-                  <label className="mb-2 block text-sm font-medium text-slate-700">Đáp án số chính xác</label>
-                  <input
-                    type="number"
-                    value={item.correct}
-                    onChange={(event) => updateInnerQuestion(index, { correct: event.target.value })}
-                    placeholder="Ví dụ: 3358"
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                  />
-                  {cardErrors.length ? (
-                    <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                      {cardErrors.map((error) => (
-                        <div key={error}>• {error}</div>
-                      ))}
                     </div>
                   ) : null}
                 </div>
-              ) : null}
 
-            </div>
-          );
-        })}
-      </div>
+                <div className="mt-2.5 grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">Loại câu hỏi</label>
+                    <select
+                      value={item.type}
+                      onChange={(event) => {
+                        const nextType = event.target.value;
+                        const paddedOptions = [...cloneOptions(item.options), '', '', '', ''].slice(0, 4);
+                        const paddedOptionsRich = [...(Array.isArray(item.optionsRich) && item.optionsRich.length ? item.optionsRich : []), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()].slice(0, 4);
+                        updateInnerQuestion(index, {
+                          type: nextType,
+                          options: nextType === 'MULTICHOICE' ? paddedOptions : [''],
+                          optionsRich: nextType === 'MULTICHOICE' ? paddedOptionsRich : item.optionsRich,
+                          correctIndices: nextType === 'MULTICHOICE' ? (Array.isArray(item.correctIndices) && item.correctIndices.length ? item.correctIndices : [0]) : item.correctIndices,
+                          acceptedAnswersText: nextType === 'SHORT_ANSWER' ? String(item.acceptedAnswersText || '') : item.acceptedAnswersText,
+                          correct: nextType === 'NUMERICAL' || nextType === 'MULTICHOICE' || nextType === 'SHORT_ANSWER' ? item.correct : '',
+                          tolerance: nextType === 'NUMERICAL' ? Number(item.tolerance) || 0 : item.tolerance,
+                          instructions: nextType === 'ESSAY' ? String(item.instructions || '') : item.instructions,
+                          rubric: nextType === 'ESSAY' ? (Array.isArray(item.rubric) && item.rubric.length ? item.rubric : [{ name: 'Nội dung', weight: 100, description: '' }]) : item.rubric,
+                        });
+                      }}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    >
+                      {QUESTION_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>{type.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">Số điểm</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.points}
+                      onChange={(event) => updateInnerQuestion(index, { points: event.target.value })}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    />
+                  </div>
+
+                  {item.type === 'NUMERICAL' ? (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Tolerance</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.tolerance}
+                        onChange={(event) => updateInnerQuestion(index, { tolerance: event.target.value })}
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                      />
+                    </div>
+                  ) : (
+                    <div className="xl:col-span-1" />
+                  )}
+                </div>
+
+                <div className="mt-2.5">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Nội dung câu hỏi *</label>
+                  <RichContentEditor
+                    title=""
+                    helperText="Có thể thêm nhiều khối văn bản, ảnh hoặc video cho nội dung câu hỏi."
+                    value={Array.isArray(item.contentBlocks) ? item.contentBlocks : createEmptyRichBlocks()}
+                    onChange={(nextBlocks) => {
+                      updateInnerQuestion(index, {
+                        contentBlocks: nextBlocks,
+                        content: richContentToPlainText(nextBlocks),
+                      });
+                    }}
+                  />
+                </div>
+
+                {item.type === 'MULTICHOICE' ? (
+                  <div className="mt-2.5 space-y-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <h5 className="text-sm font-semibold text-slate-900">Danh sách tùy chọn</h5>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">Tối thiểu 2 đáp án</span>
+                        {((Array.isArray(item.options) ? item.options.length : (Array.isArray(item.optionsRich) ? item.optionsRich.length : 0)) < 6) ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextOptions = Array.isArray(item.options) ? [...item.options] : (Array.isArray(item.optionsRich) ? item.optionsRich.map(() => '') : ['', '']);
+                              const nextOptionsRich = Array.isArray(item.optionsRich) ? [...item.optionsRich] : (Array.isArray(item.options) ? item.options.map(() => createEmptyRichBlocks()) : [createEmptyRichBlocks(), createEmptyRichBlocks()]);
+                              nextOptions.push('');
+                              nextOptionsRich.push(createEmptyRichBlocks());
+                              updateInnerQuestion(index, { options: nextOptions, optionsRich: nextOptionsRich });
+                            }}
+                            className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                          >
+                            + Thêm
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {(() => {
+                        const richArray = (Array.isArray(item.optionsRich) && item.optionsRich.length) ? item.optionsRich : (Array.isArray(item.options) && item.options.length ? item.options.map(() => createEmptyRichBlocks()) : [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()]);
+                        const optCount = Math.max(2, (Array.isArray(item.options) && item.options.length) ? item.options.length : richArray.length);
+                        return richArray.slice(0, optCount).map((optionBlocks, optionIndex) => (
+                          <div key={`${item.key}-option-${optionIndex}`} className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                            <div className="flex items-center justify-between gap-3">
+                              <label className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                <input
+                                  type="checkbox"
+                                  checked={Array.isArray(item.correctIndices) && item.correctIndices.includes(optionIndex)}
+                                  onChange={(event) => {
+                                    const nextCorrect = Array.isArray(item.correctIndices) ? [...item.correctIndices] : [];
+                                    if (event.target.checked) {
+                                      if (!nextCorrect.includes(optionIndex)) {
+                                        nextCorrect.push(optionIndex);
+                                      }
+                                    } else {
+                                      const filtered = nextCorrect.filter((currentIndex) => currentIndex !== optionIndex);
+                                      nextCorrect.length = 0;
+                                      nextCorrect.push(...filtered);
+                                    }
+                                    updateInnerQuestion(index, { correctIndices: nextCorrect.sort((a, b) => a - b) });
+                                  }}
+                                />
+                                <span>Đáp án {String.fromCharCode(65 + optionIndex)}</span>
+                              </label>
+                              {((Array.isArray(item.options) ? item.options.length : optCount) > 2) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => removeInnerOption(index, optionIndex)}
+                                  className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                  title="Xóa đáp án này"
+                                >
+                                  −
+                                </button>
+                              ) : null}
+                            </div>
+                            <RichContentEditor
+                              title=""
+                              helperText="Có thể dùng văn bản, ảnh hoặc video cho đáp án này."
+                              value={optionBlocks}
+                              onChange={(nextBlocks) => {
+                                const nextRich = Array.isArray(item.optionsRich) && item.optionsRich.length ? [...item.optionsRich] : richArray.slice(0, optCount);
+                                nextRich[optionIndex] = nextBlocks;
+                                const nextOptions = Array.isArray(item.options) ? [...item.options] : richArray.slice(0, optCount).map((b) => richContentToPlainText(b));
+                                nextOptions[optionIndex] = richContentToPlainText(nextBlocks);
+                                updateInnerQuestion(index, { optionsRich: nextRich, options: nextOptions });
+                              }}
+                            />
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                ) : null}
+
+                {item.type === 'TRUE_FALSE' ? (
+                  <div className="mt-2.5 rounded-xl border border-sky-200 bg-sky-50 p-3.5">
+                    <label className="mb-3 block text-sm font-medium text-slate-700">Đáp án đúng</label>
+                    <div className="flex gap-3 flex-wrap">
+                      <label className="flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-4 py-3 cursor-pointer font-medium">
+                        <input
+                          type="radio"
+                          name={`inner-question-${item.key}-true-false`}
+                          checked={item.correctAnswer === true}
+                          onChange={() => updateInnerQuestion(index, { correctAnswer: true })}
+                        />
+                        <span>Đúng (True)</span>
+                      </label>
+                      <label className="flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-3 cursor-pointer font-medium">
+                        <input
+                          type="radio"
+                          name={`inner-question-${item.key}-true-false`}
+                          checked={item.correctAnswer === false}
+                          onChange={() => updateInnerQuestion(index, { correctAnswer: false })}
+                        />
+                        <span>Sai (False)</span>
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+
+                {item.type === 'SHORT_ANSWER' ? (
+                  <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+                    <label className="mb-2 block text-sm font-medium text-slate-700">Danh sách đáp án chấp nhận (mỗi dòng 1 đáp án)</label>
+                    <textarea
+                      value={item.acceptedAnswersText}
+                      onChange={(event) => updateInnerQuestion(index, { acceptedAnswersText: event.target.value })}
+                      placeholder="Nhập mỗi đáp án trên một dòng"
+                      rows={4}
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    />
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(item.caseSensitive)}
+                          onChange={(event) => updateInnerQuestion(index, { caseSensitive: event.target.checked })}
+                        />
+                        <span className="text-sm">Phân biệt chữ hoa/thường</span>
+                      </label>
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={item.fuzzyMatch !== false}
+                          onChange={(event) => updateInnerQuestion(index, { fuzzyMatch: event.target.checked })}
+                        />
+                        <span className="text-sm">Khớp mềm (fuzzy match)</span>
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+
+                {item.type === 'ESSAY' ? (
+                  <div className="mt-2.5 space-y-2.5 rounded-xl border border-purple-200 bg-purple-50 p-3.5">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">Hướng dẫn bài tự luận</label>
+                      <textarea
+                        value={item.instructions}
+                        onChange={(event) => updateInnerQuestion(index, { instructions: event.target.value })}
+                        placeholder="Nhập hướng dẫn cho câu hỏi tự luận"
+                        rows={4}
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <label className="block text-sm font-medium text-slate-700">Rubric chấm điểm</label>
+                        <button
+                          type="button"
+                          onClick={() => addInnerRubricRow(index)}
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          + Thêm tiêu chí
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {(Array.isArray(item.rubric) ? item.rubric : []).map((rubricItem, rubricIndex) => (
+                          <div key={`${item.key}-rubric-${rubricIndex}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="grid gap-3 md:grid-cols-[1fr_120px]">
+                              <input
+                                value={rubricItem.name}
+                                onChange={(event) => updateInnerRubric(index, rubricIndex, { name: event.target.value })}
+                                placeholder="Tên tiêu chí"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={rubricItem.weight}
+                                onChange={(event) => updateInnerRubric(index, rubricIndex, { weight: event.target.value })}
+                                placeholder="Trọng số"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                              />
+                            </div>
+                            <div className="mt-3 flex items-start gap-3">
+                              <textarea
+                                value={rubricItem.description}
+                                onChange={(event) => updateInnerRubric(index, rubricIndex, { description: event.target.value })}
+                                placeholder="Mô tả tiêu chí"
+                                rows={3}
+                                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeInnerRubricRow(index, rubricIndex)}
+                                className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50"
+                              >
+                                Xóa
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {item.type === 'NUMERICAL' ? (
+                  <div className="mt-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5">
+                    <label className="mb-2 block text-sm font-medium text-slate-700">Đáp án số chính xác</label>
+                    <input
+                      type="number"
+                      value={item.correct}
+                      onChange={(event) => updateInnerQuestion(index, { correct: event.target.value })}
+                      placeholder="Ví dụ: 3358"
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    />
+                    {cardErrors.length ? (
+                      <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                        {cardErrors.map((error) => (
+                          <div key={error}>• {error}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {compact && innerEditorOpen ? (
@@ -1572,22 +1581,22 @@ function ClozeQuestionForm({
 
       {!compact ? (
         <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 px-6 py-5">
-        {onCancel ? (
+          {onCancel ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Hủy
+            </button>
+          ) : null}
           <button
             type="button"
-            onClick={onCancel}
-            className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            onClick={handleSubmit}
+            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500"
           >
-            Hủy
+            {submitLabel}
           </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={handleSubmit}
-          className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500"
-        >
-          {submitLabel}
-        </button>
         </div>
       ) : null}
     </div>
