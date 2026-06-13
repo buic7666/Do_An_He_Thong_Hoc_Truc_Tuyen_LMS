@@ -25,6 +25,12 @@ const TeacherProfile = sequelize.define(
       allowNull: true,
       defaultValue: '',
     },
+    avatarUrl: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      defaultValue: '',
+      field: 'avatar_url',
+    },
     linkedin: {
       type: DataTypes.STRING(255),
       allowNull: true,

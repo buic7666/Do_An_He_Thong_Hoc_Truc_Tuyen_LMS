@@ -9,6 +9,7 @@ const teacherProfileBodySchema = z.object({
   bankName: z.string().trim().max(255).optional().default(''),
   bankAccount: z.string().trim().max(80).optional().default(''),
   bankOwner: z.string().trim().max(255).optional().default(''),
+  avatarUrl: z.string().trim().max(500).optional().default(''),
 });
 
 const teacherQuestionBodySchema = z

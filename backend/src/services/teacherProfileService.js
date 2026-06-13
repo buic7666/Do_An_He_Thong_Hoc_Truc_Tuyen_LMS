@@ -13,8 +13,9 @@ const getOrCreateProfile = async (teacherId) => {
 
     profile = await TeacherProfile.create({
       teacherId,
-      title: 'Giang vien',
+      title: 'Giảng viên',
       bio: '',
+      avatarUrl: '',
       linkedin: '',
       facebook: '',
       bankName: '',
@@ -47,12 +48,13 @@ const getProfile = async (currentUser) => {
     email: userPlain.email,
     title: profilePlain.title || '',
     bio: profilePlain.bio || '',
+    avatarUrl: profilePlain.avatarUrl || '',
     linkedin: profilePlain.linkedin || '',
     facebook: profilePlain.facebook || '',
     bankName: profilePlain.bankName || '',
     bankAccount: profilePlain.bankAccount || '',
     bankOwner: profilePlain.bankOwner || '',
-  };
+};
 };
 
 const updateProfile = async (payload, currentUser) => {
@@ -75,6 +77,7 @@ const updateProfile = async (payload, currentUser) => {
 
   profile.title = payload.title ?? profile.title;
   profile.bio = payload.bio ?? profile.bio;
+  profile.avatarUrl = payload.avatarUrl ?? profile.avatarUrl;
   profile.linkedin = payload.linkedin ?? profile.linkedin;
   profile.facebook = payload.facebook ?? profile.facebook;
   profile.bankName = payload.bankName ?? profile.bankName;

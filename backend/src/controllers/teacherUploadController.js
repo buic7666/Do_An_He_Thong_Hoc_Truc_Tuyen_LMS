@@ -34,6 +34,10 @@ const uploadTeacherAsset = async (req, res, next) => {
       fs.unlinkSync(file.path);
       throw new HttpError(400, 'Invalid file type for this upload', 'VALIDATION_ERROR');
     }
+    if (type === 'image' && file.size > 2 * 1024 * 1024) {
+      fs.unlinkSync(file.path);
+      throw new HttpError(400, 'Ảnh đại diện không được vượt quá 2MB.', 'VALIDATION_ERROR');
+    }
 
     const fileName = path.basename(file.path);
     const publicFolder = type === 'video' ? 'videos' : type === 'document' ? 'documents' : 'images';
