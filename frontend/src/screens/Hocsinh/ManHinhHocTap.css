@@ -523,24 +523,33 @@
   flex-direction: column;
 }
 
+.study-inline-player-wrapper {
+  width: 100%;
+  margin-top: 12px;
+}
+
 .study-clip-player {
   margin-top: 12px;
-  min-height: 480px;
-  max-height: 600px;
-  border-radius: 12px;
   width: 100%;
+  height: clamp(260px, 52vh, 520px);
+  min-height: 0;
+  max-height: none;
+  border-radius: 12px;
   display: block;
+  border: 0;
 }
 
 .inline-clip-player {
-  margin-top: 16px;
+  margin-top: 12px;
   margin-bottom: 12px;
-  margin-left: 0;
-  margin-right: 0;
-  min-height: 480px;
   width: 100%;
+  height: clamp(260px, 52vh, 520px);
+  min-height: 0;
+  max-height: none;
   display: block;
-  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 12px;
+  aspect-ratio: auto;
 }
 
 @media (max-width: 768px) {
@@ -633,7 +642,9 @@
   flex-direction: column;
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   border-right: 1px solid var(--study-border-color);
+  scroll-behavior: smooth;
 }
 
 .study-resume-alert {
@@ -1107,5 +1118,258 @@
   .study-sidebar {
     height: auto;
     border-top: 1px solid var(--study-border-color);
+  }
+}
+/* ================================
+   FIX MÀN HÌNH HỌC TẬP - SCROLL VIDEO
+   Dán đoạn này xuống CUỐI file ManHinhHocTap.css
+================================ */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Toàn bộ màn học chiếm đúng chiều cao màn hình, không để body kéo tràn lung tung */
+.study-workspace-page {
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--study-bg-main);
+}
+
+/* Header trên cùng giữ nguyên chiều cao */
+.study-top-header {
+  height: 60px;
+  min-height: 60px;
+  flex-shrink: 0;
+}
+
+/* Khu vực học chia 2 cột: nội dung bên trái + menu bên phải */
+.study-workspace {
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  overflow: hidden;
+}
+
+/* Đây là phần quan trọng nhất:
+   Bên trái có thanh cuộn riêng để kéo xuống xem hết video */
+.study-main-content {
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  border-right: 1px solid var(--study-border-color);
+  scroll-behavior: smooth;
+  padding-bottom: 80px;
+}
+
+/* Thanh cuộn bên trái cho dễ nhìn */
+.study-main-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.study-main-content::-webkit-scrollbar-track {
+  background: #111827;
+}
+
+.study-main-content::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 999px;
+}
+
+.study-main-content::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Sidebar bên phải cố định trong màn hình, nội dung bên trong tự cuộn */
+.study-sidebar {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--study-bg-surface);
+}
+
+.study-course-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Khu vực tab/nội dung học bên trái */
+.study-tabs-container {
+  flex: unset;
+  min-height: auto;
+  padding: 20px;
+  background-color: var(--study-bg-main);
+}
+
+/* Card nội dung phần học không bị cắt */
+.study-segment-focus-card,
+.study-selected-content-card,
+.study-content-item-panel {
+  overflow: visible;
+}
+
+/* Wrapper của video trong phần học */
+.study-inline-player-wrapper {
+  width: 100%;
+  max-width: 100%;
+  margin-top: 18px;
+  margin-bottom: 24px;
+  position: relative;
+  background: #000000;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+  aspect-ratio: 16 / 9;
+  min-height: 520px;
+}
+
+/* Video vẫn to bình thường */
+.study-clip-player,
+.inline-clip-player,
+.study-youtube-player {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 520px;
+  max-height: none !important;
+  display: block;
+  border: 0;
+  border-radius: 14px;
+}
+
+/* Nếu iframe nằm trong wrapper thì phủ full wrapper */
+.study-inline-player-wrapper iframe,
+.study-inline-player-wrapper .study-youtube-player {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Màn hình chặn đăng nhập YouTube cũng nằm gọn trong khung */
+.study-youtube-gate {
+  min-height: 360px;
+  width: 100%;
+  border-radius: 14px;
+}
+
+/* Video chính nếu có */
+.study-video-wrapper {
+  width: 100%;
+  background-color: #000000;
+  aspect-ratio: 16 / 9;
+  flex-shrink: 0;
+}
+
+/* Tránh nội dung cuối bị che bởi đáy màn hình */
+.study-course-description-card {
+  margin-bottom: 80px;
+}
+
+/* Nút đóng video nổi trong card */
+.study-segment-content-link-button {
+  white-space: nowrap;
+}
+
+/* Responsive cho màn nhỏ */
+@media (max-width: 1200px) {
+  .study-workspace {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .study-inline-player-wrapper {
+    min-height: 460px;
+  }
+
+  .study-clip-player,
+  .inline-clip-player,
+  .study-youtube-player {
+    min-height: 460px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .study-workspace-page {
+    height: auto;
+    min-height: 100vh;
+    max-height: none;
+    overflow: auto;
+  }
+
+  .study-workspace {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .study-main-content {
+    height: auto;
+    min-height: auto;
+    overflow: visible !important;
+    border-right: 0;
+    padding-bottom: 32px;
+  }
+
+  .study-sidebar {
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+    border-top: 1px solid var(--study-border-color);
+  }
+
+  .study-course-content {
+    overflow: visible;
+  }
+
+  .study-inline-player-wrapper {
+    min-height: 360px;
+  }
+
+  .study-clip-player,
+  .inline-clip-player,
+  .study-youtube-player {
+    min-height: 360px;
+  }
+}
+
+@media (max-width: 768px) {
+  .study-top-header {
+    height: auto;
+    min-height: 56px;
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+
+  .study-tabs-container {
+    padding: 14px;
+  }
+
+  .study-inline-player-wrapper {
+    min-height: 260px;
+    border-radius: 10px;
+  }
+
+  .study-clip-player,
+  .inline-clip-player,
+  .study-youtube-player {
+    min-height: 260px;
+    border-radius: 10px;
   }
 }

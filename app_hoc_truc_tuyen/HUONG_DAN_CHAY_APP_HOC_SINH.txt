@@ -1,0 +1,27 @@
+HUONG DAN CAP NHAT APP HOC SINH FLUTTER LMS
+
+1. Copy/giai nen thu muc app_hoc_truc_tuyen vao:
+   D:\Hoc_Nam4\DoAn_TotNghiep\app_hoc_truc_tuyen
+
+2. Chay backend:
+   cd D:\Hoc_Nam4\DoAn_TotNghiep\backend
+   npm run dev
+
+3. Neu chay Flutter Web, backend src/app.js can cho phep localhost port Flutter.
+   Nen sua CORS cho phep /^http:\/\/localhost:\d+$/.
+
+4. Chay app:
+   cd D:\Hoc_Nam4\DoAn_TotNghiep\app_hoc_truc_tuyen
+   flutter clean
+   flutter pub get
+   flutter run -d chrome --web-port=3000
+
+5. Cac chuc nang da noi:
+   - Dang nhap / dang ky hoc sinh
+   - Xem danh sach khoa hoc
+   - Xem chi tiet khoa hoc
+   - Dang ky khoa hoc: POST /api/enrollments
+   - Khoa hoc cua toi: GET /api/enrollments/me
+   - Hoc bai: GET /api/lessons/:id
+   - Danh dau hoan thanh: POST /api/lessons/:id/progress
+   - Bai kiem tra: GET /api/quiz/quizzes/:quizId, submit dung schema {type,value}
