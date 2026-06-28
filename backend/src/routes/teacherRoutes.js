@@ -12,6 +12,7 @@ const {
   teacherQuestionBodySchema,
   idParamSchema,
   replyBodySchema,
+  studentMessageBodySchema,
 } = require('../validations/teacherValidation');
 
 const router = express.Router();
@@ -64,6 +65,14 @@ router.delete(
 );
 
 router.get('/interactions', authenticate, authorize('teacher', 'admin'), teacherInteractionController.getInteractions);
+
+router.post(
+  '/interactions/messages',
+  authenticate,
+  authorize('teacher', 'admin'),
+  validateRequest({ body: studentMessageBodySchema }),
+  teacherInteractionController.sendStudentMessage,
+);
 
 router.post(
   '/interactions/:id/reply',

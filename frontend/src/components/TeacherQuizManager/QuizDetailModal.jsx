@@ -52,7 +52,6 @@ const QuizDetailModal = ({
             className="instructor-question-bank-form-control"
             value={quizAddQuestionId}
             onChange={(event) => setQuizAddQuestionId(event.target.value)}
-            disabled={Boolean(selectedQuizDetail.isPublished)}
           >
             <option value="">-- Chọn câu hỏi cần thêm --</option>
 
@@ -72,7 +71,6 @@ const QuizDetailModal = ({
             className="instructor-question-bank-btn instructor-question-bank-btn-success"
             type="button"
             onClick={handleAddQuestionToQuiz}
-            disabled={Boolean(selectedQuizDetail.isPublished)}
           >
             Thêm câu
           </button>
@@ -80,13 +78,13 @@ const QuizDetailModal = ({
 
         {selectedQuizDetail.isPublished ? (
           <p style={{ color: '#6b7280', marginTop: 8 }}>
-            Bài kiểm tra đã xuất bản nên không nên thay đổi câu hỏi. Hãy tạo bản nháp mới nếu cần chỉnh đề.
+            Bài kiểm tra đã xuất bản. Nếu thêm hoặc xóa câu hỏi, hệ thống sẽ chuyển bài kiểm tra về Nháp để bạn kiểm tra lại trước khi xuất bản.
           </p>
         ) : null}
 
-        {!availableQuestionsForQuiz.length && !selectedQuizDetail.isPublished ? (
+        {!availableQuestionsForQuiz.length ? (
           <p style={{ color: '#6b7280', marginTop: 8 }}>
-            Không có câu hỏi công khai nào khác để thêm. Hãy kiểm tra lại ngân hàng câu hỏi.
+            Không có câu hỏi nào khác trong cùng khóa học/chương để thêm.
           </p>
         ) : null}
       </div>
@@ -118,7 +116,6 @@ const QuizDetailModal = ({
                   className="instructor-question-bank-btn-icon delete"
                   type="button"
                   onClick={() => handleRemoveQuestionFromQuiz(selectedQuizDetail.id, question.id)}
-                  disabled={Boolean(selectedQuizDetail.isPublished)}
                 >
                   Xóa khỏi bài kiểm tra
                 </button>

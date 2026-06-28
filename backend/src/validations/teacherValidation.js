@@ -39,9 +39,16 @@ const replyBodySchema = z.object({
   reply: z.string().trim().min(1).max(5000),
 });
 
+const studentMessageBodySchema = z.object({
+  userId: z.coerce.number().int().positive(),
+  courseId: z.coerce.number().int().positive(),
+  message: z.string().trim().min(1).max(5000),
+});
+
 module.exports = {
   teacherProfileBodySchema,
   teacherQuestionBodySchema,
   idParamSchema,
   replyBodySchema,
+  studentMessageBodySchema,
 };

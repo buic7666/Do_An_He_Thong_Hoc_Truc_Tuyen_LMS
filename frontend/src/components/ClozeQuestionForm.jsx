@@ -29,7 +29,7 @@ const createInnerQuestionDraft = (index = 0) => ({
   instructions: '',
   rubric: [{ name: 'Nội dung', weight: 100, description: '' }],
   explanation: '',
-  isPublished: false,
+  isPublished: true,
 });
 
 const normalizeBlocksArray = (value) => (Array.isArray(value) ? value : []);
@@ -170,7 +170,7 @@ const normalizeInitialInnerQuestions = (innerQuestions) => {
     instructions: value?.instructions == null ? '' : String(value.instructions),
     rubric: Array.isArray(value?.rubric) && value.rubric.length ? value.rubric : [{ name: 'Nội dung', weight: 100, description: '' }],
     explanation: value?.explanation == null ? '' : String(value.explanation),
-    isPublished: Boolean(value?.isPublished),
+    isPublished: true,
   }));
 };
 
@@ -305,7 +305,7 @@ function ClozeQuestionForm({
           content: String(item.content || '').trim(),
           contentBlocks: Array.isArray(item.contentBlocks) ? item.contentBlocks : createEmptyRichBlocks(),
           explanation: String(item.explanation || '').trim(),
-          isPublished: Boolean(item.isPublished),
+          isPublished: true,
         };
 
         if (item.type === 'MULTICHOICE') {
@@ -824,7 +824,7 @@ function ClozeQuestionForm({
           content: String(item.content || '').trim(),
           contentBlocks: normalizeBlocksArray(item.contentBlocks),
           explanation: String(item.explanation || '').trim(),
-          isPublished: Boolean(item.isPublished),
+          isPublished: true,
         };
 
         if (item.type === 'MULTICHOICE') {
@@ -1557,14 +1557,6 @@ function ClozeQuestionForm({
                 />
               </div>
 
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={Boolean(innerEditorDraft.isPublished)}
-                  onChange={(event) => updateInnerEditorDraft({ isPublished: event.target.checked })}
-                />
-                <span className="text-sm text-slate-700">Công khai câu hỏi nhỏ</span>
-              </label>
             </div>
 
             <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">

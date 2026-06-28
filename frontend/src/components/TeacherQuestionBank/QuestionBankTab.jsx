@@ -26,7 +26,6 @@ const QuestionBankTab = ({
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
   questionCount,
-  publishedCount,
   typeSummary,
   draft,
   setDraft,
@@ -81,7 +80,6 @@ const QuestionBankTab = ({
 
         <div className="instructor-question-bank-stats-grid">
           <article className="instructor-question-bank-stat-card primary"><strong>{questionCount}</strong><span>Tổng câu hỏi</span></article>
-          <article className="instructor-question-bank-stat-card success"><strong>{publishedCount}</strong><span>Đã xuất bản</span></article>
           <article className="instructor-question-bank-stat-card neutral"><strong>{Object.keys(typeSummary).length}</strong><span>Loại câu hỏi</span></article>
         </div>
 

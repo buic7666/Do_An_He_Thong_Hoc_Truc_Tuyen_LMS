@@ -6,6 +6,7 @@ const QuizList = ({
   getQuizChapterTitle,
   formatQuizDate,
   loadQuizDetail,
+  handlePreviewQuiz,
   handleStartEditQuiz,
   handlePublishQuiz,
   handleDeleteQuiz
@@ -73,23 +74,21 @@ const QuizList = ({
 
               <button
                 className="instructor-question-bank-btn-icon view"
-                onClick={() => loadQuizDetail(quiz.id)}
+                onClick={() => handlePreviewQuiz(quiz)}
                 title="Xem trước"
                 type="button"
               >
                 Xem trước
               </button>
 
-              {!quiz.isPublished ? (
-                <button
-                  className="instructor-question-bank-btn-icon edit"
-                  onClick={() => handleStartEditQuiz(quiz)}
-                  title="Sửa"
-                  type="button"
-                >
-                  Sửa
-                </button>
-              ) : null}
+              <button
+                className="instructor-question-bank-btn-icon edit"
+                onClick={() => handleStartEditQuiz(quiz)}
+                title="Sửa"
+                type="button"
+              >
+                Sửa
+              </button>
 
               {!quiz.isPublished ? (
                 <button

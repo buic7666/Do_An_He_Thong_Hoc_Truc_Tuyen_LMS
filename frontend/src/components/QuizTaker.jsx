@@ -472,7 +472,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
   const loadQuiz = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await httpClient.get(`/quizzes/${quizId}`);
+      const response = await httpClient.get(previewMode ? `/quiz-manager/${quizId}` : `/quiz/quizzes/${quizId}`);
       const payload = response?.data?.data || {};
       const rawQuestions = Array.isArray(payload.questions) ? payload.questions : [];
 
@@ -547,7 +547,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
         return;
       }
 
-      const attemptResponse = await httpClient.post(`/quizzes/${quizId}/start`);
+      const attemptResponse = await httpClient.post(`/quiz/quizzes/${quizId}/start`);
       setAttemptId(attemptResponse?.data?.data?.id || null);
     } catch (err) {
       setError(err?.response?.data?.message || 'Không thể tải bài kiểm tra');
@@ -571,7 +571,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
     try {
       for (const [questionId, answerEntry] of Object.entries(answers)) {
         // eslint-disable-next-line no-await-in-loop
-        await httpClient.post(`/quizzes/${quizId}/save-answer`, {
+        await httpClient.post(`/quiz/quizzes/${quizId}/save-answer`, {
           questionId: Number(questionId),
           answer: answerEntry.value,
         });
@@ -633,7 +633,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
     }
     try {
       const response = await httpClient.post(
-        `/quizzes/${quizId}/submit`,
+        `/quiz/quizzes/${quizId}/submit`,
         {
           answers,
         },
@@ -1309,7 +1309,7 @@ const QuizResult = ({ quiz, result, onBack }) => {
       }
       try {
         setLoadingDetails(true);
-        const response = await httpClient.get(`/quizzes/${quiz.id}/attempts/${result.id}`);
+        const response = await httpClient.get(`/quiz/quizzes/${quiz.id}/attempts/${result.id}`);
         setAttemptDetails(response?.data?.data || null);
       } catch (_error) {
         setAttemptDetails(null);

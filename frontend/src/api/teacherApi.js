@@ -49,6 +49,11 @@ export const replyTeacherInteractionApi = async (id, payload) => {
   return response?.data?.data || response?.data;
 };
 
+export const sendTeacherStudentMessageApi = async (payload) => {
+  const response = await httpClient.post('/teachers/interactions/messages', payload);
+  return response?.data?.data || response?.data;
+};
+
 export const uploadTeacherFileApi = async (file, type = 'image') => {
   const formData = new FormData();
   formData.append('file', file);

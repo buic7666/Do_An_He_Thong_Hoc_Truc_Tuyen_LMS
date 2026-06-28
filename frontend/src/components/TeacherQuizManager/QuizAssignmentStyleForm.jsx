@@ -27,10 +27,6 @@ function QuizAssignmentStyleForm({
     const keyword = questionSearch.trim().toLowerCase();
 
     return questions.filter((question) => {
-      if (!question.isPublished) {
-        return false;
-      }
-
       if (chapterId && Number(question.chapterId) !== Number(chapterId)) {
         return false;
       }

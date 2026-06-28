@@ -221,7 +221,7 @@ const QuizCreateForm = ({
               <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: '#faf5ff', border: '1px solid #e9d5ff' }}>
                 <div style={{ fontWeight: 800, marginBottom: 8, color: '#6b21a8' }}>Câu hỏi random thêm</div>
                 <div style={{ color: '#7c3aed', fontWeight: 700 }}>
-                  Sẽ lấy ngẫu nhiên {quizRandomQuestionCount} câu công khai trong chương đã chọn, không trùng với các câu đã chọn thủ công.
+                  Sẽ lấy ngẫu nhiên {quizRandomQuestionCount} câu trong chương đã chọn, không trùng với các câu đã chọn thủ công.
                 </div>
               </div>
             ) : null}

@@ -22,8 +22,10 @@ import RichContentRenderer from '../../components/RichContentRenderer';
 import ClozeQuestionForm from '../../components/ClozeQuestionForm';
 import QuestionTypeFields from '../../components/QuestionTypeFields';
 import SelectQuestionsModal from '../../components/SelectQuestionsModal';
+import QuizTaker from '../../components/QuizTaker';
 
 import './ManHinhQuanLyNganHangCauhoi.css';
+import '../../components/QuizTaker.css';
 import QuestionBankTab from '../../components/TeacherQuestionBank/QuestionBankTab';
 import QuizManagerTab from '../../components/TeacherQuizManager/QuizManagerTab';
 import { bankDetailParseJson, bankDetailNormalizeType, bankDetailNormalizeBlocks, bankDetailBlocksToText, bankDetailNormalizeIndex, bankDetailGetCorrectIndices, bankDetailGetOptions } from '../../components/TeacherQuestionBank/QuestionDetailPanel';
@@ -111,7 +113,7 @@ const createEmptyDraft = () => ({
   metadata: { text_template: '', inner_questions: {} },
   content: '',
   contentBlocks: createEmptyRichBlocks(),
-  isPublished: false,
+  isPublished: true,
   options: ['', '', '', ''],
   optionsRich: [createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks(), createEmptyRichBlocks()],
   correctIndices: [0],
@@ -330,7 +332,7 @@ const buildQuestionDraftForEdit = (question) => {
 
     content: type === 'CLOZE' ? clozeMetadata.text_template : textContent,
     contentBlocks,
-    isPublished: bankEditNormalizeBoolean(question?.isPublished, false),
+    isPublished: true,
 
     courseId: question?.courseId ?? metadata?.courseId ?? '',
     chapterId: question?.chapterId ?? metadata?.chapterId ?? '',
@@ -411,6 +413,7 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
   const [editingQuizId, setEditingQuizId] = useState(null);
   const [quizAddQuestionId, setQuizAddQuestionId] = useState('');
   const [selectQuizQuestionsModalOpen, setSelectQuizQuestionsModalOpen] = useState(false);
+  const [quizPreview, setQuizPreview] = useState({ open: false, quizId: null });
   const [editingId, setEditingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -423,8 +426,7 @@ function ManHinhQuanLyNganHangCauhoi({ embedded = false, fixedCourseId = '' }) {
   const isCourseScopedView = Boolean(scopedCourseId);
 
   const questionCount = useMemo(() => questions.length, [questions]);
-  const publishedCount = useMemo(() => questions.filter((item) => Boolean(item.isPublished)).length, [questions]);
-  const draftCount = useMemo(() => questions.filter((item) => !item.isPublished).length, [questions]);
+  const publishedCount = questionCount;
   const typeSummary = useMemo(() => {
     const summary = questions.reduce((acc, item) => {
       const key = String(item.type || 'MULTIPLE_CHOICE');
@@ -472,14 +474,35 @@ const selectedQuizQuestionIds = useMemo(() => {
 }, [selectedQuizDetail]);
 
 const availableQuestionsForQuiz = useMemo(() => {
+  const quizCourseId = Number(selectedQuizDetail?.courseId);
+  const quizChapterId = Number(selectedQuizDetail?.chapterId);
+  const lessonChapterById = new Map(
+    lessons
+      .filter((lesson) => lesson?.id)
+      .map((lesson) => [Number(lesson.id), Number(lesson.chapterId)])
+  );
+
   return questions.filter((question) => {
     if (selectedQuizQuestionIds.has(Number(question.id))) {
       return false;
     }
 
-    return Boolean(question.isPublished);
+    if (Number.isFinite(quizCourseId) && quizCourseId > 0 && Number(question.courseId) !== quizCourseId) {
+      return false;
+    }
+
+    if (Number.isFinite(quizChapterId) && quizChapterId > 0) {
+      const questionChapterId = Number(question.chapterId);
+      const questionLessonChapterId = lessonChapterById.get(Number(question.lectureId ?? question.lessonId));
+
+      if (questionChapterId !== quizChapterId && questionLessonChapterId !== quizChapterId) {
+        return false;
+      }
+    }
+
+    return true;
   });
-}, [questions, selectedQuizQuestionIds]);
+}, [questions, lessons, selectedQuizDetail, selectedQuizQuestionIds]);
   useEffect(() => {
     try {
       const savedQuota = window.localStorage.getItem(QUIZ_QUOTA_STORAGE_KEY);
@@ -762,7 +785,7 @@ const resetQuizDraft = () => {
       chapterId: payloadChapterId ? Number(payloadChapterId) : undefined,
       lectureId: payloadLessonId ? Number(payloadLessonId) : undefined,
       segmentId: payloadSegmentId ? Number(payloadSegmentId) : undefined,
-      isPublished: draft.isPublished,
+      isPublished: true,
     };
 
     if (draft.type === 'MULTIPLE_CHOICE') {
@@ -893,7 +916,7 @@ const resetQuizDraft = () => {
       segmentId: selectedSegmentId ? Number(selectedSegmentId) : undefined,
       parentQuestionId,
       orderIndex,
-      isPublished: Boolean(innerQuestion.isPublished),
+      isPublished: true,
     };
 
     if (innerQuestion.type === 'MULTIPLE_CHOICE') {
@@ -1168,11 +1191,61 @@ const loadQuizDetail = async (quizId) => {
     const detail = await getTeacherQuizDetailApi(quizId);
     setSelectedQuizDetail(detail);
     setQuizAddQuestionId('');
+
+    if (detail?.courseId) {
+      const [quizQuestions, quizLessons] = await Promise.all([
+        fetchQuestionsApi({
+        courseId: Number(detail.courseId),
+        }),
+        fetchCourseLessonsApi(Number(detail.courseId)),
+      ]);
+
+      setQuestions((prev) => {
+        const byId = new Map(
+          (Array.isArray(prev) ? prev : [])
+            .filter((question) => question?.id)
+            .map((question) => [Number(question.id), question])
+        );
+
+        (Array.isArray(quizQuestions) ? quizQuestions : []).forEach((question) => {
+          if (question?.id) {
+            byId.set(Number(question.id), question);
+          }
+        });
+
+        return Array.from(byId.values());
+      });
+
+      setLessons((prev) => {
+        const byId = new Map(
+          (Array.isArray(prev) ? prev : [])
+            .filter((lesson) => lesson?.id)
+            .map((lesson) => [Number(lesson.id), lesson])
+        );
+
+        (Array.isArray(quizLessons) ? quizLessons : []).forEach((lesson) => {
+          if (lesson?.id) {
+            byId.set(Number(lesson.id), lesson);
+          }
+        });
+
+        return Array.from(byId.values());
+      });
+    }
   } catch (err) {
     alert(err?.response?.data?.message || 'Không thể tải chi tiết bài kiểm tra.');
   } finally {
     setIsLoadingQuizDetail(false);
   }
+};
+
+const handlePreviewQuiz = (quiz) => {
+  if (!quiz?.id) return;
+  setQuizPreview({ open: true, quizId: Number(quiz.id) });
+};
+
+const handleCloseQuizPreview = () => {
+  setQuizPreview({ open: false, quizId: null });
 };
 
 const handleStartEditQuiz = (quiz) => {
@@ -1481,11 +1554,62 @@ const handlePublishQuiz = async (quizId) => {
             visibleQuizzes={visibleQuizzes}
             formatQuizDate={formatQuizDate}
             loadQuizDetail={loadQuizDetail}
+            handlePreviewQuiz={handlePreviewQuiz}
             handleStartEditQuiz={handleStartEditQuiz}
             handlePublishQuiz={handlePublishQuiz}
             handleDeleteQuiz={handleDeleteQuiz}
           />
         )}
+
+        {quizPreview.open && quizPreview.quizId ? (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 20000,
+              background: 'rgba(15, 23, 42, 0.72)',
+              display: 'flex',
+              alignItems: 'stretch',
+              justifyContent: 'stretch',
+            }}
+          >
+            <div
+              style={{
+                position: 'relative',
+                width: '100%',
+                height: '100%',
+                background: '#f8fafc',
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ position: 'absolute', top: 14, right: 14, zIndex: 2 }}>
+                <button
+                  type="button"
+                  onClick={handleCloseQuizPreview}
+                  style={{
+                    border: 'none',
+                    background: '#111827',
+                    color: 'white',
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+                  }}
+                >
+                  Đóng
+                </button>
+              </div>
+              <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
+                <QuizTaker
+                  quizId={quizPreview.quizId}
+                  previewMode
+                  onBack={handleCloseQuizPreview}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
 
     </div>

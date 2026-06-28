@@ -5,6 +5,7 @@ const {
   StudentQuizAttempt,
   StudentAnswer,
   Course,
+  Lesson,
 } = require('../models');
 const {
   gradeEssayWithExternalApiConfig,
@@ -211,7 +212,48 @@ const resolveQuizQuestionQuotas = (payload = {}) => {
 
 const getQuestionChapterId = (question) => {
   const metadata = parseJsonField(question.metadata, {});
-  return metadata.chapterId != null ? Number(metadata.chapterId) : null;
+  const chapterId = question.chapterId ?? metadata.chapterId;
+  return chapterId != null ? Number(chapterId) : null;
+};
+
+const resolveQuestionChapterId = async (question, transaction) => {
+  const directChapterId = getQuestionChapterId(question);
+  if (directChapterId) {
+    return directChapterId;
+  }
+
+  const lectureId = question.lectureId ?? question.lessonId;
+  if (!lectureId) {
+    return null;
+  }
+
+  const lesson = await Lesson.findByPk(lectureId, {
+    attributes: ['id', 'chapterId'],
+    transaction,
+  });
+
+  return lesson?.chapterId != null ? Number(lesson.chapterId) : null;
+};
+
+const assertQuizInstructor = (quiz, user) => {
+  if (!quiz) {
+    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
+  }
+
+  if (
+    user?.role !== 'admin'
+    && Number(quiz.course?.instructorId) !== Number(user?.id)
+  ) {
+    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
+  }
+};
+
+const hasQuestionSelectionPayload = (payload = {}) => {
+  return (
+    Object.prototype.hasOwnProperty.call(payload, 'questionIds')
+    || Object.prototype.hasOwnProperty.call(payload, 'randomize')
+    || Object.prototype.hasOwnProperty.call(payload, 'randomCount')
+  );
 };
 
 const autoPopulateQuizQuestions = async (quiz, transaction, questionQuotas = null) => {
@@ -229,7 +271,6 @@ const autoPopulateQuizQuestions = async (quiz, transaction, questionQuotas = nul
   const chapterQuestions = await Question.findAll({
     where: {
       courseId: quiz.courseId,
-      isPublished: true,
     },
     transaction,
   });
@@ -824,7 +865,7 @@ const normalizeQuizWithQuestions = async (quiz) => {
     passScore: plain.passScore,
     maxAttempts: plain.maxAttempts,
     isPublished: plain.isPublished,
-    questions: questions.sort((a, b) => a.QuizQuestion.order - b.QuizQuestion.order),
+    questions: questionsWithBlocks.sort((a, b) => a.QuizQuestion.order - b.QuizQuestion.order),
     createdAt: plain.createdAt,
   };
 };
@@ -935,7 +976,6 @@ const buildManualQuizQuestions = async (payload, transaction) => {
         where: {
           id: { [Op.in]: selectedQuestionIds },
           courseId: payload.courseId,
-          isPublished: true,
         },
         transaction,
       })
@@ -946,10 +986,16 @@ const buildManualQuizQuestions = async (payload, transaction) => {
   const missingIds = selectedQuestionIds.filter((id) => !foundIds.has(Number(id)));
 
   if (missingIds.length) {
-    throw new HttpError(400, 'Một số câu hỏi đã chọn không tồn tại hoặc chưa xuất bản', 'INVALID_SELECTED_QUESTIONS');
+    throw new HttpError(400, 'Một số câu hỏi đã chọn không tồn tại trong khóa học này', 'INVALID_SELECTED_QUESTIONS');
   }
 
-  const selectedWrongChapter = selectedPlain.filter((question) => Number(getQuestionChapterId(question)) !== Number(payload.chapterId));
+  const selectedWithChapter = await Promise.all(
+    selectedPlain.map(async (question) => ({
+      question,
+      chapterId: await resolveQuestionChapterId(question, transaction),
+    })),
+  );
+  const selectedWrongChapter = selectedWithChapter.filter((item) => Number(item.chapterId) !== Number(payload.chapterId));
   if (selectedWrongChapter.length) {
     throw new HttpError(400, 'Một số câu hỏi đã chọn không thuộc chương này', 'QUESTION_CHAPTER_MISMATCH');
   }
@@ -960,15 +1006,21 @@ const buildManualQuizQuestions = async (payload, transaction) => {
     const allChapterQuestions = await Question.findAll({
       where: {
         courseId: payload.courseId,
-        isPublished: true,
       },
       transaction,
     });
 
     const selectedIdSet = new Set(selectedQuestionIds.map((id) => Number(id)));
-    const randomPool = allChapterQuestions
-      .map((item) => item.toJSON())
-      .filter((question) => Number(getQuestionChapterId(question)) === Number(payload.chapterId))
+    const allPlainQuestions = allChapterQuestions.map((item) => item.toJSON());
+    const allWithChapter = await Promise.all(
+      allPlainQuestions.map(async (question) => ({
+        question,
+        chapterId: await resolveQuestionChapterId(question, transaction),
+      })),
+    );
+    const randomPool = allWithChapter
+      .filter((item) => Number(item.chapterId) === Number(payload.chapterId))
+      .map((item) => item.question)
       .filter((question) => !selectedIdSet.has(Number(question.id)));
 
     if (randomPool.length < randomCount) {
@@ -1003,7 +1055,7 @@ const createQuizByTeacher = async (payload, user) => {
     throw new HttpError(404, 'Course not found', 'COURSE_NOT_FOUND');
   }
 
-  if (course.instructorId !== user.id) {
+  if (user?.role !== 'admin' && Number(course.instructorId) !== Number(user.id)) {
     throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
   }
 
@@ -1050,17 +1102,23 @@ const addQuestionToQuizByTeacher = async (quizId, questionId, payload, user) => 
     include: [{ association: 'course' }],
   });
 
-  if (!quiz) {
-    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
-  }
+  assertQuizInstructor(quiz, user);
 
-  if (quiz.course.instructorId !== user.id) {
-    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
-  }
-
-  const question = await Question.findOne({ where: { id: questionId } });
+  const question = await Question.findOne({
+    where: {
+      id: questionId,
+      courseId: quiz.courseId,
+    },
+  });
   if (!question) {
-    throw new HttpError(404, 'Question not found', 'QUESTION_NOT_FOUND');
+    throw new HttpError(404, 'Question not found in this course', 'QUESTION_NOT_FOUND');
+  }
+
+  const questionPlain = question.toJSON ? question.toJSON() : question;
+  const questionChapterId = await resolveQuestionChapterId(questionPlain);
+
+  if (quiz.chapterId && Number(questionChapterId) !== Number(quiz.chapterId)) {
+    throw new HttpError(400, 'Question does not belong to this quiz chapter', 'QUESTION_CHAPTER_MISMATCH');
   }
 
   const existing = await QuizQuestion.findOne({
@@ -1070,11 +1128,22 @@ const addQuestionToQuizByTeacher = async (quizId, questionId, payload, user) => 
     throw new HttpError(409, 'Question already in quiz', 'DUPLICATE');
   }
 
-  const quizQuestion = await QuizQuestion.create({
-    quizId,
-    questionId,
-    order: payload.order || 0,
-    points: payload.points || 1,
+  const maxOrder = Number(await QuizQuestion.max('order', { where: { quizId } }) || 0);
+  const requestedOrder = Number(payload.order || 0);
+  const quizQuestion = await sequelize.transaction(async (transaction) => {
+    const created = await QuizQuestion.create({
+      quizId,
+      questionId,
+      order: Number.isInteger(requestedOrder) && requestedOrder > 0 ? requestedOrder : maxOrder + 1,
+      points: payload.points || 1,
+    }, { transaction });
+
+    if (quiz.isPublished) {
+      quiz.isPublished = false;
+      await quiz.save({ transaction });
+    }
+
+    return created;
   });
 
   return quizQuestion;
@@ -1089,19 +1158,23 @@ const removeQuestionFromQuizByTeacher = async (quizId, questionId, user) => {
     include: [{ association: 'course' }],
   });
 
-  if (!quiz) {
-    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
-  }
+  assertQuizInstructor(quiz, user);
 
-  if (quiz.course.instructorId !== user.id) {
-    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
-  }
+  const deletedCount = await sequelize.transaction(async (transaction) => {
+    const count = await QuizQuestion.destroy({
+      where: { quizId, questionId },
+      transaction,
+    });
 
-  await QuizQuestion.destroy({
-    where: { quizId, questionId },
+    if (count > 0 && quiz.isPublished) {
+      quiz.isPublished = false;
+      await quiz.save({ transaction });
+    }
+
+    return count;
   });
 
-  return { quizId, questionId, deleted: true };
+  return { quizId, questionId, deleted: deletedCount > 0 };
 };
 
 /**
@@ -1113,13 +1186,7 @@ const updateQuizByTeacher = async (quizId, payload, user) => {
     include: [{ association: 'course' }],
   });
 
-  if (!quiz) {
-    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
-  }
-
-  if (quiz.course.instructorId !== user.id) {
-    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
-  }
+  assertQuizInstructor(quiz, user);
 
   quiz.title = payload.title ?? quiz.title;
   quiz.description = payload.description ?? quiz.description;
@@ -1127,7 +1194,33 @@ const updateQuizByTeacher = async (quizId, payload, user) => {
   quiz.passScore = payload.passScore ?? quiz.passScore;
   quiz.maxAttempts = payload.maxAttempts ?? quiz.maxAttempts;
 
-  await quiz.save();
+  await sequelize.transaction(async (transaction) => {
+    await quiz.save({ transaction });
+
+    if (hasQuestionSelectionPayload(payload)) {
+      const selectedQuestions = await buildManualQuizQuestions({
+        ...payload,
+        courseId: quiz.courseId,
+        chapterId: quiz.chapterId,
+      }, transaction);
+
+      await QuizQuestion.destroy({ where: { quizId: quiz.id }, transaction });
+      await QuizQuestion.bulkCreate(
+        selectedQuestions.map((item, index) => ({
+          quizId: quiz.id,
+          questionId: item.id,
+          order: index + 1,
+          points: 1,
+        })),
+        { transaction },
+      );
+
+      if (quiz.isPublished) {
+        quiz.isPublished = false;
+        await quiz.save({ transaction });
+      }
+    }
+  });
 
   return quiz;
 };
@@ -1141,13 +1234,7 @@ const publishQuizByTeacher = async (quizId, user) => {
     include: [{ association: 'course' }],
   });
 
-  if (!quiz) {
-    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
-  }
-
-  if (quiz.course.instructorId !== user.id) {
-    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
-  }
+  assertQuizInstructor(quiz, user);
 
   const questionCount = await QuizQuestion.count({ where: { quizId } });
   if (questionCount === 0) {
@@ -1170,13 +1257,7 @@ const deleteQuizByTeacher = async (quizId, user) => {
     include: [{ association: 'course' }],
   });
 
-  if (!quiz) {
-    throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
-  }
-
-  if (quiz.course.instructorId !== user.id) {
-    throw new HttpError(403, 'You are not the instructor', 'FORBIDDEN');
-  }
+  assertQuizInstructor(quiz, user);
 
   await quiz.destroy();
 

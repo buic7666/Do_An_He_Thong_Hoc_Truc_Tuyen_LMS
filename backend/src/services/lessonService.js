@@ -295,13 +295,12 @@ const syncQuizContentItems = async (segment, normalizedItems, currentUser) => {
         duration: 30,
         passScore: 70,
         maxAttempts: 0,
-        isPublished: true,
+        isPublished: false,
         createdBy: currentUser.id,
       });
     } else {
       quiz.title = item.title || quiz.title;
       quiz.description = item.content || quiz.description;
-      quiz.isPublished = true;
       await quiz.save();
     }
 

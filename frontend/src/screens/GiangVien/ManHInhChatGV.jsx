@@ -99,7 +99,7 @@ function ManHInhChatGV() {
             <div className="instructor-chat-tab-panel">
               <div className="instructor-chat-thread-list">
                 {qaThreads.map((thread) => (
-                  <article className="instructor-chat-thread-card" key={thread.id}>
+                  <article className="instructor-chat-thread-card" key={`${thread.source || 'comment'}-${thread.id}`}>
                     <header className="instructor-chat-thread-header">
                       <div className="instructor-chat-user-avatar">{getInitial(thread.userName)}</div>
                       <div className="instructor-chat-thread-meta">
@@ -116,19 +116,23 @@ function ManHInhChatGV() {
                     <p className="instructor-chat-thread-body">{thread.content}</p>
                     {thread.reply ? <p className="instructor-chat-thread-body">Giang vien da tra loi: {thread.reply}</p> : null}
 
-                    <div className="instructor-chat-reply-box">
-                      <textarea
-                        className="instructor-chat-reply-textarea"
-                        onChange={(event) => handleReplyChange(thread.id, event.target.value)}
-                        placeholder="Nhap cau tra loi cua ban tai day..."
-                        value={replies[thread.id] ?? ''}
-                      />
-                      <div className="instructor-chat-reply-actions">
-                        <button className="instructor-chat-btn instructor-chat-btn-primary" onClick={() => handleSendReply(thread.id, thread.userName)} type="button">
-                          Tra loi
-                        </button>
+                    {thread.source === 'teacher_message' ? (
+                      <div className="instructor-chat-course-badge">Tin nhan da gui tu man hinh quan ly hoc vien</div>
+                    ) : (
+                      <div className="instructor-chat-reply-box">
+                        <textarea
+                          className="instructor-chat-reply-textarea"
+                          onChange={(event) => handleReplyChange(thread.id, event.target.value)}
+                          placeholder="Nhap cau tra loi cua ban tai day..."
+                          value={replies[thread.id] ?? ''}
+                        />
+                        <div className="instructor-chat-reply-actions">
+                          <button className="instructor-chat-btn instructor-chat-btn-primary" onClick={() => handleSendReply(thread.id, thread.userName)} type="button">
+                            Tra loi
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </article>
                 ))}
                 {!qaThreads.length ? <p>Chua co cau hoi nao.</p> : null}

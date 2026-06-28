@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 
 import './ManHinhTheoDoi_DSoHocvien.css';
 import TeacherSidebar from '../../components/TeacherSidebar';
-import { fetchTeacherDashboardApi } from '../../api/teacherApi';
+import { fetchTeacherDashboardApi, sendTeacherStudentMessageApi } from '../../api/teacherApi';
 
 const formatDate = (value) => {
   if (!value) return '';
@@ -16,6 +16,10 @@ function ManHinhTheoDoiDSoHocvien() {
   const [enrollments, setEnrollments] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState('all');
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [messageContent, setMessageContent] = useState('');
+  const [messageStatus, setMessageStatus] = useState('');
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -63,10 +67,42 @@ function ManHinhTheoDoiDSoHocvien() {
     return getProgressValue(student) >= 100 ? 'Hoàn thành' : 'Đang học';
   };
 
-  const sendMessage = (studentName) => {
-    // Placeholder action until API integration is ready.
-    // eslint-disable-next-line no-alert
-    alert(`Da mo khung nhan tin cho ${studentName} (demo).`);
+  const openMessageModal = (student) => {
+    setSelectedStudent(student);
+    setMessageContent('');
+    setMessageStatus('');
+  };
+
+  const closeMessageModal = () => {
+    if (isSendingMessage) return;
+    setSelectedStudent(null);
+    setMessageContent('');
+    setMessageStatus('');
+  };
+
+  const sendMessage = async () => {
+    const trimmedMessage = messageContent.trim();
+    if (!selectedStudent || !trimmedMessage) {
+      setMessageStatus('Vui lòng nhập nội dung tin nhắn.');
+      return;
+    }
+
+    setIsSendingMessage(true);
+    setMessageStatus('');
+
+    try {
+      await sendTeacherStudentMessageApi({
+        userId: selectedStudent.userId,
+        courseId: selectedStudent.courseId,
+        message: trimmedMessage,
+      });
+      setMessageStatus('Đã gửi tin nhắn. Nội dung đã được lưu vào lịch sử tương tác học viên.');
+      setMessageContent('');
+    } catch (error) {
+      setMessageStatus(error?.response?.data?.message || 'Không thể gửi tin nhắn cho học viên.');
+    } finally {
+      setIsSendingMessage(false);
+    }
   };
 
   return (
@@ -159,7 +195,7 @@ function ManHinhTheoDoiDSoHocvien() {
                     </span>
                   </td>
                   <td className="center">
-                    <button className="instructor-progress-btn-action" onClick={() => sendMessage(student.studentName)} title="Gui tin nhan" type="button">
+                    <button className="instructor-progress-btn-action" onClick={() => openMessageModal(student)} title="Gui tin nhan" type="button">
                       M
                     </button>
                   </td>
@@ -173,6 +209,60 @@ function ManHinhTheoDoiDSoHocvien() {
             </tbody>
           </table>
         </div>
+
+        {selectedStudent ? (
+          <div className="instructor-progress-modal-backdrop" role="presentation" onMouseDown={closeMessageModal}>
+            <section
+              aria-labelledby="student-message-title"
+              className="instructor-progress-message-modal"
+              onMouseDown={(event) => event.stopPropagation()}
+              role="dialog"
+            >
+              <header className="instructor-progress-message-header">
+                <div>
+                  <h2 id="student-message-title">Gửi tin nhắn học viên</h2>
+                  <p>{selectedStudent.studentName} • {selectedStudent.courseName}</p>
+                </div>
+                <button
+                  aria-label="Đóng"
+                  className="instructor-progress-modal-close"
+                  disabled={isSendingMessage}
+                  onClick={closeMessageModal}
+                  type="button"
+                >
+                  ×
+                </button>
+              </header>
+
+              <div className="instructor-progress-message-recipient">
+                <div className="instructor-progress-student-avatar">{getInitial(selectedStudent.studentName)}</div>
+                <div>
+                  <strong>{selectedStudent.studentName}</strong>
+                  <span>{selectedStudent.studentEmail || 'Không có email'}</span>
+                </div>
+              </div>
+
+              <textarea
+                className="instructor-progress-message-textarea"
+                disabled={isSendingMessage}
+                onChange={(event) => setMessageContent(event.target.value)}
+                placeholder="Nhập nội dung cần nhắn cho học viên..."
+                value={messageContent}
+              />
+
+              {messageStatus ? <p className="instructor-progress-message-status">{messageStatus}</p> : null}
+
+              <footer className="instructor-progress-message-actions">
+                <button className="instructor-progress-btn-secondary" disabled={isSendingMessage} onClick={closeMessageModal} type="button">
+                  Đóng
+                </button>
+                <button className="instructor-progress-btn-primary" disabled={isSendingMessage || !messageContent.trim()} onClick={sendMessage} type="button">
+                  {isSendingMessage ? 'Đang gửi...' : 'Gửi tin nhắn'}
+                </button>
+              </footer>
+            </section>
+          </div>
+        ) : null}
       </main>
     </div>
   );

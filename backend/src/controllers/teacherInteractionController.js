@@ -19,7 +19,17 @@ const replyInteraction = async (req, res, next) => {
   }
 };
 
+const sendStudentMessage = async (req, res, next) => {
+  try {
+    const result = await teacherInteractionService.sendStudentMessage(req.body, req.user);
+    return successResponse(res, 'Student message sent', result, 201);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getInteractions,
   replyInteraction,
+  sendStudentMessage,
 };

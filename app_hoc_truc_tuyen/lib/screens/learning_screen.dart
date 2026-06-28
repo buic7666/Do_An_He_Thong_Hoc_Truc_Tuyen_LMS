@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_config.dart';
-import '../core/error_utils.dart';
 import '../core/helpers.dart';
 import '../models/course_model.dart';
 import '../services/lms_repository.dart';

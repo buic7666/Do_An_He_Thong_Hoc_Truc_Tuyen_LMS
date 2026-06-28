@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import ReactDOM from 'react-dom';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import TeacherSidebar from '../../components/TeacherSidebar';
 import httpClient from '../../api/httpClient';
@@ -42,56 +41,6 @@ const normalizePreviewBlocks = (value) => {
   if (isLikelyImageUrl(raw)) {
     return [{ type: 'image', url: raw, alt: '' }];
   }
-
-      {quizPreview.open && quizPreview.quizId ? (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 2000,
-            background: 'rgba(15, 23, 42, 0.72)',
-            display: 'flex',
-            alignItems: 'stretch',
-            justifyContent: 'stretch',
-          }}
-        >
-          <div
-            style={{
-              position: 'relative',
-              width: '100%',
-              height: '100%',
-              background: '#f8fafc',
-              overflow: 'hidden',
-            }}
-          >
-            <div style={{ position: 'absolute', top: 14, right: 14, zIndex: 2 }}>
-              <button
-                type="button"
-                onClick={handleCloseQuizPreview}
-                style={{
-                  border: 'none',
-                  background: '#111827',
-                  color: 'white',
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
-                }}
-              >
-                Đóng
-              </button>
-            </div>
-            <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
-              <QuizTaker
-                quizId={quizPreview.quizId}
-                previewMode
-                onBack={handleCloseQuizPreview}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
 
   if (raw.includes('<') && raw.includes('>') && typeof DOMParser !== 'undefined') {
     try {
@@ -1340,6 +1289,55 @@ function LessonDetail() {
             </div>
           </div>
         )}
+        {quizPreview.open && quizPreview.quizId ? (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 2000,
+              background: 'rgba(15, 23, 42, 0.72)',
+              display: 'flex',
+              alignItems: 'stretch',
+              justifyContent: 'stretch',
+            }}
+          >
+            <div
+              style={{
+                position: 'relative',
+                width: '100%',
+                height: '100%',
+                background: '#f8fafc',
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ position: 'absolute', top: 14, right: 14, zIndex: 2 }}>
+                <button
+                  type="button"
+                  onClick={handleCloseQuizPreview}
+                  style={{
+                    border: 'none',
+                    background: '#111827',
+                    color: 'white',
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.18)',
+                  }}
+                >
+                  Đóng
+                </button>
+              </div>
+              <div style={{ width: '100%', height: '100%', overflow: 'auto' }}>
+                <QuizTaker
+                  quizId={quizPreview.quizId}
+                  previewMode
+                  onBack={handleCloseQuizPreview}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
     );

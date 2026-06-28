@@ -396,14 +396,6 @@ function QuestionFormModal({
               />
             </div>
 
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
-              <input
-                type="checkbox"
-                checked={draft.isPublished}
-                onChange={(e) => onDraftChange({ ...draft, isPublished: e.target.checked })}
-              />
-              <span style={{ fontSize: '14px', color: '#333' }}>Công khai câu hỏi ngay sau khi lưu</span>
-            </label>
           </div>
         ) : (
           (() => {
@@ -414,7 +406,6 @@ function QuestionFormModal({
                   {isEditing ? 'Xác nhận thông tin chỉnh sửa' : 'Xác nhận thông tin câu hỏi'}
                 </h3>
                 <p style={{ margin: '0 0 10px 0' }}><strong>Loại:</strong> {QUESTION_TYPE_LABELS[draft.type] || draft.type}</p>
-                <p style={{ margin: '0 0 10px 0' }}><strong>Công khai:</strong> {draft.isPublished ? 'Có' : 'Không'}</p>
                 <p style={{ margin: '0 0 6px 0' }}><strong>Nội dung câu hỏi:</strong></p>
                 <div style={{ marginBottom: 12 }}>
                   {contentBlocks.length > 0 ? (

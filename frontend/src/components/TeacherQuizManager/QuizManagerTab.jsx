@@ -33,6 +33,7 @@ const QuizManagerTab = ({
   visibleQuizzes,
   formatQuizDate,
   loadQuizDetail,
+  handlePreviewQuiz,
   handleStartEditQuiz,
   handlePublishQuiz,
   handleDeleteQuiz
@@ -79,6 +80,7 @@ const QuizManagerTab = ({
         getQuizChapterTitle={getQuizChapterTitle}
         formatQuizDate={formatQuizDate}
         loadQuizDetail={loadQuizDetail}
+        handlePreviewQuiz={handlePreviewQuiz}
         handleStartEditQuiz={handleStartEditQuiz}
         handlePublishQuiz={handlePublishQuiz}
         handleDeleteQuiz={handleDeleteQuiz}

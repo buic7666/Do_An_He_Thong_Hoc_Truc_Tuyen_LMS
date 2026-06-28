@@ -1,6 +1,6 @@
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
-const { Question } = require('../models');
+const { Question, Lesson } = require('../models');
 const {
   collectLocalUploadFiles,
   deleteLocalUploadFiles,
@@ -389,10 +389,34 @@ const getQuestionsByCourse = async (courseId, filters = {}) => {
   });
 
   const normalizedQuestions = questions.map(normalizeQuestion);
+  const lessonIds = [
+    ...new Set(
+      normalizedQuestions
+        .map((question) => Number(question.lectureId ?? question.lessonId))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  ];
+  const lessons = lessonIds.length
+    ? await Lesson.findAll({
+        where: { id: { [Op.in]: lessonIds } },
+        attributes: ['id', 'chapterId'],
+      })
+    : [];
+  const lessonChapterById = new Map(
+    lessons.map((lesson) => [Number(lesson.id), Number(lesson.chapterId)]),
+  );
+  const getResolvedQuestionChapterId = (question) => {
+    const directChapterId = Number(question.chapterId);
+    if (Number.isFinite(directChapterId) && directChapterId > 0) {
+      return directChapterId;
+    }
+
+    return lessonChapterById.get(Number(question.lectureId ?? question.lessonId)) || null;
+  };
 
   if (filters.chapterId != null && String(filters.chapterId).trim() !== '') {
     const targetChapterId = Number(filters.chapterId);
-    const byChapter = normalizedQuestions.filter((question) => Number(question.chapterId) === targetChapterId);
+    const byChapter = normalizedQuestions.filter((question) => Number(getResolvedQuestionChapterId(question)) === targetChapterId);
 
     if (filters.lectureId != null && String(filters.lectureId).trim() !== '') {
       const targetLectureId = Number(filters.lectureId);
@@ -523,7 +547,7 @@ const createQuestion = async (payload, creatorId) => {
     courseId: payload.courseId || null,
     parentQuestionId: payload.parentQuestionId || null,
     orderIndex: payload.orderIndex || null,
-    isPublished: payload.isPublished === true,
+    isPublished: true,
   });
 
   return getQuestionById(question.id);
@@ -604,9 +628,7 @@ const updateQuestion = async (questionId, payload, creatorId) => {
     question.metadata = nextMetadata;
   }
 
-  if (payload.isPublished != null) {
-    question.isPublished = payload.isPublished;
-  }
+  question.isPublished = true;
 
   await question.save();
 
