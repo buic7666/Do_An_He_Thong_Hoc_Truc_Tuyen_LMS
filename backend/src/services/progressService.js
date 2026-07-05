@@ -29,6 +29,23 @@ const ensureStudentEnrolled = async (user, courseId) => {
 
 const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
+const parsePlainObject = (value) => {
+  if (isPlainObject(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return isPlainObject(parsed) ? parsed : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  return {};
+};
+
 const toNumber = (value, fallback = 0) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -77,28 +94,25 @@ const getQuizCompletionScore = (completion) => {
 };
 
 const mergeCompletionStudyState = (previousState = {}, nextState = {}) => {
-  if (!isPlainObject(nextState)) {
-    return isPlainObject(previousState) ? previousState : {};
-  }
+  const previous = parsePlainObject(previousState);
+  const next = parsePlainObject(nextState);
+  const merged = { ...previous, ...next };
 
-  const previous = isPlainObject(previousState) ? previousState : {};
-  const merged = { ...previous, ...nextState };
-
-  if (isPlainObject(nextState.viewedContentItems)) {
+  if (isPlainObject(next.viewedContentItems)) {
     merged.viewedContentItems = {
       ...(isPlainObject(previous.viewedContentItems) ? previous.viewedContentItems : {}),
     };
-    Object.entries(nextState.viewedContentItems).forEach(([key, value]) => {
+    Object.entries(next.viewedContentItems).forEach(([key, value]) => {
       if (value) {
         merged.viewedContentItems[key] = true;
       }
     });
   }
 
-  if (isPlainObject(nextState.videoPositions)) {
+  if (isPlainObject(next.videoPositions)) {
     const previousPositions = isPlainObject(previous.videoPositions) ? previous.videoPositions : {};
     merged.videoPositions = { ...previousPositions };
-    Object.entries(nextState.videoPositions).forEach(([key, value]) => {
+    Object.entries(next.videoPositions).forEach(([key, value]) => {
       merged.videoPositions[key] = Math.max(
         toNumber(previousPositions[key], 0),
         toNumber(value, 0),
@@ -106,10 +120,10 @@ const mergeCompletionStudyState = (previousState = {}, nextState = {}) => {
     });
   }
 
-  if (isPlainObject(nextState.quizCompletions)) {
+  if (isPlainObject(next.quizCompletions)) {
     const previousCompletions = isPlainObject(previous.quizCompletions) ? previous.quizCompletions : {};
     merged.quizCompletions = { ...previousCompletions };
-    Object.entries(nextState.quizCompletions).forEach(([key, value]) => {
+    Object.entries(next.quizCompletions).forEach(([key, value]) => {
       const previousScore = getQuizCompletionScore(previousCompletions[key]);
       const nextScore = getQuizCompletionScore(value);
       if (!merged.quizCompletions[key] || nextScore >= previousScore) {
@@ -149,11 +163,12 @@ const countStudyContentItems = (lesson) => {
 };
 
 const isLessonCompletedByStudyState = (lesson, studyState) => {
+  const normalizedStudyState = parsePlainObject(studyState);
   const plain = typeof lesson.toJSON === 'function' ? lesson.toJSON() : lesson;
   const segments = Array.isArray(plain.segments) ? plain.segments : [];
-  const viewedContentItems = isPlainObject(studyState?.viewedContentItems) ? studyState.viewedContentItems : {};
-  const videoPositions = isPlainObject(studyState?.videoPositions) ? studyState.videoPositions : {};
-  const quizCompletions = isPlainObject(studyState?.quizCompletions) ? studyState.quizCompletions : {};
+  const viewedContentItems = isPlainObject(normalizedStudyState.viewedContentItems) ? normalizedStudyState.viewedContentItems : {};
+  const videoPositions = isPlainObject(normalizedStudyState.videoPositions) ? normalizedStudyState.videoPositions : {};
+  const quizCompletions = isPlainObject(normalizedStudyState.quizCompletions) ? normalizedStudyState.quizCompletions : {};
 
   let totalItems = 0;
   let completedItems = 0;
@@ -208,10 +223,8 @@ const markLessonCompleted = async (lessonId, currentUser, payload = {}) => {
 
   const existingWatchPosition = await lessonWatchPositionRepository.findByUserAndLesson(currentUser.id, parsedLessonId);
   const existingWatchPositionPlain = existingWatchPosition?.toJSON ? existingWatchPosition.toJSON() : existingWatchPosition;
-  const existingStudyState = isPlainObject(existingWatchPositionPlain?.studyState)
-    ? existingWatchPositionPlain.studyState
-    : {};
-  const requestedStudyState = isPlainObject(payload?.studyState) ? payload.studyState : {};
+  const existingStudyState = parsePlainObject(existingWatchPositionPlain?.studyState);
+  const requestedStudyState = parsePlainObject(payload?.studyState);
   const studyStateForValidation = mergeCompletionStudyState(existingStudyState, requestedStudyState);
   const requestedPositionSeconds = toNumber(payload?.positionSeconds, 0);
   const hasStructuredStudyItems = countStudyContentItems(lesson) > 0;
@@ -330,14 +343,12 @@ const getCourseProgress = async (courseId, currentUser) => {
 
   const latestWatchPosition = plainWatchPositions
     .sort((left, right) => getWatchPositionUpdatedTime(right) - getWatchPositionUpdatedTime(left))[0] || null;
-  const latestStudyState = isPlainObject(latestWatchPosition?.studyState)
-    ? latestWatchPosition.studyState
-    : {};
+  const latestStudyState = parsePlainObject(latestWatchPosition?.studyState);
 
   lessons.forEach((lesson) => {
     const lessonId = Number(lesson.id);
     const watchPosition = watchPositionByLessonId.get(lessonId);
-    const studyState = isPlainObject(watchPosition?.studyState) ? watchPosition.studyState : {};
+    const studyState = parsePlainObject(watchPosition?.studyState);
     const hasStructuredStudyItems = countStudyContentItems(lesson) > 0;
 
     if (studyState.lessonCompleted === true) {

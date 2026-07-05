@@ -18,8 +18,8 @@ class ApiException implements Exception {
 
 class ApiClient {
   ApiClient({http.Client? client, SessionManager? sessionManager})
-      : _client = client ?? http.Client(),
-        _sessionManager = sessionManager ?? SessionManager();
+    : _client = client ?? http.Client(),
+      _sessionManager = sessionManager ?? SessionManager();
 
   final http.Client _client;
   final SessionManager _sessionManager;
@@ -31,9 +31,6 @@ class ApiClient {
 
   Future<Map<String, String>> _headers() async {
     final token = await _sessionManager.getToken();
-    // Debug log: token used for request
-    // ignore: avoid_print
-    print('[ApiClient] using token: ${token ?? '<null>'}');
     return {
       'Content-Type': 'application/json; charset=utf-8',
       'Accept': 'application/json',
@@ -43,14 +40,20 @@ class ApiClient {
 
   Future<dynamic> get(String path) async {
     try {
-      final response = await _client.get(_uri(path), headers: await _headers()).timeout(const Duration(seconds: 20));
+      final response = await _client
+          .get(_uri(path), headers: await _headers())
+          .timeout(const Duration(seconds: 20));
       return _handleResponse(response);
     } on TimeoutException {
-      throw ApiException('Kết nối máy chủ quá lâu. Kiểm tra backend đã chạy chưa.');
+      throw ApiException(
+        'Kết nối máy chủ quá lâu. Kiểm tra backend đã chạy chưa.',
+      );
     } on ApiException {
       rethrow;
     } catch (e) {
-      throw ApiException('Không gọi được API ${AppConfig.apiBaseUrl}. Nếu chạy Flutter Web hãy kiểm tra CORS backend. Chi tiết: $e');
+      throw ApiException(
+        'Không gọi được API ${AppConfig.apiBaseUrl}. Nếu chạy Flutter Web hãy kiểm tra CORS backend. Chi tiết: $e',
+      );
     }
   }
 
@@ -65,11 +68,15 @@ class ApiClient {
           .timeout(const Duration(seconds: 20));
       return _handleResponse(response);
     } on TimeoutException {
-      throw ApiException('Kết nối máy chủ quá lâu. Kiểm tra backend đã chạy chưa.');
+      throw ApiException(
+        'Kết nối máy chủ quá lâu. Kiểm tra backend đã chạy chưa.',
+      );
     } on ApiException {
       rethrow;
     } catch (e) {
-      throw ApiException('Không gọi được API ${AppConfig.apiBaseUrl}. Nếu chạy Flutter Web hãy kiểm tra CORS backend. Chi tiết: $e');
+      throw ApiException(
+        'Không gọi được API ${AppConfig.apiBaseUrl}. Nếu chạy Flutter Web hãy kiểm tra CORS backend. Chi tiết: $e',
+      );
     }
   }
 
@@ -84,11 +91,15 @@ class ApiClient {
           .timeout(const Duration(seconds: 20));
       return _handleResponse(response);
     } on TimeoutException {
-      throw ApiException('Kết nối máy chủ quá lâu. Kiểm tra backend đã chạy chưa.');
+      throw ApiException(
+        'Kết nối máy chủ quá lâu. Kiểm tra backend đã chạy chưa.',
+      );
     } on ApiException {
       rethrow;
     } catch (e) {
-      throw ApiException('Không gọi được API ${AppConfig.apiBaseUrl}. Nếu chạy Flutter Web hãy kiểm tra CORS backend. Chi tiết: $e');
+      throw ApiException(
+        'Không gọi được API ${AppConfig.apiBaseUrl}. Nếu chạy Flutter Web hãy kiểm tra CORS backend. Chi tiết: $e',
+      );
     }
   }
 

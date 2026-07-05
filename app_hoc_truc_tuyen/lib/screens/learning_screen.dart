@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/api_client.dart';
 import '../core/app_config.dart';
 import '../core/helpers.dart';
 import '../core/session_manager.dart';
 import '../models/course_model.dart';
+import '../models/user_model.dart';
 import '../services/lms_repository.dart';
 import '../widgets/app_widgets.dart';
 import 'quiz_screen.dart';
@@ -42,6 +44,7 @@ class _LearningScreenState extends State<LearningScreen>
 
   CourseDetailModel? _detail;
   CourseProgressModel? _courseProgress;
+  UserModel? _currentUser;
   LessonModel? _currentLesson;
   int? _currentLessonId;
   Map<String, bool> _viewedContentItems = {};
@@ -92,8 +95,6 @@ class _LearningScreenState extends State<LearningScreen>
     _isSyncingFromBackend = true;
     try {
       final progress = await _repo.getCourseProgress(widget.courseId);
-      // ignore: avoid_print
-      print('[LearningScreen] syncFromBackend -> progress resumeLessonId=${progress.resumeLessonId} resumePosition=${progress.resumePositionSeconds} completed=${progress.completedLessonIds.length}');
       if (!mounted) return;
 
       _completedLessonIds
@@ -112,8 +113,6 @@ class _LearningScreenState extends State<LearningScreen>
       // If backend has a different resume lesson than currently selected,
       // switch to it so cross-device resume is automatic.
       if (resumeLessonId != null && resumeLessonId != selectedLessonId) {
-        // ignore: avoid_print
-        print('[LearningScreen] switching to backend resume lesson $resumeLessonId');
         await _selectLesson(resumeLessonId);
         return;
       }
@@ -162,7 +161,7 @@ class _LearningScreenState extends State<LearningScreen>
   }
 
   Future<String> _studyStateKey(int lessonId) async {
-    final user = await _session.getLocalUser();
+    final user = _currentUser ?? await _session.getLocalUser();
     final userKey = user == null
         ? 'guest'
         : user.id != 0
@@ -266,7 +265,9 @@ class _LearningScreenState extends State<LearningScreen>
       final previousScore = previous is Map
           ? asDouble(previous['score'])
           : asDouble(previous);
-      final nextScore = value is Map ? asDouble(value['score']) : asDouble(value);
+      final nextScore = value is Map
+          ? asDouble(value['score'])
+          : asDouble(value);
       if (!quizCompletions.containsKey(key) || nextScore >= previousScore) {
         quizCompletions[key] = value;
       }
@@ -323,7 +324,10 @@ class _LearningScreenState extends State<LearningScreen>
 
     return keys
         .map((key) => values[key] ?? 0)
-        .fold<double>(0, (previous, value) => value > previous ? value : previous);
+        .fold<double>(
+          0,
+          (previous, value) => value > previous ? value : previous,
+        );
   }
 
   Map<String, double> _doubleMap(dynamic value) {
@@ -411,9 +415,9 @@ class _LearningScreenState extends State<LearningScreen>
       return;
     }
 
-      _syncedCompletedLessonIds.add(lesson.id);
-      _completedLessonIds.add(lesson.id);
-      try {
+    _syncedCompletedLessonIds.add(lesson.id);
+    _completedLessonIds.add(lesson.id);
+    try {
       final nextViewedItems = viewedItems ?? _viewedContentItems;
       await _repo.markLessonCompleted(
         lesson.id,
@@ -496,14 +500,14 @@ class _LearningScreenState extends State<LearningScreen>
     }
 
     final stored = hasBackendWatchPosition
-      ? backendState
-      : _mergeStudyState(localState, backendState);
+        ? backendState
+        : _mergeStudyState(localState, backendState);
     final storedViewed = _boolMap(stored['viewedContentItems']);
     final storedVideos = _doubleMap(stored['videoPositions']);
     final storedQuizzes = _doubleMap(stored['quizCompletions']);
     final resumeSeconds = hasBackendWatchPosition
-      ? asDouble(backendState['resumeSeconds'] ?? stored['resumeSeconds'])
-      : asDouble(stored['resumeSeconds']);
+        ? asDouble(backendState['resumeSeconds'] ?? stored['resumeSeconds'])
+        : asDouble(stored['resumeSeconds']);
     final lessonCompletedInBackend =
         stored['lessonCompleted'] == true ||
         (_courseProgress?.completedLessonIds.contains(lesson.id) ?? false);
@@ -646,12 +650,20 @@ class _LearningScreenState extends State<LearningScreen>
     });
 
     try {
+      final user = await _repo.validateOrRefreshSession();
+      if (user == null) {
+        throw ApiException(
+          'Phien dang nhap app khong hop le. Hay dang nhap lai dung tai khoan hoc vien da hoc tren web.',
+        );
+      }
+
       final detail = await _repo.getCourseDetail(widget.courseId);
 
       if (!mounted) return;
 
       setState(() {
         _detail = detail;
+        _currentUser = user;
       });
 
       var initialLessonId = widget.initialLessonId;
@@ -674,7 +686,9 @@ class _LearningScreenState extends State<LearningScreen>
         }
       } catch (_) {}
 
-      initialLessonId ??= detail.lessons.isNotEmpty ? detail.lessons.first.id : null;
+      initialLessonId ??= detail.lessons.isNotEmpty
+          ? detail.lessons.first.id
+          : null;
 
       if (initialLessonId != null) {
         await _selectLesson(initialLessonId);
@@ -703,7 +717,14 @@ class _LearningScreenState extends State<LearningScreen>
 
     try {
       try {
-        _courseProgress = await _repo.getCourseProgress(widget.courseId);
+        final progress = await _repo.getCourseProgress(widget.courseId);
+        _courseProgress = progress;
+        _completedLessonIds
+          ..clear()
+          ..addAll(progress.completedLessonIds);
+        _syncedCompletedLessonIds
+          ..clear()
+          ..addAll(progress.completedLessonIds);
       } catch (_) {}
 
       final lesson = await _repo.getLessonDetail(lessonId);
@@ -765,10 +786,7 @@ class _LearningScreenState extends State<LearningScreen>
       if (!mounted) return;
 
       setState(() {
-        _viewedContentItems = {
-          ..._viewedContentItems,
-          ...viewedItems,
-        };
+        _viewedContentItems = {..._viewedContentItems, ...viewedItems};
         _completedLessonIds.add(lesson.id);
       });
 
@@ -1231,24 +1249,35 @@ class _LearningScreenState extends State<LearningScreen>
 
   Widget _lessonTile(LessonModel lesson) {
     final selected = lesson.id == _currentLessonId;
+    final completed = _completedLessonIds.contains(lesson.id);
 
     return ListTile(
       selected: selected,
       selectedTileColor: const Color(0xFFEFF6FF),
       leading: CircleAvatar(
-        backgroundColor: selected ? AppColors.primary : const Color(0xFFEFF6FF),
+        backgroundColor: completed
+            ? Colors.green
+            : selected
+            ? AppColors.primary
+            : const Color(0xFFEFF6FF),
         child: Icon(
-          selected
+          completed
+              ? Icons.check_rounded
+              : selected
               ? Icons.play_arrow_rounded
               : Icons.play_circle_outline_rounded,
-          color: selected ? Colors.white : AppColors.primary,
+          color: completed || selected ? Colors.white : AppColors.primary,
         ),
       ),
       title: Text(
         lesson.title,
         style: TextStyle(
           fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
-          color: selected ? AppColors.primary : AppColors.ink,
+          color: completed
+              ? Colors.green
+              : selected
+              ? AppColors.primary
+              : AppColors.ink,
         ),
       ),
       subtitle: Text(
@@ -1256,8 +1285,10 @@ class _LearningScreenState extends State<LearningScreen>
             ? 'Có video bài học'
             : 'Bấm để xem nội dung bài học',
       ),
-      trailing: selected
-          ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
+      trailing: completed
+          ? const Icon(Icons.check_circle_rounded, color: Colors.green)
+          : selected
+          ? const Icon(Icons.play_arrow_rounded, color: AppColors.primary)
           : const Icon(Icons.chevron_right_rounded),
       onTap: () => _selectLesson(lesson.id),
     );
@@ -1373,23 +1404,20 @@ class _LearningScreenState extends State<LearningScreen>
   }
 
   Widget _segmentView(LessonModel lesson, LessonSegmentModel segment) {
-    final lessonCompleted = _completedLessonIds.contains(lesson.id);
     final visibleEntries = segment.contentItems
         .asMap()
         .entries
         .where((entry) => _isStudyContentItem(entry.value))
         .toList();
     final totalCount = visibleEntries.length;
-    final completedCount = lessonCompleted
-        ? totalCount
-        : visibleEntries.where((entry) {
-            return _isViewedWithAliases(
-              _viewedContentItems,
-              segment,
-              entry.value,
-              entry.key,
-            );
-          }).length;
+    final completedCount = visibleEntries.where((entry) {
+      return _isViewedWithAliases(
+        _viewedContentItems,
+        segment,
+        entry.value,
+        entry.key,
+      );
+    }).length;
     final isComplete = totalCount > 0 && completedCount >= totalCount;
 
     return Container(

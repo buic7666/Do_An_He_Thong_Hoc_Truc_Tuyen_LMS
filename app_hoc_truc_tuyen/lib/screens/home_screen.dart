@@ -28,14 +28,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadUser() async {
-    final user = await _repo.getLocalUser();
-    if (mounted) setState(() => _user = user);
+    try {
+      final user = await _repo.validateOrRefreshSession();
+      if (!mounted) return;
+      if (user == null) {
+        await _logout();
+        return;
+      }
+      setState(() => _user = user);
+    } catch (_) {
+      final user = await _repo.getLocalUser();
+      if (mounted) setState(() => _user = user);
+    }
   }
 
   Future<void> _logout() async {
     await _repo.logout();
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   @override
@@ -57,7 +70,11 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: Text(_titleByIndex(_currentIndex)),
         actions: [
-          IconButton(tooltip: 'Đăng xuất', onPressed: _logout, icon: const Icon(Icons.logout_outlined)),
+          IconButton(
+            tooltip: 'Đăng xuất',
+            onPressed: _logout,
+            icon: const Icon(Icons.logout_outlined),
+          ),
         ],
       ),
       body: IndexedStack(index: _currentIndex, children: pages),
@@ -65,11 +82,31 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (value) => setState(() => _currentIndex = value),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Trang chủ'),
-          NavigationDestination(icon: Icon(Icons.search_outlined), selectedIcon: Icon(Icons.search_rounded), label: 'Đăng ký'),
-          NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book_rounded), label: 'Của tôi'),
-          NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.workspace_premium_rounded), label: 'Lịch sử'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person_rounded), label: 'Hồ sơ'),
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: 'Trang chủ',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.search_outlined),
+            selectedIcon: Icon(Icons.search_rounded),
+            label: 'Đăng ký',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.menu_book_outlined),
+            selectedIcon: Icon(Icons.menu_book_rounded),
+            label: 'Của tôi',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.workspace_premium_rounded),
+            label: 'Lịch sử',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Hồ sơ',
+          ),
         ],
       ),
     );

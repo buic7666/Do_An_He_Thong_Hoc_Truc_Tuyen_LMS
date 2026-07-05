@@ -27,35 +27,49 @@ const ensureStudentEnrolled = async (user, courseId) => {
 
 const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
+const parsePlainObject = (value) => {
+  if (isPlainObject(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return isPlainObject(parsed) ? parsed : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  return {};
+};
+
 const toNumber = (value, fallback = 0) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 };
 
 const mergeStudyState = (previousState = {}, nextState = {}) => {
-  if (!isPlainObject(nextState)) {
-    return isPlainObject(previousState) ? previousState : {};
-  }
+  const previous = parsePlainObject(previousState);
+  const next = parsePlainObject(nextState);
+  const merged = { ...previous, ...next };
 
-  const previous = isPlainObject(previousState) ? previousState : {};
-  const merged = { ...previous, ...nextState };
-
-  if (isPlainObject(nextState.viewedContentItems)) {
+  if (isPlainObject(next.viewedContentItems)) {
     merged.viewedContentItems = {
       ...(isPlainObject(previous.viewedContentItems) ? previous.viewedContentItems : {}),
     };
-    Object.entries(nextState.viewedContentItems).forEach(([key, isViewed]) => {
+    Object.entries(next.viewedContentItems).forEach(([key, isViewed]) => {
       if (isViewed) {
         merged.viewedContentItems[key] = true;
       }
     });
   }
 
-  if (isPlainObject(nextState.videoPositions)) {
+  if (isPlainObject(next.videoPositions)) {
     const previousPositions = isPlainObject(previous.videoPositions) ? previous.videoPositions : {};
     merged.videoPositions = { ...previousPositions };
 
-    Object.entries(nextState.videoPositions).forEach(([key, value]) => {
+    Object.entries(next.videoPositions).forEach(([key, value]) => {
       merged.videoPositions[key] = Math.max(
         toNumber(previousPositions[key], 0),
         toNumber(value, 0),
@@ -63,11 +77,11 @@ const mergeStudyState = (previousState = {}, nextState = {}) => {
     });
   }
 
-  if (isPlainObject(nextState.quizCompletions)) {
+  if (isPlainObject(next.quizCompletions)) {
     const previousCompletions = isPlainObject(previous.quizCompletions) ? previous.quizCompletions : {};
     merged.quizCompletions = { ...previousCompletions };
 
-    Object.entries(nextState.quizCompletions).forEach(([key, value]) => {
+    Object.entries(next.quizCompletions).forEach(([key, value]) => {
       const previousScore = toNumber(previousCompletions[key]?.score ?? previousCompletions[key], -1);
       const nextScore = toNumber(value?.score ?? value, -1);
 
@@ -119,7 +133,7 @@ const getWatchPosition = async (lessonId, currentUser) => {
     lessonId: plain.lessonId,
     positionSeconds: plain.positionSeconds,
     lastWatchedAt: plain.lastWatchedAt,
-    studyState: isPlainObject(plain.studyState) ? plain.studyState : {},
+    studyState: parsePlainObject(plain.studyState),
   };
 };
 
@@ -173,7 +187,7 @@ const saveWatchPosition = async (lessonId, payload, currentUser) => {
     lessonId: plain.lessonId,
     positionSeconds: plain.positionSeconds,
     lastWatchedAt: plain.lastWatchedAt,
-    studyState: isPlainObject(plain.studyState) ? plain.studyState : {},
+    studyState: parsePlainObject(plain.studyState),
   };
 };
 

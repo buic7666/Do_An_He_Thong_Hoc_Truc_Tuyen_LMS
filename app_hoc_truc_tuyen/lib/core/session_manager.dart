@@ -9,7 +9,10 @@ class SessionManager {
   static const String userEmailKey = 'userEmail';
   static const String userRoleKey = 'userRole';
 
-  Future<void> saveSession({required String token, required UserModel user}) async {
+  Future<void> saveSession({
+    required String token,
+    required UserModel user,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final normalizedToken = token.trim();
 
@@ -43,8 +46,6 @@ class SessionManager {
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(tokenKey);
-    // ignore: avoid_print
-    print('[SessionManager] getToken -> ${token ?? '<null>'}');
     if (token == null || token.isEmpty) return null;
     return token;
   }
