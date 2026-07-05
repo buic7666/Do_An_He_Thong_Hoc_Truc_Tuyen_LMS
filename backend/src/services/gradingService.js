@@ -481,6 +481,18 @@ const gradeCloze = (studentAnswer, metadata) => {
     }
 
     const answerMap = studentAnswer && typeof studentAnswer === 'object' ? studentAnswer : {};
+    const getAnswerText = (value) => {
+      if (value == null) {
+        return '';
+      }
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return String(value);
+      }
+      if (typeof value === 'object') {
+        return String(value.text ?? value.answer ?? value.value ?? value.content ?? '');
+      }
+      return '';
+    };
     let weightedTotal = 0;
     let totalWeight = 0;
     const blanks = [];
@@ -530,7 +542,7 @@ const gradeCloze = (studentAnswer, metadata) => {
           : (inner?.correct != null ? [String(inner.correct)] : []);
 
         result = gradeShortAnswer(
-          { text: String(rawAnswer ?? '') },
+          { text: getAnswerText(rawAnswer) },
           {
             acceptedAnswers,
             caseSensitive: Boolean(inner?.caseSensitive),

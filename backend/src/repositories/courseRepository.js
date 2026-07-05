@@ -1,4 +1,4 @@
-const { Course, Lesson, User, Enrollment } = require('../models');
+const { Course, Lesson, User, Enrollment, LessonSegment } = require('../models');
 
 const findAll = async () => {
   return Course.findAll({
@@ -57,6 +57,23 @@ const findLessonsByCourseId = async (courseId) => {
   });
 };
 
+const findLessonsWithSegmentsByCourseId = async (courseId) => {
+  return Lesson.findAll({
+    where: { courseId },
+    include: [
+      {
+        model: LessonSegment,
+        as: 'segments',
+        attributes: ['id', 'lessonId', 'startTime', 'endTime', 'duration', 'title', 'orderIndex', 'contentItems'],
+      },
+    ],
+    order: [
+      ['orderIndex', 'ASC'],
+      [{ model: LessonSegment, as: 'segments' }, 'orderIndex', 'ASC'],
+    ],
+  });
+};
+
 const createCourse = async (payload) => {
   return Course.create(payload);
 };
@@ -66,5 +83,6 @@ module.exports = {
   findById,
   findByIdWithLessons,
   findLessonsByCourseId,
+  findLessonsWithSegmentsByCourseId,
   createCourse,
 };

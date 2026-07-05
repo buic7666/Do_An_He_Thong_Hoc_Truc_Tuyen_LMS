@@ -659,6 +659,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
       setGradingMap(map);
       setIsSubmitted(true);
       setResult(payload);
+      setShowResultDetails(true);
 
       if (onSubmit) {
         onSubmit(payload);
@@ -805,6 +806,20 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
         }));
       };
 
+      const getBlankTextValue = (key) => {
+        const rawValue = answerMap[key];
+        if (rawValue == null) {
+          return '';
+        }
+        if (typeof rawValue === 'string' || typeof rawValue === 'number') {
+          return String(rawValue);
+        }
+        if (typeof rawValue === 'object') {
+          return String(rawValue.text ?? rawValue.answer ?? rawValue.value ?? '');
+        }
+        return '';
+      };
+
       const renderInnerQuestionInput = (key, innerMeta, isSubmittedState, gradedItem) => {
         const innerType = String(innerMeta.type || 'SHORT_ANSWER').toUpperCase();
         const isCorrect = gradedItem ? Number(gradedItem.score || 0) > 0 : null;
@@ -870,7 +885,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
         }
 
         if (innerType === 'ESSAY') {
-          const val = answerMap[key] || '';
+          const val = getBlankTextValue(key);
           return (
             <textarea
               value={val}
@@ -881,7 +896,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
           );
         }
 
-        const val = answerMap[key] || '';
+        const val = getBlankTextValue(key);
 
         if (innerType === 'SHORT_ANSWER') {
           return (
@@ -891,7 +906,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
               onChange={(e) => onChangeBlank(key, e.target.value)}
               disabled={isSubmittedState}
               placeholder="Nhập câu trả lời ngắn..."
-              className={`cloze-blank ${isSubmittedState ? (isCorrect ? 'correct' : 'incorrect') : ''}`}
+              className={`cloze-blank cloze-short-answer ${isSubmittedState ? (isCorrect ? 'correct' : 'incorrect') : ''}`}
             />
           );
         }
@@ -1048,8 +1063,7 @@ const QuizTaker = ({ quizId, onBack, onSubmit, compact = false, previewMode = fa
       return (
         <div className="question-options">
           <input
-            className="option-text"
-            style={{ width: '100%', padding: 10, border: '1px solid #d1d5db', borderRadius: 8 }}
+            className="short-answer-input"
             value={value}
             onChange={(event) => setQuestionAnswer(question.id, 'SHORT_ANSWER', { text: event.target.value })}
             placeholder="Nhập câu trả lời ngắn..."
@@ -1325,6 +1339,13 @@ const QuizResult = ({ quiz, result, onBack }) => {
   const isPassed = result.isPassed;
   const questionCount = Array.isArray(quiz?.questions) ? quiz.questions.length : 0;
   const attemptAnswers = Array.isArray(attemptDetails?.answers) ? attemptDetails.answers : [];
+  const getAnswerScorePercent = (answerItem) => {
+    const score = Number(answerItem?.score || 0);
+    const rawMaxScore = Number(answerItem?.maxScore ?? answerItem?.gradingDetails?.maxScore ?? 100);
+    const maxScore = Number.isFinite(rawMaxScore) && rawMaxScore > 1 ? rawMaxScore : 100;
+    return Math.max(0, Math.min(100, maxScore === 100 ? score : (score / maxScore) * 100));
+  };
+  const isAnswerCorrectEnough = (answerItem) => getAnswerScorePercent(answerItem) >= 50;
 
   return (
     <div className="quiz-result">
@@ -1375,11 +1396,11 @@ const QuizResult = ({ quiz, result, onBack }) => {
           <>
             <div className="detail-item">
               <span className="detail-label">✅ Câu trả lời đúng:</span>
-              <span className="detail-value">{attemptAnswers.filter(a => Number(a.score || 0) >= Number(a.maxScore || 1) * 0.5).length}/{questionCount}</span>
+              <span className="detail-value">{attemptAnswers.filter(isAnswerCorrectEnough).length}/{questionCount}</span>
             </div>
             <div className="detail-item">
               <span className="detail-label">❌ Câu trả lời sai:</span>
-              <span className="detail-value">{attemptAnswers.filter(a => Number(a.score || 0) < Number(a.maxScore || 1) * 0.5).length}/{questionCount}</span>
+              <span className="detail-value">{attemptAnswers.filter((a) => !isAnswerCorrectEnough(a)).length}/{questionCount}</span>
             </div>
           </>
         )}
@@ -1389,7 +1410,7 @@ const QuizResult = ({ quiz, result, onBack }) => {
         <div className="result-breakdown__header">
           <h3>📋 Chi tiết chấm điểm từng câu</h3>
           <p>Mỗi câu hiển thị điểm, câu trả lời của bạn và tiêu chí chấm tương ứng.</p>
-          
+
           {attemptAnswers.length > 0 && (
             <div style={{
               marginTop: '12px',
@@ -1400,8 +1421,8 @@ const QuizResult = ({ quiz, result, onBack }) => {
               borderRadius: '6px',
               fontSize: '14px'
             }}>
-              <span>✅ Đúng: <strong>{attemptAnswers.filter(a => Number(a.score || 0) >= Number(a.maxScore || 1) * 0.5).length}</strong></span>
-              <span>❌ Sai: <strong>{attemptAnswers.filter(a => Number(a.score || 0) < Number(a.maxScore || 1) * 0.5).length}</strong></span>
+              <span>✅ Đúng: <strong>{attemptAnswers.filter(isAnswerCorrectEnough).length}</strong></span>
+              <span>❌ Sai: <strong>{attemptAnswers.filter((a) => !isAnswerCorrectEnough(a)).length}</strong></span>
             </div>
           )}
         </div>
@@ -1416,6 +1437,8 @@ const QuizResult = ({ quiz, result, onBack }) => {
           ? attemptAnswers.map((item, index) => {
               const questionType = item.question?.type || item.answerType || 'MULTIPLE_CHOICE';
               const detailLines = formatGradingDetails(item);
+              const itemScorePercent = getAnswerScorePercent(item);
+              const itemPassed = isAnswerCorrectEnough(item);
 
               return (
                 <article className="result-question-card" key={`answer-${item.questionId}`}>
@@ -1435,8 +1458,8 @@ const QuizResult = ({ quiz, result, onBack }) => {
                       )}
                     </div>
                     <div className="result-question-card__score" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {Number(item.score || 0) >= Number(item.maxScore || 1) * 0.5 ? '✅' : '❌'}
-                      <span>{Number(item.score || 0).toFixed(1)}/{Number(item.maxScore || 1).toFixed(1)} điểm</span>
+                      {itemPassed ? 'Đạt' : 'Chưa đạt'}
+                      <span>{itemScorePercent.toFixed(1)}%</span>
                     </div>
                   </div>
 

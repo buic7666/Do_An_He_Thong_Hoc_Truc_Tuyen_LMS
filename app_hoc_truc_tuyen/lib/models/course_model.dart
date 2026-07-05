@@ -25,7 +25,9 @@ class CourseModel {
 
   factory CourseModel.fromJson(dynamic json) {
     final map = asMap(json);
-    final instructor = asMap(map['instructor'] ?? map['teacher'] ?? map['Instructor']);
+    final instructor = asMap(
+      map['instructor'] ?? map['teacher'] ?? map['Instructor'],
+    );
     final stats = asMap(map['stats']);
     final categoryMap = asMap(map['category']);
     final name = asString(
@@ -35,13 +37,22 @@ class CourseModel {
     return CourseModel(
       id: asInt(map['id']),
       title: asString(map['title'] ?? map['name'], fallback: 'Khóa học'),
-      description: stripHtml(asString(map['description'] ?? map['shortDescription'])),
+      description: stripHtml(
+        asString(map['description'] ?? map['shortDescription']),
+      ),
       price: asDouble(map['price']),
       instructorName: name,
-      category: asString(categoryMap['name'] ?? map['categoryName'] ?? map['category'], fallback: 'Chưa phân loại'),
+      category: asString(
+        categoryMap['name'] ?? map['categoryName'] ?? map['category'],
+        fallback: 'Chưa phân loại',
+      ),
       durationText: asString(map['duration'] ?? map['durationText']),
-      lessonsCount: asInt(map['lessonsCount'] ?? stats['totalLessons'] ?? map['totalLessons']),
-      totalStudents: asInt(map['totalStudents'] ?? stats['totalStudents'] ?? map['studentsCount']),
+      lessonsCount: asInt(
+        map['lessonsCount'] ?? stats['totalLessons'] ?? map['totalLessons'],
+      ),
+      totalStudents: asInt(
+        map['totalStudents'] ?? stats['totalStudents'] ?? map['studentsCount'],
+      ),
     );
   }
 }
@@ -106,6 +117,10 @@ class CourseProgressModel {
     this.completedLessons = 0,
     this.completionPercent = 0,
     this.completedLessonIds = const [],
+    this.resumeLessonId = 0,
+    this.resumePositionSeconds = 0,
+    this.resumeLastWatchedAt = '',
+    this.resumeStudyState = const {},
   });
 
   final int courseId;
@@ -113,6 +128,10 @@ class CourseProgressModel {
   final int completedLessons;
   final double completionPercent;
   final List<int> completedLessonIds;
+  final int resumeLessonId;
+  final double resumePositionSeconds;
+  final String resumeLastWatchedAt;
+  final Map<String, dynamic> resumeStudyState;
 
   bool get isCompleted => totalLessons > 0 && completedLessons >= totalLessons;
 
@@ -127,7 +146,13 @@ class CourseProgressModel {
       totalLessons: asInt(map['totalLessons']),
       completedLessons: asInt(map['completedLessons']),
       completionPercent: asDouble(map['completionPercent']),
-      completedLessonIds: asList(map['completedLessonIds']).map(asInt).where((id) => id > 0).toList(),
+      completedLessonIds: asList(
+        map['completedLessonIds'],
+      ).map(asInt).where((id) => id > 0).toList(),
+      resumeLessonId: asInt(map['resumeLessonId']),
+      resumePositionSeconds: asDouble(map['resumePositionSeconds']),
+      resumeLastWatchedAt: asString(map['resumeLastWatchedAt']),
+      resumeStudyState: asMap(map['resumeStudyState']),
     );
   }
 }
@@ -159,7 +184,10 @@ class EnrollmentModel {
       courseId: asInt(map['courseId'] ?? courseMap['id']),
       status: asString(map['status'], fallback: 'active'),
       progress: asInt(map['progress']),
-      paymentStatus: asString(map['paymentStatus'], fallback: map['status'] == 'active' ? 'paid' : ''),
+      paymentStatus: asString(
+        map['paymentStatus'],
+        fallback: map['status'] == 'active' ? 'paid' : '',
+      ),
       createdAt: asString(map['createdAt']),
       course: courseMap.isEmpty ? null : CourseModel.fromJson(courseMap),
     );
@@ -189,8 +217,11 @@ class LessonModel {
 
   factory LessonModel.fromJson(dynamic json) {
     final map = asMap(json);
-    final segments = asList(map['segments'] ?? map['lessonSegments']).map(LessonSegmentModel.fromJson).toList()
-      ..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    final segments =
+        asList(
+            map['segments'] ?? map['lessonSegments'],
+          ).map(LessonSegmentModel.fromJson).toList()
+          ..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
     return LessonModel(
       id: asInt(map['id']),
       courseId: asInt(map['courseId']),
@@ -222,8 +253,9 @@ class LessonSegmentModel {
   factory LessonSegmentModel.fromJson(dynamic json) {
     final map = asMap(json);
     final rawItems = map['contentItems'] ?? map['items'] ?? map['contents'];
-    final items = asList(rawItems).map(ContentItemModel.fromJson).toList()
-      ..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+    final items = asList(rawItems).asMap().entries.map((entry) {
+      return ContentItemModel.fromJsonWithIndex(entry.value, entry.key);
+    }).toList()..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
     return LessonSegmentModel(
       id: asInt(map['id']),
       title: asString(map['title'], fallback: 'Phần học'),
@@ -242,6 +274,7 @@ class ContentItemModel {
     required this.url,
     this.quizId = 0,
     this.orderIndex = 0,
+    this.originalIndex = -1,
     this.startTime,
     this.endTime,
   });
@@ -252,42 +285,79 @@ class ContentItemModel {
   final String url;
   final int quizId;
   final int orderIndex;
+  final int originalIndex;
   final int? startTime;
   final int? endTime;
 
   bool get isText => type == 'text' || type == 'question';
   bool get isDocument => type == 'document' || type == 'file' || type == 'pdf';
-  bool get isVideo => type == 'videoClip' || type == 'video' || type == 'youtube';
+  bool get isVideo =>
+      type == 'videoClip' || type == 'video' || type == 'youtube';
   bool get isQuiz => type == 'quiz' || type == 'exercise';
 
   factory ContentItemModel.fromJson(dynamic json) {
+    return ContentItemModel.fromJsonWithIndex(json, -1);
+  }
+
+  factory ContentItemModel.fromJsonWithIndex(dynamic json, int originalIndex) {
     final map = asMap(json);
     final metadata = asMap(map['metadata']);
     final value = map['value'];
     final content = map['content'];
-    final contentBlocks = asList(map['contentBlocks'] ?? metadata['contentBlocks'] ?? metadata['blocks']);
+    final contentBlocks = asList(
+      map['contentBlocks'] ?? metadata['contentBlocks'] ?? metadata['blocks'],
+    );
 
     String text = '';
     String url = '';
 
     if (value is Map || content is Map) {
       final source = asMap(value is Map ? value : content);
-      text = asString(source['text'] ?? source['content'] ?? source['description'] ?? source['html']);
-      url = asString(source['url'] ?? source['fileUrl'] ?? source['documentUrl'] ?? source['resourceUrl'] ?? source['videoUrl']);
+      text = asString(
+        source['text'] ??
+            source['content'] ??
+            source['description'] ??
+            source['html'],
+      );
+      url = asString(
+        source['url'] ??
+            source['fileUrl'] ??
+            source['documentUrl'] ??
+            source['resourceUrl'] ??
+            source['videoUrl'],
+      );
     } else {
       text = asString(value ?? content ?? map['text'] ?? map['description']);
-      url = asString(map['url'] ?? map['fileUrl'] ?? map['documentUrl'] ?? map['resourceUrl'] ?? map['videoUrl']);
+      url = asString(
+        map['url'] ??
+            map['fileUrl'] ??
+            map['documentUrl'] ??
+            map['resourceUrl'] ??
+            map['videoUrl'],
+      );
     }
 
     if (text.trim().isEmpty && contentBlocks.isNotEmpty) {
       text = contentBlocks
-          .map((block) => asString(asMap(block)['text'] ?? asMap(block)['content'] ?? asMap(block)['html']))
+          .map(
+            (block) => asString(
+              asMap(block)['text'] ??
+                  asMap(block)['content'] ??
+                  asMap(block)['html'],
+            ),
+          )
           .where((item) => item.trim().isNotEmpty)
           .join('\n');
     }
 
     if (url.trim().isEmpty) {
-      url = asString(metadata['url'] ?? metadata['fileUrl'] ?? metadata['documentUrl'] ?? metadata['resourceUrl'] ?? metadata['videoUrl']);
+      url = asString(
+        metadata['url'] ??
+            metadata['fileUrl'] ??
+            metadata['documentUrl'] ??
+            metadata['resourceUrl'] ??
+            metadata['videoUrl'],
+      );
     }
 
     int? nullableInt(dynamic value) {
@@ -303,6 +373,7 @@ class ContentItemModel {
       url: url,
       quizId: asInt(map['quizId'] ?? metadata['quizId']),
       orderIndex: asInt(map['orderIndex']),
+      originalIndex: originalIndex,
       startTime: nullableInt(map['startTime'] ?? metadata['startTime']),
       endTime: nullableInt(map['endTime'] ?? metadata['endTime']),
     );

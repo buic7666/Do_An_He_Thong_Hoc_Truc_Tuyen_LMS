@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_config.dart';
 import '../core/helpers.dart';
+import '../core/session_manager.dart';
 import '../models/course_model.dart';
 import '../services/lms_repository.dart';
 import '../widgets/app_widgets.dart';
@@ -23,8 +28,10 @@ class LearningScreen extends StatefulWidget {
   State<LearningScreen> createState() => _LearningScreenState();
 }
 
-class _LearningScreenState extends State<LearningScreen> {
+class _LearningScreenState extends State<LearningScreen>
+    with WidgetsBindingObserver {
   final LmsRepository _repo = LmsRepository();
+  final SessionManager _session = SessionManager();
   final ScrollController _scrollController = ScrollController();
 
   bool _loading = true;
@@ -34,19 +41,600 @@ class _LearningScreenState extends State<LearningScreen> {
   String _error = '';
 
   CourseDetailModel? _detail;
+  CourseProgressModel? _courseProgress;
   LessonModel? _currentLesson;
   int? _currentLessonId;
+  Map<String, bool> _viewedContentItems = {};
+  Map<String, double> _videoPositions = {};
+  Map<String, double> _quizScores = {};
+  final Set<int> _completedLessonIds = {};
+  final Set<int> _syncedCompletedLessonIds = {};
+  Timer? _autoSyncTimer;
+  bool _isSyncingFromBackend = false;
+
+  static const Duration _autoSyncInterval = Duration(seconds: 12);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    _startAutoSync();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autoSyncTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncFromBackendSilently();
+    }
+  }
+
+  void _startAutoSync() {
+    _autoSyncTimer?.cancel();
+    _autoSyncTimer = Timer.periodic(_autoSyncInterval, (_) {
+      _syncFromBackendSilently();
+    });
+  }
+
+  Future<void> _syncFromBackendSilently() async {
+    if (!mounted || _isSyncingFromBackend || _loading || _lessonLoading) {
+      return;
+    }
+
+    _isSyncingFromBackend = true;
+    try {
+      final progress = await _repo.getCourseProgress(widget.courseId);
+      // ignore: avoid_print
+      print('[LearningScreen] syncFromBackend -> progress resumeLessonId=${progress.resumeLessonId} resumePosition=${progress.resumePositionSeconds} completed=${progress.completedLessonIds.length}');
+      if (!mounted) return;
+
+      _completedLessonIds
+        ..clear()
+        ..addAll(progress.completedLessonIds);
+
+      setState(() {
+        _courseProgress = progress;
+      });
+
+      final resumeLessonId = progress.resumeLessonId > 0
+          ? progress.resumeLessonId
+          : null;
+      final selectedLessonId = _currentLessonId;
+
+      // If backend has a different resume lesson than currently selected,
+      // switch to it so cross-device resume is automatic.
+      if (resumeLessonId != null && resumeLessonId != selectedLessonId) {
+        // ignore: avoid_print
+        print('[LearningScreen] switching to backend resume lesson $resumeLessonId');
+        await _selectLesson(resumeLessonId);
+        return;
+      }
+
+      final targetLessonId = selectedLessonId ?? resumeLessonId;
+
+      if (targetLessonId == null) return;
+
+      if (selectedLessonId == null) {
+        await _selectLesson(targetLessonId);
+        return;
+      }
+
+      final lesson = _currentLesson;
+      if (lesson != null && lesson.id == selectedLessonId) {
+        await _loadStudyStateForLesson(
+          lesson,
+          pushToBackend: false,
+          silent: true,
+        );
+      }
+    } catch (_) {
+      // Keep UX smooth; next cycle will retry automatically.
+    } finally {
+      _isSyncingFromBackend = false;
+    }
+  }
+
+  String _contentKey(LessonSegmentModel segment, int itemIndex) {
+    return '${segment.id}-$itemIndex';
+  }
+
+  String _contentProgressKey(
+    LessonSegmentModel segment,
+    ContentItemModel item,
+    int itemIndex,
+  ) {
+    final originalIndex = item.originalIndex >= 0
+        ? item.originalIndex
+        : itemIndex;
+    return _contentKey(segment, originalIndex);
+  }
+
+  bool _isStudyContentItem(ContentItemModel item) {
+    return item.type.trim().toLowerCase() != 'question';
+  }
+
+  Future<String> _studyStateKey(int lessonId) async {
+    final user = await _session.getLocalUser();
+    final userKey = user == null
+        ? 'guest'
+        : user.id != 0
+        ? '${user.id}'
+        : user.email;
+    return 'lms-study-state:$userKey:${widget.courseId}:$lessonId';
+  }
+
+  Future<Map<String, dynamic>> _readStudyState(int lessonId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(await _studyStateKey(lessonId));
+    if (raw == null || raw.trim().isEmpty) return {};
+
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map<String, dynamic> ? decoded : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> _writeStudyState(
+    int lessonId,
+    Map<String, dynamic> nextState,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = await _studyStateKey(lessonId);
+    final previous = await _readStudyState(lessonId);
+    final merged = <String, dynamic>{
+      ...previous,
+      ...nextState,
+      'updatedAt': DateTime.now().toIso8601String(),
+    };
+
+    if (nextState['viewedContentItems'] is Map) {
+      merged['viewedContentItems'] = {
+        ...(previous['viewedContentItems'] is Map
+            ? previous['viewedContentItems'] as Map
+            : {}),
+        ...(nextState['viewedContentItems'] as Map),
+      };
+    }
+
+    if (nextState['videoPositions'] is Map) {
+      merged['videoPositions'] = {
+        ...(previous['videoPositions'] is Map
+            ? previous['videoPositions'] as Map
+            : {}),
+        ...(nextState['videoPositions'] as Map),
+      };
+    }
+
+    if (nextState['quizCompletions'] is Map) {
+      merged['quizCompletions'] = {
+        ...(previous['quizCompletions'] is Map
+            ? previous['quizCompletions'] as Map
+            : {}),
+        ...(nextState['quizCompletions'] as Map),
+      };
+    }
+
+    await prefs.setString(key, jsonEncode(merged));
+
+    try {
+      await _repo.saveLessonWatchPosition(
+        lessonId,
+        positionSeconds: asDouble(merged['resumeSeconds']),
+        studyState: Map<String, dynamic>.from(merged),
+      );
+    } catch (_) {
+      // SharedPreferences is kept as an offline cache; the next successful
+      // interaction will merge and push this state again.
+    }
+  }
+
+  Map<String, dynamic> _mergeStudyState(
+    Map<String, dynamic> localState,
+    Map<String, dynamic> backendState,
+  ) {
+    final merged = <String, dynamic>{...localState, ...backendState};
+    merged['viewedContentItems'] = {
+      ...asMap(localState['viewedContentItems']),
+      ...asMap(backendState['viewedContentItems']),
+    };
+
+    final localPositions = asMap(localState['videoPositions']);
+    final backendPositions = asMap(backendState['videoPositions']);
+    final videoPositions = <String, dynamic>{...localPositions};
+    backendPositions.forEach((key, value) {
+      final previous = asDouble(videoPositions[key]);
+      final next = asDouble(value);
+      videoPositions[key] = next > previous ? next : previous;
+    });
+    merged['videoPositions'] = videoPositions;
+
+    final localQuizzes = asMap(localState['quizCompletions']);
+    final backendQuizzes = asMap(backendState['quizCompletions']);
+    final quizCompletions = <String, dynamic>{...localQuizzes};
+    backendQuizzes.forEach((key, value) {
+      final previous = quizCompletions[key];
+      final previousScore = previous is Map
+          ? asDouble(previous['score'])
+          : asDouble(previous);
+      final nextScore = value is Map ? asDouble(value['score']) : asDouble(value);
+      if (!quizCompletions.containsKey(key) || nextScore >= previousScore) {
+        quizCompletions[key] = value;
+      }
+    });
+    merged['quizCompletions'] = quizCompletions;
+
+    return merged;
+  }
+
+  Map<String, bool> _boolMap(dynamic value) {
+    if (value is! Map) return {};
+    return value.map((key, value) => MapEntry('$key', value == true));
+  }
+
+  bool _isViewedWithAliases(
+    Map<String, bool> viewedItems,
+    LessonSegmentModel segment,
+    ContentItemModel item,
+    int itemIndex,
+  ) {
+    final keys = <String>{
+      _contentProgressKey(segment, item, itemIndex),
+      _contentKey(segment, itemIndex),
+      if (item.originalIndex >= 0) _contentKey(segment, item.originalIndex),
+    };
+
+    return keys.any((key) => viewedItems[key] == true);
+  }
+
+  void _markViewedAliases(
+    Map<String, bool> viewedItems,
+    LessonSegmentModel segment,
+    ContentItemModel item,
+    int itemIndex,
+  ) {
+    viewedItems[_contentProgressKey(segment, item, itemIndex)] = true;
+    viewedItems[_contentKey(segment, itemIndex)] = true;
+    if (item.originalIndex >= 0) {
+      viewedItems[_contentKey(segment, item.originalIndex)] = true;
+    }
+  }
+
+  double _valueWithAliases(
+    Map<String, double> values,
+    LessonSegmentModel segment,
+    ContentItemModel item,
+    int itemIndex,
+  ) {
+    final keys = <String>[
+      _contentProgressKey(segment, item, itemIndex),
+      _contentKey(segment, itemIndex),
+      if (item.originalIndex >= 0) _contentKey(segment, item.originalIndex),
+    ];
+
+    return keys
+        .map((key) => values[key] ?? 0)
+        .fold<double>(0, (previous, value) => value > previous ? value : previous);
+  }
+
+  Map<String, double> _doubleMap(dynamic value) {
+    if (value is! Map) return {};
+    return value.map((key, value) {
+      final score = value is Map ? asDouble(value['score']) : asDouble(value);
+      return MapEntry('$key', score);
+    });
+  }
+
+  bool _videoReachedHalf(double position, int? startTime, int? endTime) {
+    final start = (startTime ?? 0).toDouble();
+    final end = (endTime ?? 0).toDouble();
+    if (end <= start) return false;
+    return position >= start + ((end - start) * 0.5);
+  }
+
+  bool _isLessonCompletedByViewed(
+    LessonModel lesson,
+    Map<String, bool> viewedItems,
+  ) {
+    var totalItems = 0;
+    var completedItems = 0;
+
+    for (final segment in lesson.segments) {
+      for (var index = 0; index < segment.contentItems.length; index++) {
+        final item = segment.contentItems[index];
+        if (!_isStudyContentItem(item)) {
+          continue;
+        }
+
+        totalItems += 1;
+        if (_isViewedWithAliases(viewedItems, segment, item, index)) {
+          completedItems += 1;
+        }
+      }
+    }
+
+    return totalItems > 0 && completedItems >= totalItems;
+  }
+
+  Map<String, bool> _allStudyContentViewed(LessonModel lesson) {
+    final viewedItems = <String, bool>{};
+
+    for (final segment in lesson.segments) {
+      for (var index = 0; index < segment.contentItems.length; index++) {
+        final item = segment.contentItems[index];
+        if (_isStudyContentItem(item)) {
+          viewedItems[_contentProgressKey(segment, item, index)] = true;
+          viewedItems[_contentKey(segment, index)] = true;
+          if (item.originalIndex >= 0) {
+            viewedItems[_contentKey(segment, item.originalIndex)] = true;
+          }
+        }
+      }
+    }
+
+    return viewedItems;
+  }
+
+  Map<String, dynamic> _buildLessonStudyState(
+    Map<String, bool> viewedItems, {
+    double resumeSeconds = 0,
+  }) {
+    return {
+      'viewedContentItems': viewedItems,
+      'videoPositions': _videoPositions,
+      'quizCompletions': _quizScores,
+      'resumeSeconds': resumeSeconds,
+    };
+  }
+
+  Future<void> _syncLessonCompletionIfNeeded(
+    LessonModel lesson, {
+    Map<String, bool>? viewedItems,
+  }) async {
+    if (_syncedCompletedLessonIds.contains(lesson.id)) {
+      return;
+    }
+
+    if (!_isLessonCompletedByViewed(
+      lesson,
+      viewedItems ?? _viewedContentItems,
+    )) {
+      return;
+    }
+
+      _syncedCompletedLessonIds.add(lesson.id);
+      _completedLessonIds.add(lesson.id);
+      try {
+      final nextViewedItems = viewedItems ?? _viewedContentItems;
+      await _repo.markLessonCompleted(
+        lesson.id,
+        studyState: {
+          ..._buildLessonStudyState(nextViewedItems),
+          'lessonCompleted': true,
+          'lessonCompletedAt': DateTime.now().toIso8601String(),
+        },
+      );
+      if (mounted) {
+        setState(() {
+          final progress = _courseProgress;
+          if (progress != null &&
+              !progress.completedLessonIds.contains(lesson.id)) {
+            final completedLessonIds = [
+              ...progress.completedLessonIds,
+              lesson.id,
+            ];
+            final completedLessons = completedLessonIds.length;
+            _courseProgress = CourseProgressModel(
+              courseId: progress.courseId,
+              totalLessons: progress.totalLessons,
+              completedLessons: completedLessons,
+              completionPercent: progress.totalLessons > 0
+                  ? (completedLessons * 100) / progress.totalLessons
+                  : progress.completionPercent,
+              completedLessonIds: completedLessonIds,
+              resumeLessonId: progress.resumeLessonId,
+              resumePositionSeconds: progress.resumePositionSeconds,
+              resumeLastWatchedAt: progress.resumeLastWatchedAt,
+              resumeStudyState: progress.resumeStudyState,
+            );
+          }
+        });
+      }
+    } catch (_) {
+      _syncedCompletedLessonIds.remove(lesson.id);
+    }
+  }
+
+  void _markContentViewed(String key) {
+    if (_viewedContentItems[key] == true) return;
+    final nextViewedItems = {..._viewedContentItems, key: true};
+    setState(() {
+      _viewedContentItems = nextViewedItems;
+    });
+    final lessonId = _currentLessonId;
+    if (lessonId != null) {
+      _writeStudyState(lessonId, {
+        'viewedContentItems': {key: true},
+      });
+    }
+    final lesson = _currentLesson;
+    if (lesson != null) {
+      _syncLessonCompletionIfNeeded(lesson, viewedItems: nextViewedItems);
+    }
+  }
+
+  Future<void> _loadStudyStateForLesson(
+    LessonModel lesson, {
+    bool pushToBackend = true,
+    bool silent = false,
+  }) async {
+    final localState = await _readStudyState(lesson.id);
+    Map<String, dynamic> backendState = {};
+    Object? watchPositionError;
+    var hasBackendWatchPosition = false;
+
+    try {
+      final watchPosition = await _repo.getLessonWatchPosition(lesson.id);
+      backendState = asMap(watchPosition['studyState']);
+      final backendResumeSeconds = asDouble(watchPosition['positionSeconds']);
+      if (backendResumeSeconds > 0) {
+        backendState['resumeSeconds'] = backendResumeSeconds;
+      }
+      hasBackendWatchPosition = true;
+    } catch (error) {
+      watchPositionError = error;
+      backendState = {};
+    }
+
+    final stored = hasBackendWatchPosition
+      ? backendState
+      : _mergeStudyState(localState, backendState);
+    final storedViewed = _boolMap(stored['viewedContentItems']);
+    final storedVideos = _doubleMap(stored['videoPositions']);
+    final storedQuizzes = _doubleMap(stored['quizCompletions']);
+    final resumeSeconds = hasBackendWatchPosition
+      ? asDouble(backendState['resumeSeconds'] ?? stored['resumeSeconds'])
+      : asDouble(stored['resumeSeconds']);
+    final lessonCompletedInBackend =
+        stored['lessonCompleted'] == true ||
+        (_courseProgress?.completedLessonIds.contains(lesson.id) ?? false);
+    final nextViewed = <String, bool>{};
+
+    if (lessonCompletedInBackend) {
+      _completedLessonIds.add(lesson.id);
+      nextViewed.addAll(_allStudyContentViewed(lesson));
+    }
+
+    for (final segment in lesson.segments) {
+      for (var index = 0; index < segment.contentItems.length; index++) {
+        final item = segment.contentItems[index];
+        if (!_isStudyContentItem(item)) {
+          continue;
+        }
+
+        final key = _contentProgressKey(segment, item, index);
+        final canonicalKey = _contentKey(segment, index);
+        final originalKey = item.originalIndex >= 0
+            ? _contentKey(segment, item.originalIndex)
+            : canonicalKey;
+
+        if (_isViewedWithAliases(nextViewed, segment, item, index)) {
+          continue;
+        }
+
+        if (_isViewedWithAliases(storedViewed, segment, item, index)) {
+          _markViewedAliases(nextViewed, segment, item, index);
+          continue;
+        }
+
+        if (item.isVideo) {
+          final start = (item.startTime ?? 0).toDouble();
+          final end = (item.endTime ?? 0).toDouble();
+          final canUseResumeSeconds =
+              resumeSeconds > start && (end <= start || resumeSeconds <= end);
+          final savedVideoPosition = _valueWithAliases(
+            storedVideos,
+            segment,
+            item,
+            index,
+          );
+          final videoPosition = savedVideoPosition > 0
+              ? savedVideoPosition
+              : (canUseResumeSeconds ? resumeSeconds : 0.0);
+          if (videoPosition > 0) {
+            storedVideos[key] = videoPosition;
+            storedVideos[canonicalKey] = videoPosition;
+            storedVideos[originalKey] = videoPosition;
+          }
+
+          if (_videoReachedHalf(videoPosition, item.startTime, item.endTime)) {
+            _markViewedAliases(nextViewed, segment, item, index);
+          }
+        } else if (item.isQuiz) {
+          var quizScore = _valueWithAliases(
+            storedQuizzes,
+            segment,
+            item,
+            index,
+          );
+          if (quizScore < 50 && item.quizId > 0) {
+            try {
+              final latestAttempt = await _repo.getLatestQuizAttempt(
+                item.quizId,
+              );
+              quizScore = latestAttempt?.totalScore.toDouble() ?? quizScore;
+              if (quizScore > 0) {
+                storedQuizzes[key] = quizScore;
+                storedQuizzes[canonicalKey] = quizScore;
+                storedQuizzes[originalKey] = quizScore;
+              }
+            } catch (_) {}
+          }
+
+          if (quizScore >= 50) {
+            _markViewedAliases(nextViewed, segment, item, index);
+          }
+        } else if (_isViewedWithAliases(storedViewed, segment, item, index)) {
+          _markViewedAliases(nextViewed, segment, item, index);
+        }
+      }
+    }
+
+    if (!mounted) return;
+    if (!silent && watchPositionError != null && localState.isEmpty) {
+      showSnack(
+        context,
+        'ChÆ°a láº¥y Ä‘Æ°á»£c tiáº¿n Ä‘á»™ tá»« backend: ${safeError(watchPositionError)}',
+      );
+    }
+
+    setState(() {
+      _viewedContentItems = nextViewed;
+      _videoPositions = storedVideos;
+      _quizScores = storedQuizzes;
+      if (lessonCompletedInBackend) {
+        _completedLessonIds.add(lesson.id);
+      }
+    });
+
+    final nextStudyState = {
+      ...stored,
+      'viewedContentItems': {...storedViewed, ...nextViewed},
+      'videoPositions': storedVideos,
+      'quizCompletions': storedQuizzes,
+      'resumeSeconds': resumeSeconds,
+      if (lessonCompletedInBackend ||
+          _isLessonCompletedByViewed(lesson, {...storedViewed, ...nextViewed}))
+        'lessonCompleted': true,
+      'updatedAt': DateTime.now().toIso8601String(),
+    };
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      await _studyStateKey(lesson.id),
+      jsonEncode(nextStudyState),
+    );
+
+    if (pushToBackend) {
+      try {
+        await _repo.saveLessonWatchPosition(
+          lesson.id,
+          positionSeconds: resumeSeconds,
+          studyState: Map<String, dynamic>.from(nextStudyState),
+        );
+      } catch (_) {}
+    }
+
+    await _syncLessonCompletionIfNeeded(lesson, viewedItems: nextViewed);
   }
 
   Future<void> _load() async {
@@ -66,8 +654,30 @@ class _LearningScreenState extends State<LearningScreen> {
         _detail = detail;
       });
 
-      if (widget.initialLessonId != null) {
-        await _selectLesson(widget.initialLessonId!);
+      var initialLessonId = widget.initialLessonId;
+      try {
+        final progress = await _repo.getCourseProgress(widget.courseId);
+        _courseProgress = progress;
+        _completedLessonIds
+          ..clear()
+          ..addAll(progress.completedLessonIds);
+        _syncedCompletedLessonIds
+          ..clear()
+          ..addAll(progress.completedLessonIds);
+        if (initialLessonId == null) {
+          final hasResumeLesson = detail.lessons.any(
+            (lesson) => lesson.id == progress.resumeLessonId,
+          );
+          if (hasResumeLesson) {
+            initialLessonId = progress.resumeLessonId;
+          }
+        }
+      } catch (_) {}
+
+      initialLessonId ??= detail.lessons.isNotEmpty ? detail.lessons.first.id : null;
+
+      if (initialLessonId != null) {
+        await _selectLesson(initialLessonId);
       }
     } catch (e) {
       if (mounted) {
@@ -92,7 +702,12 @@ class _LearningScreenState extends State<LearningScreen> {
     });
 
     try {
+      try {
+        _courseProgress = await _repo.getCourseProgress(widget.courseId);
+      } catch (_) {}
+
       final lesson = await _repo.getLessonDetail(lessonId);
+      await _loadStudyStateForLesson(lesson);
 
       if (!mounted) return;
 
@@ -132,9 +747,30 @@ class _LearningScreenState extends State<LearningScreen> {
     });
 
     try {
-      await _repo.markLessonCompleted(lesson.id);
+      final viewedItems = _allStudyContentViewed(lesson);
+      await _repo.markLessonCompleted(
+        lesson.id,
+        studyState: {
+          ..._buildLessonStudyState(viewedItems),
+          'lessonCompleted': true,
+          'lessonCompletedAt': DateTime.now().toIso8601String(),
+        },
+      );
+      await _writeStudyState(lesson.id, {
+        'viewedContentItems': viewedItems,
+        'lessonCompleted': true,
+        'lessonCompletedAt': DateTime.now().toIso8601String(),
+      });
 
       if (!mounted) return;
+
+      setState(() {
+        _viewedContentItems = {
+          ..._viewedContentItems,
+          ...viewedItems,
+        };
+        _completedLessonIds.add(lesson.id);
+      });
 
       showSnack(context, 'Đã đánh dấu hoàn thành bài học');
     } catch (e) {
@@ -159,23 +795,21 @@ class _LearningScreenState extends State<LearningScreen> {
       return;
     }
 
-    final opened = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
     if (!opened && mounted) {
       showSnack(context, 'Không mở được tài liệu');
     }
   }
 
-  void _openVideoInApp({
+  Future<void> _openVideoInApp({
     required String title,
     required String videoUrl,
     String description = '',
+    String? progressKey,
     int? startTime,
     int? endTime,
-  }) {
+  }) async {
     final finalUrl = AppConfig.fullFileUrl(videoUrl).trim();
 
     if (finalUrl.isEmpty) {
@@ -183,25 +817,153 @@ class _LearningScreenState extends State<LearningScreen> {
       return;
     }
 
-    Navigator.of(context).push(
+    final savedPosition = progressKey == null
+        ? 0.0
+        : (_videoPositions[progressKey] ?? 0);
+    final start = startTime?.toDouble() ?? 0;
+    final end = endTime?.toDouble() ?? 0;
+    final resumeAt =
+        savedPosition > start && (end <= start || savedPosition <= end)
+        ? savedPosition
+        : start;
+
+    final watchedSeconds = await Navigator.of(context).push<double>(
       MaterialPageRoute(
         builder: (_) => YoutubeLearningScreen(
           title: title,
           videoUrl: finalUrl,
-          startSeconds: startTime?.toDouble(),
+          startSeconds: resumeAt,
           endSeconds: endTime?.toDouble(),
-        ),  
+          onPositionChanged: progressKey == null
+              ? null
+              : (seconds) {
+                  _persistVideoProgress(
+                    progressKey: progressKey,
+                    watchedSeconds: seconds,
+                    startTime: startTime,
+                    endTime: endTime,
+                  );
+                },
+        ),
       ),
     );
+
+    if (progressKey == null || watchedSeconds == null) return;
+
+    final nextPosition = end > start
+        ? watchedSeconds.clamp(start, end).toDouble()
+        : watchedSeconds;
+    final completed = _videoReachedHalf(nextPosition, startTime, endTime);
+
+    setState(() {
+      _videoPositions = {..._videoPositions, progressKey: nextPosition};
+      if (completed) {
+        _viewedContentItems = {..._viewedContentItems, progressKey: true};
+      }
+    });
+
+    final lessonId = _currentLessonId;
+    if (lessonId != null) {
+      await _writeStudyState(lessonId, {
+        'videoPositions': {progressKey: nextPosition},
+        if (completed) 'viewedContentItems': {progressKey: true},
+        'resumeSeconds': nextPosition,
+      });
+    }
+    final lesson = _currentLesson;
+    if (lesson != null && completed) {
+      await _syncLessonCompletionIfNeeded(lesson);
+    }
   }
 
-  void _openContentItem(ContentItemModel item) {
+  Future<void> _persistVideoProgress({
+    required String progressKey,
+    required double watchedSeconds,
+    int? startTime,
+    int? endTime,
+  }) async {
+    final start = startTime?.toDouble() ?? 0;
+    final end = endTime?.toDouble() ?? 0;
+    final nextPosition = end > start
+        ? watchedSeconds.clamp(start, end).toDouble()
+        : watchedSeconds;
+    final previousPosition = _videoPositions[progressKey] ?? 0;
+
+    if (nextPosition <= previousPosition) {
+      return;
+    }
+
+    final completed = _videoReachedHalf(nextPosition, startTime, endTime);
+    if (mounted) {
+      setState(() {
+        _videoPositions = {..._videoPositions, progressKey: nextPosition};
+        if (completed) {
+          _viewedContentItems = {..._viewedContentItems, progressKey: true};
+        }
+      });
+    } else {
+      _videoPositions = {..._videoPositions, progressKey: nextPosition};
+      if (completed) {
+        _viewedContentItems = {..._viewedContentItems, progressKey: true};
+      }
+    }
+
+    final lessonId = _currentLessonId;
+    if (lessonId != null) {
+      await _writeStudyState(lessonId, {
+        'videoPositions': {progressKey: nextPosition},
+        if (completed) 'viewedContentItems': {progressKey: true},
+        'resumeSeconds': nextPosition,
+      });
+    }
+
     final lesson = _currentLesson;
+    if (lesson != null && completed) {
+      await _syncLessonCompletionIfNeeded(lesson);
+    }
+  }
+
+  void _openContentItem(
+    LessonSegmentModel segment,
+    int itemIndex,
+    ContentItemModel item,
+  ) {
+    final lesson = _currentLesson;
+    final progressKey = _contentProgressKey(segment, item, itemIndex);
 
     if (item.isQuiz && item.quizId > 0) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => QuizScreen(quizId: item.quizId),
+          builder: (_) => QuizScreen(
+            quizId: item.quizId,
+            onSubmitted: (result) {
+              final score = result.totalScore.toDouble();
+              setState(() {
+                _quizScores = {..._quizScores, progressKey: score};
+                if (score >= 50) {
+                  _viewedContentItems = {
+                    ..._viewedContentItems,
+                    progressKey: true,
+                  };
+                }
+              });
+              final lessonId = _currentLessonId;
+              if (lessonId != null && score >= 50) {
+                _writeStudyState(lessonId, {
+                  'viewedContentItems': {progressKey: true},
+                  'quizCompletions': {progressKey: score},
+                });
+                final lesson = _currentLesson;
+                if (lesson != null) {
+                  _syncLessonCompletionIfNeeded(lesson);
+                }
+              } else if (lessonId != null) {
+                _writeStudyState(lessonId, {
+                  'quizCompletions': {progressKey: score},
+                });
+              }
+            },
+          ),
         ),
       );
       return;
@@ -216,6 +978,7 @@ class _LearningScreenState extends State<LearningScreen> {
         title: item.title,
         description: item.text,
         videoUrl: videoUrl,
+        progressKey: progressKey,
         startTime: item.startTime,
         endTime: item.endTime,
       );
@@ -224,10 +987,12 @@ class _LearningScreenState extends State<LearningScreen> {
     }
 
     if (item.isDocument && item.url.trim().isNotEmpty) {
+      _markContentViewed(progressKey);
       _openDocumentUrl(item.url);
       return;
     }
 
+    _markContentViewed(progressKey);
     _showContentDetail(item);
   }
 
@@ -235,8 +1000,8 @@ class _LearningScreenState extends State<LearningScreen> {
     final content = item.text.trim().isNotEmpty
         ? item.text.trim()
         : item.type == 'question'
-            ? 'Phần câu hỏi ôn tập của bài học. Giáo viên chưa nhập nội dung chi tiết cho mục này.'
-            : 'Nội dung này hiện chưa có dữ liệu chi tiết.';
+        ? 'Phần câu hỏi ôn tập của bài học. Giáo viên chưa nhập nội dung chi tiết cho mục này.'
+        : 'Nội dung này hiện chưa có dữ liệu chi tiết.';
 
     showModalBottomSheet(
       context: context,
@@ -252,9 +1017,7 @@ class _LearningScreenState extends State<LearningScreen> {
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(28),
-                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               ),
               child: ListView(
                 controller: scrollController,
@@ -272,10 +1035,7 @@ class _LearningScreenState extends State<LearningScreen> {
                   const SizedBox(height: 18),
                   Row(
                     children: [
-                      CourseThumb(
-                        size: 50,
-                        icon: _iconForItem(item),
-                      ),
+                      CourseThumb(size: 50, icon: _iconForItem(item)),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -340,18 +1100,13 @@ class _LearningScreenState extends State<LearningScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: LoadingView(),
-      );
+      return const Scaffold(body: LoadingView());
     }
 
     if (_error.isNotEmpty) {
       return Scaffold(
         appBar: AppBar(),
-        body: ErrorView(
-          message: _error,
-          onRetry: _load,
-        ),
+        body: ErrorView(message: _error, onRetry: _load),
       );
     }
 
@@ -399,10 +1154,7 @@ class _LearningScreenState extends State<LearningScreen> {
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          const CourseThumb(
-            size: 58,
-            icon: Icons.school_rounded,
-          ),
+          const CourseThumb(size: 58, icon: Icons.school_rounded),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -419,10 +1171,7 @@ class _LearningScreenState extends State<LearningScreen> {
                 const SizedBox(height: 6),
                 Text(
                   'Chọn bài học bên dưới để bắt đầu học nội dung.',
-                  style: const TextStyle(
-                    color: AppColors.muted,
-                    height: 1.35,
-                  ),
+                  style: const TextStyle(color: AppColors.muted, height: 1.35),
                 ),
               ],
             ),
@@ -445,9 +1194,7 @@ class _LearningScreenState extends State<LearningScreen> {
     if (detail.chapters.isEmpty) {
       return AppCard(
         padding: EdgeInsets.zero,
-        child: Column(
-          children: detail.lessons.map(_lessonTile).toList(),
-        ),
+        child: Column(children: detail.lessons.map(_lessonTile).toList()),
       );
     }
 
@@ -470,17 +1217,11 @@ class _LearningScreenState extends State<LearningScreen> {
             ),
             title: Text(
               chapter.title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w900),
             ),
             subtitle: Text('${lessons.length} bài học'),
             children: lessons.isEmpty
-                ? [
-                    const ListTile(
-                      title: Text('Chưa có bài học'),
-                    ),
-                  ]
+                ? [const ListTile(title: Text('Chưa có bài học'))]
                 : lessons.map(_lessonTile).toList(),
           ),
         );
@@ -495,8 +1236,7 @@ class _LearningScreenState extends State<LearningScreen> {
       selected: selected,
       selectedTileColor: const Color(0xFFEFF6FF),
       leading: CircleAvatar(
-        backgroundColor:
-            selected ? AppColors.primary : const Color(0xFFEFF6FF),
+        backgroundColor: selected ? AppColors.primary : const Color(0xFFEFF6FF),
         child: Icon(
           selected
               ? Icons.play_arrow_rounded
@@ -517,10 +1257,7 @@ class _LearningScreenState extends State<LearningScreen> {
             : 'Bấm để xem nội dung bài học',
       ),
       trailing: selected
-          ? const Icon(
-              Icons.check_circle_rounded,
-              color: AppColors.primary,
-            )
+          ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
           : const Icon(Icons.chevron_right_rounded),
       onTap: () => _selectLesson(lesson.id),
     );
@@ -538,7 +1275,8 @@ class _LearningScreenState extends State<LearningScreen> {
     if (lesson == null) {
       return const AppCard(
         child: EmptyView(
-          message: 'Bạn chưa chọn bài học. Hãy chọn một bài học trong danh sách phía trên.',
+          message:
+              'Bạn chưa chọn bài học. Hãy chọn một bài học trong danh sách phía trên.',
           icon: Icons.touch_app_rounded,
         ),
       );
@@ -573,18 +1311,12 @@ class _LearningScreenState extends State<LearningScreen> {
             const SizedBox(height: 18),
             const Text(
               'Mô tả bài học',
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 17,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
             ),
             const SizedBox(height: 8),
             Text(
               lesson.content,
-              style: const TextStyle(
-                height: 1.48,
-                color: AppColors.muted,
-              ),
+              style: const TextStyle(height: 1.48, color: AppColors.muted),
             ),
           ],
 
@@ -596,6 +1328,7 @@ class _LearningScreenState extends State<LearningScreen> {
                   title: lesson.title,
                   description: lesson.content,
                   videoUrl: lesson.videoUrl,
+                  progressKey: 'lesson-video',
                 );
               },
             ),
@@ -604,10 +1337,7 @@ class _LearningScreenState extends State<LearningScreen> {
           const SizedBox(height: 22),
           const Text(
             'Các phần học',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
 
@@ -617,7 +1347,7 @@ class _LearningScreenState extends State<LearningScreen> {
               icon: Icons.segment_rounded,
             )
           else
-            ...lesson.segments.map(_segmentView),
+            ...lesson.segments.map((segment) => _segmentView(lesson, segment)),
 
           const SizedBox(height: 18),
           SizedBox(
@@ -642,7 +1372,26 @@ class _LearningScreenState extends State<LearningScreen> {
     );
   }
 
-  Widget _segmentView(LessonSegmentModel segment) {
+  Widget _segmentView(LessonModel lesson, LessonSegmentModel segment) {
+    final lessonCompleted = _completedLessonIds.contains(lesson.id);
+    final visibleEntries = segment.contentItems
+        .asMap()
+        .entries
+        .where((entry) => _isStudyContentItem(entry.value))
+        .toList();
+    final totalCount = visibleEntries.length;
+    final completedCount = lessonCompleted
+        ? totalCount
+        : visibleEntries.where((entry) {
+            return _isViewedWithAliases(
+              _viewedContentItems,
+              segment,
+              entry.value,
+              entry.key,
+            );
+          }).length;
+    final isComplete = totalCount > 0 && completedCount >= totalCount;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -652,70 +1401,78 @@ class _LearningScreenState extends State<LearningScreen> {
       ),
       child: ExpansionTile(
         initiallyExpanded: false,
-        leading: const Icon(
-          Icons.segment_rounded,
-          color: AppColors.primary,
-        ),
+        leading: const Icon(Icons.segment_rounded, color: AppColors.primary),
         title: Text(
           segment.title,
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.w900),
         ),
-        subtitle: Text('${segment.contentItems.length} nội dung'),
-        children: segment.contentItems.isEmpty
-            ? [
-                const ListTile(
-                  title: Text('Chưa có nội dung phần học'),
-                ),
-              ]
-            : segment.contentItems.map(_contentItemView).toList(),
+        subtitle: Text('$completedCount/$totalCount nội dung'),
+        trailing: isComplete
+            ? const Icon(Icons.check_circle_rounded, color: Colors.green)
+            : null,
+        children: visibleEntries.isEmpty
+            ? [const ListTile(title: Text('Chưa có nội dung phần học'))]
+            : visibleEntries.map((entry) {
+                return _contentItemView(segment, entry.key, entry.value);
+              }).toList(),
       ),
     );
   }
 
-  Widget _contentItemView(ContentItemModel item) {
+  Widget _contentItemView(
+    LessonSegmentModel segment,
+    int itemIndex,
+    ContentItemModel item,
+  ) {
     final hasUrl = item.url.trim().isNotEmpty;
+    final completed = _isViewedWithAliases(
+      _viewedContentItems,
+      segment,
+      item,
+      itemIndex,
+    );
 
     IconData trailingIcon;
 
     if (item.isQuiz && item.quizId > 0) {
-      trailingIcon = Icons.chevron_right_rounded;
+      trailingIcon = completed
+          ? Icons.check_circle_rounded
+          : Icons.chevron_right_rounded;
     } else if (item.isVideo) {
-      trailingIcon = Icons.play_circle_fill_rounded;
+      trailingIcon = completed
+          ? Icons.check_circle_rounded
+          : Icons.play_circle_fill_rounded;
     } else if (item.isDocument && hasUrl) {
-      trailingIcon = Icons.open_in_new_rounded;
+      trailingIcon = completed
+          ? Icons.check_circle_rounded
+          : Icons.open_in_new_rounded;
     } else {
-      trailingIcon = Icons.visibility_rounded;
+      trailingIcon = completed
+          ? Icons.check_circle_rounded
+          : Icons.visibility_rounded;
     }
 
     final subtitle = item.text.trim().isNotEmpty
         ? item.text.trim()
         : item.isVideo
-            ? _formatVideoTime(item)
-            : _labelForType(item.type);
+        ? _formatVideoTime(item)
+        : _labelForType(item.type);
 
     return ListTile(
       leading: Icon(
         _iconForItem(item),
-        color: AppColors.primary,
+        color: completed ? Colors.green : AppColors.primary,
       ),
       title: Text(
         item.title,
-        style: const TextStyle(
-          fontWeight: FontWeight.w800,
-        ),
+        style: const TextStyle(fontWeight: FontWeight.w800),
       ),
-      subtitle: Text(
-        subtitle,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
+      subtitle: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
       trailing: Icon(
         trailingIcon,
-        color: AppColors.primary,
+        color: completed ? Colors.green : AppColors.primary,
       ),
-      onTap: () => _openContentItem(item),
+      onTap: () => _openContentItem(segment, itemIndex, item),
     );
   }
 
@@ -758,8 +1515,9 @@ class _LearningScreenState extends State<LearningScreen> {
       return 'Video bài học';
     }
 
-    final start =
-        item.startTime == null ? '--:--' : _formatSeconds(item.startTime!);
+    final start = item.startTime == null
+        ? '--:--'
+        : _formatSeconds(item.startTime!);
     final end = item.endTime == null ? '--:--' : _formatSeconds(item.endTime!);
 
     return '$start - $end';
@@ -767,9 +1525,7 @@ class _LearningScreenState extends State<LearningScreen> {
 }
 
 class _VideoBox extends StatelessWidget {
-  const _VideoBox({
-    required this.onOpen,
-  });
+  const _VideoBox({required this.onOpen});
 
   final VoidCallback onOpen;
 
@@ -783,10 +1539,7 @@ class _VideoBox extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [
-              Color(0xFF0F172A),
-              Color(0xFF1E293B),
-            ],
+            colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
           ),
           borderRadius: BorderRadius.circular(22),
         ),

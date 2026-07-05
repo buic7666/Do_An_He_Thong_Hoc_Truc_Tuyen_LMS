@@ -9,6 +9,7 @@ const lessonIdParamSchema = z
 const watchPositionBodySchema = z
   .object({
     positionSeconds: z.coerce.number().min(0),
+    studyState: z.record(z.string(), z.any()).optional(),
   })
   .strict();
 

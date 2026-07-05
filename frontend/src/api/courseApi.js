@@ -11,6 +11,8 @@ export const fetchCourseDetailApi = async (courseId) => {
 };
 
 export const fetchCourseProgressApi = async (courseId) => {
-  const response = await httpClient.get(`/courses/${courseId}/progress`);
+  const response = await httpClient.get(`/courses/${courseId}/progress`, {
+    params: { _t: Date.now() },
+  });
   return response.data?.data || response.data;
 };

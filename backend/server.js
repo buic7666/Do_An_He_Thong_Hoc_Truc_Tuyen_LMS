@@ -27,7 +27,7 @@ const bootstrap = async () => {
     await ContactMessage.sync();
     await TeacherProfile.sync();
     await TeacherInteraction.sync();
-    await LessonWatchPosition.sync();
+    await LessonWatchPosition.sync({ alter: true });
     await LessonSegment.sync();
     await SystemSetting.sync();
     await SystemCategory.sync();

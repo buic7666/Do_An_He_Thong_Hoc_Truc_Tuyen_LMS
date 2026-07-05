@@ -9,18 +9,42 @@ class SessionManager {
   static const String userEmailKey = 'userEmail';
   static const String userRoleKey = 'userRole';
 
-  Future<void> saveUser(UserModel user) async {
+  Future<void> saveSession({required String token, required UserModel user}) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(tokenKey, user.token ?? '');
-    await prefs.setString(userIdKey, user.id.toString());
+    final normalizedToken = token.trim();
+
+    if (normalizedToken.isEmpty) {
+      await prefs.remove(tokenKey);
+    } else {
+      await prefs.setString(tokenKey, normalizedToken);
+    }
+
+    if (user.id > 0) {
+      await prefs.setString(userIdKey, user.id.toString());
+    } else {
+      await prefs.remove(userIdKey);
+    }
+
     await prefs.setString(userNameKey, user.name);
     await prefs.setString(userEmailKey, user.email);
     await prefs.setString(userRoleKey, user.role);
   }
 
+  Future<void> saveUser(UserModel user) async {
+    final currentToken = await getToken();
+    final nextToken = (user.token ?? '').trim();
+
+    await saveSession(
+      token: nextToken.isNotEmpty ? nextToken : (currentToken ?? ''),
+      user: user,
+    );
+  }
+
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(tokenKey);
+    // ignore: avoid_print
+    print('[SessionManager] getToken -> ${token ?? '<null>'}');
     if (token == null || token.isEmpty) return null;
     return token;
   }

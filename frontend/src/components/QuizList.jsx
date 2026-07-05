@@ -34,9 +34,10 @@ const QuizList = ({
   const loadQuizzes = async () => {
     try {
       setLoading(true);
-      const response = await httpClient.get(`/courses/${courseId}/quizzes`);
+      const response = await httpClient.get(`/quiz/courses/${courseId}/quizzes`);
       const allQuizzes = Array.isArray(response?.data?.data) ? response.data.data : [];
-      let filteredQuizzes = allQuizzes;
+      const courseLevelQuizzes = allQuizzes.filter((quiz) => !quiz.lessonId);
+      let filteredQuizzes = courseLevelQuizzes;
 
       if (scope === 'lesson') {
         filteredQuizzes = lessonId
@@ -44,10 +45,10 @@ const QuizList = ({
           : [];
       } else if (scope === 'chapter') {
         filteredQuizzes = chapterId
-          ? allQuizzes.filter((quiz) => Number(quiz.chapterId) === Number(chapterId))
-          : allQuizzes.filter((quiz) => !quiz.lessonId);
+          ? courseLevelQuizzes.filter((quiz) => Number(quiz.chapterId) === Number(chapterId))
+          : courseLevelQuizzes;
       } else if (lessonId) {
-        filteredQuizzes = allQuizzes.filter((quiz) => Number(quiz.lessonId) === Number(lessonId) || !quiz.lessonId);
+        filteredQuizzes = courseLevelQuizzes;
       }
 
       setQuizzes(filteredQuizzes);
@@ -61,7 +62,7 @@ const QuizList = ({
       // Load scores for each quiz
       for (const quiz of filteredQuizzes) {
         try {
-          const scoreResponse = await httpClient.get(`/quizzes/${quiz.id}/score`);
+          const scoreResponse = await httpClient.get(`/quiz/quizzes/${quiz.id}/score`);
           setScores((prev) => ({
             ...prev,
             [quiz.id]: scoreResponse.data.data,
@@ -94,7 +95,7 @@ const QuizList = ({
 
     setLoadingAttemptsByQuiz((prev) => ({ ...prev, [quizId]: true }));
     try {
-      const response = await httpClient.get(`/quizzes/${quizId}/attempts`);
+      const response = await httpClient.get(`/quiz/quizzes/${quizId}/attempts`);
       const attempts = Array.isArray(response?.data?.data) ? response.data.data : [];
       const sortedAttempts = [...attempts].sort((a, b) => Number(b.attemptNumber || 0) - Number(a.attemptNumber || 0));
 
@@ -123,7 +124,7 @@ const QuizList = ({
 
     setLoadingAttemptDetailsByKey((prev) => ({ ...prev, [detailKey]: true }));
     try {
-      const response = await httpClient.get(`/quizzes/${quizId}/attempts/${attemptId}`);
+      const response = await httpClient.get(`/quiz/quizzes/${quizId}/attempts/${attemptId}`);
       setAttemptDetailsByKey((prev) => ({
         ...prev,
         [detailKey]: response?.data?.data || null,

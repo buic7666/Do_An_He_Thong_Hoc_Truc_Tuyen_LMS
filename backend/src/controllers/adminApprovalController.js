@@ -1,17 +1,17 @@
-const { Course, Lesson, User } = require('../models'); // Chú ý: Hãy import đúng đường dẫn Models của bạn
+const { Course, Lesson, Quiz, User } = require('../models'); // Chú ý: Hãy import đúng đường dẫn Models của bạn
 const sendEmail = require('../utils/sendEmail');
 
 // 1. Lấy danh sách đang chờ phê duyệt
 exports.getPendingApprovals = async (req, res) => {
   try {
     // Lấy các khóa học đang chờ duyệt
-    const pendingCourses = await Course.findAll({ 
+    const pendingCourses = await Course.findAll({
       where: { approvalStatus: 'PENDING' },
       order: [['createdAt', 'DESC']]
     });
 
     // Lấy các bài học đang chờ duyệt
-    const pendingLessons = await Lesson.findAll({ 
+    const pendingLessons = await Lesson.findAll({
       where: { approvalStatus: 'PENDING' },
       order: [['createdAt', 'DESC']]
     });
@@ -47,14 +47,14 @@ exports.updateApprovalStatus = async (req, res) => {
     if (type === 'course') {
       const course = await Course.findByPk(targetId);
       if (!course) return res.status(404).json({ success: false, message: 'Không tìm thấy khóa học' });
-      
+
       // Ghi trực tiếp xuống DB bằng targetId sạch
-      await Course.update({ 
+      await Course.update({
         approvalStatus: status.toUpperCase(),
         status: status.toLowerCase(),
-        isPublished: status.toUpperCase() === 'APPROVED' 
+        isPublished: status.toUpperCase() === 'APPROVED'
       }, { where: { id: targetId } });
-      
+
       // NẾU LÀ APPROVED -> Đồng bộ tự động duyệt TẤT CẢ CÁC BÀI HỌC nằm trong khóa học đó
       if (status.toUpperCase() === 'APPROVED') {
         await Lesson.update({
@@ -62,17 +62,27 @@ exports.updateApprovalStatus = async (req, res) => {
           status: 'approved',
           isPublished: true
         }, { where: { courseId: targetId } });
+
+        await Quiz.update(
+          { isPublished: true },
+          { where: { courseId: targetId, lessonId: null } },
+        );
       }
 
       // Tự động gửi email thông báo cho Giảng viên nếu khóa học bị từ chối (REJECTED)
       if (status.toUpperCase() === 'REJECTED') {
+        await Quiz.update(
+          { isPublished: false },
+          { where: { courseId: targetId } },
+        );
+
         const instructorId = course.instructorId || course.teacherId || course.createdBy;
         if (instructorId) {
           const instructor = await User.findByPk(instructorId);
           if (instructor && instructor.email) {
             const subject = `Thông báo: Khóa học "${course.title}" đã bị từ chối`;
             const text = `Chào ${instructor.name || 'giảng viên'},\n\nRất tiếc, khóa học "${course.title}" của bạn không được ban quản trị phê duyệt.\nVui lòng kiểm tra lại nội dung hoặc liên hệ Admin để chỉnh sửa và biết thêm chi tiết.\n\nTrân trọng,\nĐội ngũ Admin.`;
-            
+
             // Chạy bất đồng bộ, không dùng await để tránh việc API phải đợi mail gửi xong mới phản hồi
             sendEmail({ to: instructor.email, subject, text });
           }
@@ -83,14 +93,14 @@ exports.updateApprovalStatus = async (req, res) => {
     } else if (type === 'lesson') {
       const lesson = await Lesson.findByPk(targetId);
       if (!lesson) return res.status(404).json({ success: false, message: 'Không tìm thấy bài học' });
-      
+
       // SỬA LỖI CHÍ MẠNG: Dùng targetId ép kiểu Number sạch để ghi nhận thay đổi xuống DB
-      await Lesson.update({ 
+      await Lesson.update({
         approvalStatus: status.toUpperCase(),
         status: status.toLowerCase(),
-        isPublished: status.toUpperCase() === 'APPROVED' 
+        isPublished: status.toUpperCase() === 'APPROVED'
       }, { where: { id: targetId } });
-      
+
     } else {
       return res.status(400).json({ success: false, message: 'Loại nội dung không hợp lệ' });
     }

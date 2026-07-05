@@ -23,9 +23,9 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _start() async {
     await Future<void>.delayed(const Duration(milliseconds: 550));
-    final loggedIn = await _repo.isLoggedIn();
+    final user = await _repo.validateOrRefreshSession();
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => loggedIn ? const HomeScreen() : const LoginScreen()));
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => user != null ? const HomeScreen() : const LoginScreen()));
   }
 
   @override

@@ -31,6 +31,9 @@ class ApiClient {
 
   Future<Map<String, String>> _headers() async {
     final token = await _sessionManager.getToken();
+    // Debug log: token used for request
+    // ignore: avoid_print
+    print('[ApiClient] using token: ${token ?? '<null>'}');
     return {
       'Content-Type': 'application/json; charset=utf-8',
       'Accept': 'application/json',

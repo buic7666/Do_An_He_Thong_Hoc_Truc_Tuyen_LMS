@@ -1,11 +1,16 @@
 ﻿import './BangDieuKhienCaNhan.css';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchCourseDetailApi, fetchCourseProgressApi } from '../../api/courseApi';
 import { fetchMyEnrollmentsApi } from '../../api/enrollmentApi';
 import { getCurrentUserSafely } from '../../utils/authRedirect';
 import { getCourseImageDataUrl } from '../../utils/courseImage';
 import { getCourseDurationLabel } from '../../utils/courseDurationLabel';
+import {
+  mergeCourseProgress,
+  readStudentCourseProgressCache,
+  writeStudentCourseProgressCache,
+} from '../../utils/studentProgressCache';
 import StudentSidebar from '../../components/StudentSidebar';
 
 function BangDieuKhienCaNhan() {
@@ -15,63 +20,83 @@ function BangDieuKhienCaNhan() {
   const [errorMessage, setErrorMessage] = useState('');
   const [courses, setCourses] = useState([]);
 
-  useEffect(() => {
-    let isCancelled = false;
-
-    const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
       setIsLoading(true);
-      setErrorMessage('');
+    }
+    setErrorMessage('');
 
-      try {
-        const enrollments = await fetchMyEnrollmentsApi();
-        const enrolledCourses = Array.isArray(enrollments) ? enrollments : [];
+    try {
+      const enrollments = await fetchMyEnrollmentsApi();
+      const enrolledCourses = Array.isArray(enrollments) ? enrollments : [];
 
-        const resolvedCourses = await Promise.all(
-          enrolledCourses.map(async (enrollment) => {
-            const [detail, progress] = await Promise.all([
-              fetchCourseDetailApi(enrollment.courseId),
-              fetchCourseProgressApi(enrollment.courseId).catch(() => null),
-            ]);
+      const resolvedCourses = await Promise.all(
+        enrolledCourses.map(async (enrollment) => {
+          const [detail, apiProgress] = await Promise.all([
+            fetchCourseDetailApi(enrollment.courseId),
+            fetchCourseProgressApi(enrollment.courseId).catch(() => null),
+          ]);
 
-            const sortedLessons = [...(Array.isArray(detail?.lessons) ? detail.lessons : [])].sort(
-              (left, right) => Number(left.orderIndex || 0) - Number(right.orderIndex || 0),
-            );
+          const sortedLessons = [...(Array.isArray(detail?.lessons) ? detail.lessons : [])].sort(
+            (left, right) => Number(left.orderIndex || 0) - Number(right.orderIndex || 0),
+          );
+          const cachedProgress = readStudentCourseProgressCache(enrollment.courseId);
+          const progress = mergeCourseProgress(
+            cachedProgress || {},
+            {
+              ...(apiProgress || {}),
+              courseId: enrollment.courseId,
+              totalLessons: Number(apiProgress?.totalLessons || sortedLessons.length || 0),
+            },
+          );
 
-            return {
-              id: enrollment.courseId,
-              title: detail?.title || enrollment?.course?.title || 'Khóa học',
-              image: getCourseImageDataUrl(detail?.title || enrollment?.course?.title || 'Course', enrollment.courseId),
-              alt: detail?.title || enrollment?.course?.title || 'Course',
-              durationLabel: getCourseDurationLabel(detail || enrollment?.course),
-              progressPercent: Number(progress?.completionPercent || 0),
-              completedLessons: Number(progress?.completedLessons || 0),
-              totalLessons: Number(progress?.totalLessons || sortedLessons.length || 0),
-              firstLessonId: sortedLessons.length > 0 ? sortedLessons[0].id : null,
-            };
-          }),
-        );
+          writeStudentCourseProgressCache(enrollment.courseId, progress);
 
-        if (!isCancelled) {
-          setCourses(resolvedCourses);
-        }
-      } catch (error) {
-        if (!isCancelled) {
-          setErrorMessage(error?.response?.data?.message || 'Không tải được dữ liệu dashboard.');
-          setCourses([]);
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
+          return {
+            id: enrollment.courseId,
+            title: detail?.title || enrollment?.course?.title || 'Khóa học',
+            image: getCourseImageDataUrl(detail?.title || enrollment?.course?.title || 'Course', enrollment.courseId),
+            alt: detail?.title || enrollment?.course?.title || 'Course',
+            durationLabel: getCourseDurationLabel(detail || enrollment?.course),
+            progressPercent: Number(progress?.completionPercent || 0),
+            completedLessons: Number(progress?.completedLessons || 0),
+            totalLessons: Number(progress?.totalLessons || sortedLessons.length || 0),
+            firstLessonId: sortedLessons.length > 0 ? sortedLessons[0].id : null,
+            resumeLessonId: progress?.resumeLessonId ? Number(progress.resumeLessonId) : null,
+          };
+        }),
+      );
+
+      setCourses(resolvedCourses);
+    } catch (error) {
+      setErrorMessage(error?.response?.data?.message || 'Không tải được dữ liệu dashboard.');
+      setCourses([]);
+    } finally {
+      if (!silent) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  useEffect(() => {
+    const refreshDashboard = () => {
+      if (document.visibilityState === 'visible') {
+        loadDashboardData({ silent: true });
       }
     };
 
-    loadDashboardData();
+    window.addEventListener('focus', refreshDashboard);
+    document.addEventListener('visibilitychange', refreshDashboard);
 
     return () => {
-      isCancelled = true;
+      window.removeEventListener('focus', refreshDashboard);
+      document.removeEventListener('visibilitychange', refreshDashboard);
     };
-  }, []);
+  }, [loadDashboardData]);
 
   const stats = useMemo(() => {
     const totalCourses = courses.length;
@@ -107,7 +132,7 @@ function BangDieuKhienCaNhan() {
       return;
     }
 
-    navigate(`/learn?courseId=${course.id}&lessonId=${course.firstLessonId}`);
+    navigate(`/learn?courseId=${course.id}&lessonId=${course.resumeLessonId || course.firstLessonId}`);
   };
 
   const getAvatarCharacter = () => {

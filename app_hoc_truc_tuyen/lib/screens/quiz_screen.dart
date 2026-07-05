@@ -6,9 +6,10 @@ import '../services/lms_repository.dart';
 import '../widgets/app_widgets.dart';
 
 class QuizScreen extends StatefulWidget {
-  const QuizScreen({super.key, required this.quizId});
+  const QuizScreen({super.key, required this.quizId, this.onSubmitted});
 
   final int quizId;
+  final ValueChanged<QuizAttemptResult>? onSubmitted;
 
   @override
   State<QuizScreen> createState() => _QuizScreenState();
@@ -59,7 +60,8 @@ class _QuizScreenState extends State<QuizScreen> {
   Future<void> _submit() async {
     final quiz = _quiz;
     if (quiz == null) return;
-    if (quiz.questions.isNotEmpty && _rawAnswers.length < quiz.questions.length) {
+    if (quiz.questions.isNotEmpty &&
+        _rawAnswers.length < quiz.questions.length) {
       showSnack(context, 'Bạn chưa trả lời hết câu hỏi');
       return;
     }
@@ -81,6 +83,7 @@ class _QuizScreenState extends State<QuizScreen> {
         _result = result;
         _latestAttempt = result;
       });
+      widget.onSubmitted?.call(result);
       showSnack(context, 'Nộp bài thành công. Điểm: ${result.totalScore}');
     } catch (e) {
       if (mounted) showSnack(context, safeError(e));
@@ -92,7 +95,9 @@ class _QuizScreenState extends State<QuizScreen> {
   dynamic _toBackendAnswer(QuestionModel question, dynamic value) {
     final type = question.type;
     if (type == 'MULTIPLE_CHOICE' || type == 'MULTICHOICE') {
-      return {'indices': [asInt(value)]};
+      return {
+        'indices': [asInt(value)],
+      };
     }
     if (type == 'TRUE_FALSE') {
       return {'value': value == true};
@@ -108,20 +113,43 @@ class _QuizScreenState extends State<QuizScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Scaffold(body: LoadingView(message: 'Đang tải bài kiểm tra...'));
-    if (_error.isNotEmpty) return Scaffold(appBar: AppBar(), body: ErrorView(message: _error, onRetry: _load));
+    if (_loading)
+      return const Scaffold(
+        body: LoadingView(message: 'Đang tải bài kiểm tra...'),
+      );
+    if (_error.isNotEmpty)
+      return Scaffold(
+        appBar: AppBar(),
+        body: ErrorView(message: _error, onRetry: _load),
+      );
 
     final quiz = _quiz!;
 
     return Scaffold(
-      appBar: AppBar(title: Text(quiz.title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+      appBar: AppBar(
+        title: Text(quiz.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
       bottomNavigationBar: SafeArea(
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: AppColors.line))),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: AppColors.line)),
+          ),
           child: FilledButton.icon(
-            onPressed: _submitting || _result != null || quiz.questions.isEmpty ? null : _submit,
-            icon: _submitting ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.send_outlined),
+            onPressed: _submitting || _result != null || quiz.questions.isEmpty
+                ? null
+                : _submit,
+            icon: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.send_outlined),
             label: Text(_result == null ? 'Nộp bài' : 'Đã nộp bài'),
           ),
         ),
@@ -131,21 +159,40 @@ class _QuizScreenState extends State<QuizScreen> {
         children: [
           HeroHeader(
             title: quiz.title,
-            subtitle: 'Điểm đạt: ${quiz.passScore} • Thời gian: ${quiz.duration} phút • ${quiz.questions.length} câu hỏi',
+            subtitle:
+                'Điểm đạt: ${quiz.passScore} • Thời gian: ${quiz.duration} phút • ${quiz.questions.length} câu hỏi',
             icon: Icons.assignment_rounded,
           ),
           if (quiz.description.isNotEmpty) ...[
             const SizedBox(height: 14),
-            AppCard(child: Text(quiz.description, style: const TextStyle(color: AppColors.muted, height: 1.4))),
+            AppCard(
+              child: Text(
+                quiz.description,
+                style: const TextStyle(color: AppColors.muted, height: 1.4),
+              ),
+            ),
           ],
           if (_latestAttempt != null && _latestAttempt!.isSubmitted) ...[
             const SizedBox(height: 14),
             AppCard(
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: CourseThumb(size: 54, icon: _latestAttempt!.isPassed ? Icons.check_circle_rounded : Icons.cancel_rounded),
-                title: Text('Kết quả gần nhất: ${_latestAttempt!.totalScore} điểm', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
-                subtitle: Text(_latestAttempt!.isPassed ? 'Đạt yêu cầu' : 'Chưa đạt yêu cầu'),
+                leading: CourseThumb(
+                  size: 54,
+                  icon: _latestAttempt!.isPassed
+                      ? Icons.check_circle_rounded
+                      : Icons.cancel_rounded,
+                ),
+                title: Text(
+                  'Kết quả gần nhất: ${_latestAttempt!.totalScore} điểm',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                subtitle: Text(
+                  _latestAttempt!.isPassed ? 'Đạt yêu cầu' : 'Chưa đạt yêu cầu',
+                ),
               ),
             ),
           ],
@@ -154,9 +201,22 @@ class _QuizScreenState extends State<QuizScreen> {
             AppCard(
               child: ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: CourseThumb(size: 54, icon: _result!.isPassed ? Icons.check_circle_rounded : Icons.cancel_rounded),
-                title: Text('Điểm của bạn: ${_result!.totalScore}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
-                subtitle: Text(_result!.isPassed ? 'Đạt yêu cầu' : 'Chưa đạt yêu cầu'),
+                leading: CourseThumb(
+                  size: 54,
+                  icon: _result!.isPassed
+                      ? Icons.check_circle_rounded
+                      : Icons.cancel_rounded,
+                ),
+                title: Text(
+                  'Điểm của bạn: ${_result!.totalScore}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+                subtitle: Text(
+                  _result!.isPassed ? 'Đạt yêu cầu' : 'Chưa đạt yêu cầu',
+                ),
               ),
             ),
           ],
@@ -164,7 +224,9 @@ class _QuizScreenState extends State<QuizScreen> {
           if (quiz.questions.isEmpty)
             const EmptyView(message: 'Bài kiểm tra chưa có câu hỏi.')
           else
-            ...quiz.questions.asMap().entries.map((entry) => _questionView(entry.key + 1, entry.value)),
+            ...quiz.questions.asMap().entries.map(
+              (entry) => _questionView(entry.key + 1, entry.value),
+            ),
           const SizedBox(height: 80),
         ],
       ),
@@ -179,7 +241,15 @@ class _QuizScreenState extends State<QuizScreen> {
         children: [
           TagChip(text: question.type, icon: Icons.quiz_outlined),
           const SizedBox(height: 10),
-          Text('Câu $index: ${question.content}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.ink, height: 1.35)),
+          Text(
+            'Câu $index: ${question.content}',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: AppColors.ink,
+              height: 1.35,
+            ),
+          ),
           const SizedBox(height: 12),
           _answerWidget(question),
         ],
@@ -195,13 +265,17 @@ class _QuizScreenState extends State<QuizScreen> {
           RadioListTile<bool>(
             value: true,
             groupValue: _rawAnswers[question.id] as bool?,
-            onChanged: _result == null ? (value) => setState(() => _rawAnswers[question.id] = value) : null,
+            onChanged: _result == null
+                ? (value) => setState(() => _rawAnswers[question.id] = value)
+                : null,
             title: const Text('Đúng'),
           ),
           RadioListTile<bool>(
             value: false,
             groupValue: _rawAnswers[question.id] as bool?,
-            onChanged: _result == null ? (value) => setState(() => _rawAnswers[question.id] = value) : null,
+            onChanged: _result == null
+                ? (value) => setState(() => _rawAnswers[question.id] = value)
+                : null,
             title: const Text('Sai'),
           ),
         ],
@@ -210,16 +284,28 @@ class _QuizScreenState extends State<QuizScreen> {
 
     if (type == 'MULTIPLE_CHOICE' || type == 'MULTICHOICE') {
       final options = question.options;
-      if (options.isEmpty) return const Text('Câu hỏi này chưa có đáp án lựa chọn.');
+      if (options.isEmpty)
+        return const Text('Câu hỏi này chưa có đáp án lựa chọn.');
       return Column(
         children: List.generate(options.length, (optionIndex) {
           final option = options[optionIndex];
           final optionMap = asMap(option);
-          final text = optionMap.isEmpty ? asString(option) : stripHtml(asString(optionMap['text'] ?? optionMap['label'] ?? optionMap['content'] ?? optionMap['value']));
+          final text = optionMap.isEmpty
+              ? asString(option)
+              : stripHtml(
+                  asString(
+                    optionMap['text'] ??
+                        optionMap['label'] ??
+                        optionMap['content'] ??
+                        optionMap['value'],
+                  ),
+                );
           return RadioListTile<int>(
             value: optionIndex,
             groupValue: _rawAnswers[question.id] as int?,
-            onChanged: _result == null ? (value) => setState(() => _rawAnswers[question.id] = value) : null,
+            onChanged: _result == null
+                ? (value) => setState(() => _rawAnswers[question.id] = value)
+                : null,
             title: Text(text.isEmpty ? 'Đáp án ${optionIndex + 1}' : text),
           );
         }),
@@ -227,8 +313,11 @@ class _QuizScreenState extends State<QuizScreen> {
     }
 
     if (type == 'CLOZE') {
-      final inner = asMap(question.metadata['inner_questions'] ?? question.metadata['children']);
-      if (inner.isEmpty) return const Text('Dạng bài đọc này chưa có câu hỏi con.');
+      final inner = asMap(
+        question.metadata['inner_questions'] ?? question.metadata['children'],
+      );
+      if (inner.isEmpty)
+        return const Text('Dạng bài đọc này chưa có câu hỏi con.');
       return Column(
         children: inner.entries.map((entry) {
           final child = asMap(entry.value);
@@ -236,7 +325,11 @@ class _QuizScreenState extends State<QuizScreen> {
             padding: const EdgeInsets.only(bottom: 12),
             child: TextField(
               enabled: _result == null,
-              decoration: InputDecoration(labelText: stripHtml(asString(child['content'], fallback: 'Câu ${entry.key}'))),
+              decoration: InputDecoration(
+                labelText: stripHtml(
+                  asString(child['content'], fallback: 'Câu ${entry.key}'),
+                ),
+              ),
               onChanged: (value) {
                 final current = asMap(_rawAnswers[question.id]);
                 current[entry.key] = value;
@@ -252,7 +345,11 @@ class _QuizScreenState extends State<QuizScreen> {
       enabled: _result == null,
       minLines: type == 'ESSAY' ? 5 : 1,
       maxLines: type == 'ESSAY' ? 8 : 3,
-      decoration: InputDecoration(hintText: type == 'ESSAY' ? 'Nhập bài tự luận...' : 'Nhập câu trả lời...'),
+      decoration: InputDecoration(
+        hintText: type == 'ESSAY'
+            ? 'Nhập bài tự luận...'
+            : 'Nhập câu trả lời...',
+      ),
       onChanged: (value) => _rawAnswers[question.id] = value,
     );
   }

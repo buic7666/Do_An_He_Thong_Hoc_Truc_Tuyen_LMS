@@ -1,4 +1,4 @@
-﻿const { User, Course, Lesson, Enrollment, Chapter } = require('../models');
+const { User, Course, Lesson, Enrollment, Chapter, Quiz } = require('../models');
 const { HttpError } = require('../utils/httpError');
 
 const monthFormatter = new Intl.DateTimeFormat('vi-VN', {
@@ -168,7 +168,7 @@ const getPendingCourses = async () => {
 
   return courses.map(course => {
     const plain = course.toJSON();
-    
+
     const syllabus = (plain.chapters || []).map(chapter => {
       const lessonCount = Array.isArray(chapter.lessons) ? chapter.lessons.length : 0;
       return {
@@ -196,14 +196,31 @@ const getPendingCourses = async () => {
 const updateCourseStatus = async (courseId, status, reason) => {
   const course = await Course.findByPk(courseId);
   if (!course) throw new HttpError(404, 'Course not found', 'COURSE_NOT_FOUND');
-  
+
   if (!['approved', 'rejected'].includes(status)) {
     throw new HttpError(400, 'Invalid status', 'INVALID_STATUS');
   }
 
   course.status = status;
+  course.approvalStatus = status === 'approved' ? 'APPROVED' : 'REJECTED';
+  course.isPublished = status === 'approved';
   // TODO: send reason to instructor if rejected
   await course.save();
+
+  await Lesson.update(
+    {
+      approvalStatus: status === 'approved' ? 'APPROVED' : 'REJECTED',
+      status,
+      isPublished: status === 'approved',
+    },
+    { where: { courseId } },
+  );
+
+  await Quiz.update(
+    { isPublished: status === 'approved' },
+    { where: { courseId, ...(status === 'approved' ? { lessonId: null } : {}) } },
+  );
+
   return { id: course.id, status: course.status };
 };
 

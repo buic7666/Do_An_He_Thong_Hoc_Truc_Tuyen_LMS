@@ -30,6 +30,11 @@ const LessonWatchPosition = sequelize.define(
       allowNull: true,
       field: 'last_watched_at',
     },
+    studyState: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      field: 'study_state',
+    },
   },
   {
     tableName: 'lesson_watch_positions',

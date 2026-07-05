@@ -92,7 +92,16 @@ class _MyCoursesScreenState extends State<MyCoursesScreen> {
       padding: EdgeInsets.zero,
       child: InkWell(
         borderRadius: BorderRadius.circular(24),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LearningScreen(courseId: course.id))),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => LearningScreen(
+              courseId: course.id,
+              initialLessonId: progress.resumeLessonId > 0
+                  ? progress.resumeLessonId
+                  : null,
+            ),
+          ),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(

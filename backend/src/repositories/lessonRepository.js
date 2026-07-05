@@ -11,6 +11,19 @@ const findById = async (id) => {
   return Lesson.findByPk(id);
 };
 
+const findByIdWithSegments = async (id) => {
+  return Lesson.findByPk(id, {
+    include: [
+      {
+        model: LessonSegment,
+        as: 'segments',
+        attributes: ['id', 'lessonId', 'startTime', 'endTime', 'duration', 'title', 'orderIndex', 'contentItems'],
+      },
+    ],
+    order: [[{ model: LessonSegment, as: 'segments' }, 'orderIndex', 'ASC']],
+  });
+};
+
 const findByIdWithCourse = async (id) => {
   return Lesson.findByPk(id, {
     include: [
@@ -45,6 +58,7 @@ const findByCourseIdAndOrderIndex = async (courseId, orderIndex) => {
 module.exports = {
   findByCourseId,
   findById,
+  findByIdWithSegments,
   findByIdWithCourse,
   createLesson,
   findByCourseIdAndOrderIndex,

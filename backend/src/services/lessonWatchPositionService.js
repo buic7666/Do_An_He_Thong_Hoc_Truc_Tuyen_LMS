@@ -25,6 +25,62 @@ const ensureStudentEnrolled = async (user, courseId) => {
   }
 };
 
+const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const toNumber = (value, fallback = 0) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const mergeStudyState = (previousState = {}, nextState = {}) => {
+  if (!isPlainObject(nextState)) {
+    return isPlainObject(previousState) ? previousState : {};
+  }
+
+  const previous = isPlainObject(previousState) ? previousState : {};
+  const merged = { ...previous, ...nextState };
+
+  if (isPlainObject(nextState.viewedContentItems)) {
+    merged.viewedContentItems = {
+      ...(isPlainObject(previous.viewedContentItems) ? previous.viewedContentItems : {}),
+    };
+    Object.entries(nextState.viewedContentItems).forEach(([key, isViewed]) => {
+      if (isViewed) {
+        merged.viewedContentItems[key] = true;
+      }
+    });
+  }
+
+  if (isPlainObject(nextState.videoPositions)) {
+    const previousPositions = isPlainObject(previous.videoPositions) ? previous.videoPositions : {};
+    merged.videoPositions = { ...previousPositions };
+
+    Object.entries(nextState.videoPositions).forEach(([key, value]) => {
+      merged.videoPositions[key] = Math.max(
+        toNumber(previousPositions[key], 0),
+        toNumber(value, 0),
+      );
+    });
+  }
+
+  if (isPlainObject(nextState.quizCompletions)) {
+    const previousCompletions = isPlainObject(previous.quizCompletions) ? previous.quizCompletions : {};
+    merged.quizCompletions = { ...previousCompletions };
+
+    Object.entries(nextState.quizCompletions).forEach(([key, value]) => {
+      const previousScore = toNumber(previousCompletions[key]?.score ?? previousCompletions[key], -1);
+      const nextScore = toNumber(value?.score ?? value, -1);
+
+      if (!merged.quizCompletions[key] || nextScore >= previousScore) {
+        merged.quizCompletions[key] = value;
+      }
+    });
+  }
+
+  merged.updatedAt = new Date().toISOString();
+  return merged;
+};
+
 const getLessonOrThrow = async (lessonId) => {
   const parsedLessonId = parseId(lessonId, 'lessonId');
   const lesson = await lessonRepository.findById(parsedLessonId);
@@ -53,6 +109,7 @@ const getWatchPosition = async (lessonId, currentUser) => {
       lessonId: lessonPlain.id,
       positionSeconds: 0,
       lastWatchedAt: null,
+      studyState: {},
     };
   }
 
@@ -62,6 +119,7 @@ const getWatchPosition = async (lessonId, currentUser) => {
     lessonId: plain.lessonId,
     positionSeconds: plain.positionSeconds,
     lastWatchedAt: plain.lastWatchedAt,
+    studyState: isPlainObject(plain.studyState) ? plain.studyState : {},
   };
 };
 
@@ -85,19 +143,27 @@ const saveWatchPosition = async (lessonId, payload, currentUser) => {
   const now = new Date();
 
   const existing = await lessonWatchPositionRepository.findByUserAndLesson(currentUser.id, lessonPlain.id);
+  const existingPlain = existing?.toJSON ? existing.toJSON() : existing;
+  const nextStudyState = mergeStudyState(existingPlain?.studyState, payload?.studyState);
+  const nextPositionSeconds = Math.max(
+    Number(existingPlain?.positionSeconds || 0),
+    normalizedPositionSeconds,
+  );
 
   let saved;
   if (existing) {
     saved = await lessonWatchPositionRepository.updateWatchPosition(existing, {
-      positionSeconds: normalizedPositionSeconds,
+      positionSeconds: nextPositionSeconds,
       lastWatchedAt: now,
+      studyState: nextStudyState,
     });
   } else {
     saved = await lessonWatchPositionRepository.createWatchPosition({
       userId: currentUser.id,
       lessonId: lessonPlain.id,
-      positionSeconds: normalizedPositionSeconds,
+      positionSeconds: nextPositionSeconds,
       lastWatchedAt: now,
+      studyState: nextStudyState,
     });
   }
 
@@ -107,6 +173,7 @@ const saveWatchPosition = async (lessonId, payload, currentUser) => {
     lessonId: plain.lessonId,
     positionSeconds: plain.positionSeconds,
     lastWatchedAt: plain.lastWatchedAt,
+    studyState: isPlainObject(plain.studyState) ? plain.studyState : {},
   };
 };
 

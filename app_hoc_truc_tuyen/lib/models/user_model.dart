@@ -17,12 +17,24 @@ class UserModel {
 
   factory UserModel.fromJson(dynamic json) {
     final map = asMap(json);
+    final nestedUser = asMap(map['user']);
+    final source = nestedUser.isNotEmpty ? nestedUser : map;
+
+    final token = asString(
+      map['token'] ??
+          map['accessToken'] ??
+          map['access_token'] ??
+          source['token'] ??
+          source['accessToken'] ??
+          source['access_token'],
+    );
+
     return UserModel(
-      id: asInt(map['id']),
-      name: asString(map['name'] ?? map['fullName'], fallback: 'Học viên'),
-      email: asString(map['email']),
-      role: asString(map['role'], fallback: 'student'),
-      token: map['token']?.toString(),
+      id: asInt(source['id']),
+      name: asString(source['name'] ?? source['fullName'], fallback: 'Học viên'),
+      email: asString(source['email']),
+      role: asString(source['role'], fallback: 'student'),
+      token: token.isEmpty ? null : token,
     );
   }
 }

@@ -319,8 +319,23 @@ const autoPopulateQuizQuestions = async (quiz, transaction, questionQuotas = nul
  * Get all quizzes for a course
  */
 const getQuizzesByCourse = async (courseId, includeQuestions = false) => {
+  const course = await Course.findByPk(courseId, {
+    attributes: ['id', 'approvalStatus', 'status', 'isPublished'],
+  });
+
+  const isCourseApproved = course
+    && (
+      course.isPublished === true
+      || String(course.approvalStatus || '').toUpperCase() === 'APPROVED'
+      || String(course.status || '').toLowerCase() === 'approved'
+    );
+
+  if (!isCourseApproved) {
+    return [];
+  }
+
   const quizzes = await Quiz.findAll({
-    where: { courseId, isPublished: true },
+    where: { courseId, lessonId: null, isPublished: true },
     include: includeQuestions
       ? [
           {
@@ -399,10 +414,19 @@ const getLatestQuizAttempt = async (quizId, studentId) => {
  */
 const startQuizAttempt = async (quizId, studentId) => {
   const quiz = await Quiz.findOne({
-    where: { id: quizId, isPublished: true },
+    where: { id: quizId },
+    include: [{ association: 'course', attributes: ['id', 'approvalStatus', 'status', 'isPublished'] }],
   });
 
-  if (!quiz) {
+  const course = quiz?.course;
+  const isCourseApproved = course
+    && (
+      course.isPublished === true
+      || String(course.approvalStatus || '').toUpperCase() === 'APPROVED'
+      || String(course.status || '').toLowerCase() === 'approved'
+    );
+
+  if (!quiz || (!quiz.isPublished && !isCourseApproved)) {
     throw new HttpError(404, 'Quiz not found', 'QUIZ_NOT_FOUND');
   }
 
@@ -543,12 +567,22 @@ const submitQuiz = async (quizId, studentId, answers = {}) => {
 
   // Chấm từng câu và lưu StudentAnswer
   const studentAnswers = [];
-  const scores = [];
   let totalScore = 0;
+  let earnedPoints = 0;
+  const getQuizQuestionPoints = (quizQuestion) => {
+    const points = Number(quizQuestion?.points || 0);
+    return Number.isFinite(points) && points > 0 ? points : 1;
+  };
+  const totalPossiblePoints = quizQuestions.reduce((sum, quizQuestion) => sum + getQuizQuestionPoints(quizQuestion), 0);
+  const normalizeScorePercent = (score) => {
+    const scorePercent = Number(score || 0);
+    return Number.isFinite(scorePercent) ? Math.max(0, Math.min(100, scorePercent)) : 0;
+  };
 
   for (const qq of quizQuestions) {
     const question = qq.question;
     const studentAnswer = answers[question.id];
+    const questionPoints = getQuizQuestionPoints(qq);
     let questionMetadata = parseJsonField(question.metadata, {});
     if (normalizeQuestionType(question.type) === 'CLOZE') {
       questionMetadata = mergeClozeMetadataWithChildren(
@@ -613,9 +647,9 @@ try {
     );
   }
 
-  if (typeof gradingResult.score === 'number') {
-    scores.push(gradingResult.score);
-  }
+  const scorePercent = normalizeScorePercent(gradingResult.score);
+  const earnedQuestionPoints = (scorePercent / 100) * questionPoints;
+  earnedPoints += earnedQuestionPoints;
 
   // Tạo StudentAnswer record
   const sa = await StudentAnswer.create({
@@ -623,8 +657,13 @@ try {
     questionId: question.id,
     answerType: question.type,
     answerValue: studentAnswer.value,
-    score: typeof gradingResult.score === 'number' ? gradingResult.score : null,
-    gradingDetails: gradingResult.details || null,
+    score: scorePercent,
+    gradingDetails: {
+      ...(gradingResult.details || {}),
+      scorePercent,
+      questionPoints,
+      earnedPoints: Number(earnedQuestionPoints.toFixed(2)),
+    },
     aiFeedback: gradingResult.aiFeedback?.overallFeedback || null,
   });
 
@@ -638,17 +677,21 @@ try {
         answerType: question.type,
         answerValue: studentAnswer.value,
         score: 0,
-        gradingDetails: { error: error.message },
+        gradingDetails: {
+          error: error.message,
+          scorePercent: 0,
+          questionPoints,
+          earnedPoints: 0,
+        },
         aiFeedback: null,
       });
 
       studentAnswers.push(sa);
-      scores.push(0);
     }
   }
 
-  // Tính totalScore = trung bình tất cả scores
-  totalScore = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b) / scores.length) : 0;
+  // Tổng điểm = tổng(score% từng câu * điểm tối đa câu) / tổng điểm tối đa toàn bài.
+  totalScore = totalPossiblePoints > 0 ? Number(((earnedPoints / totalPossiblePoints) * 100).toFixed(2)) : 0;
   const isPassed = totalScore >= attempt.quiz.passScore;
 
   // Update attempt
@@ -852,7 +895,7 @@ const normalizeQuizWithQuestions = async (quiz) => {
       return q;
     }
   });
-  
+
 
   return {
     id: plain.id,

@@ -290,7 +290,7 @@ const syncQuizContentItems = async (segment, normalizedItems, currentUser) => {
         courseId: lesson.courseId,
         chapterId: lesson.chapterId || null,
         lessonId: lesson.id,
-        title: item.title || `Bài kiểm tra - Phần ${segment.orderIndex || segment.id}`,
+        title: item.title || `Bài tập - Phần ${segment.orderIndex || segment.id}`,
         description: item.content || null,
         duration: 30,
         passScore: 70,
